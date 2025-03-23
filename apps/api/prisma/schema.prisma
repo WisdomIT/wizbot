@@ -15,7 +15,7 @@ datasource db {
 enum ChatbotFunctionType {
   API_QUERY
   API_CONFIG
-  CHATBOT_CONFIG
+  WIZBOT_CONFIG
 }
 
 enum ChatbotPermission {
@@ -33,6 +33,12 @@ enum SongStatus {
 model Whitelist {
   id       Int    @id @default(autoincrement())
   nickname String
+}
+
+model Admin {
+  id       Int    @id @default(autoincrement())
+  nickname String @unique @db.VarChar(10)
+  password String @db.VarChar(60)
 }
 
 model User {
@@ -55,43 +61,43 @@ model User {
 
 model OAuthCredential {
   id           Int    @id @default(autoincrement())
-  userId       Int    @unique
-  accessToken  String
-  refreshToken String
-  tokenType    String   // 예: "Bearer"
-  expiresIn    Int      // 예: 3600
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       Int    @unique @db.Int
+  accessToken  String @db.Text
+  refreshToken String @db.Text
+  tokenType    String @db.VarChar(20)  // 예: "Bearer"
+  expiresIn    Int    @db.Int  // 예: 3600
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ChatbotEchoCommand {
-  id       Int    @id @default(autoincrement())
+  id       Int      @id @default(autoincrement())
   userId   Int
-  command  String
-  response String
+  command  String   @db.VarChar(20)
+  response String   @db.Text
 
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ChatbotFunctionCommand {
-  id         Int                 @id @default(autoincrement())
+  id         Int                  @id @default(autoincrement())
   userId     Int
   type       ChatbotFunctionType
   permission ChatbotPermission
-  command    String
-  function   String
-  function2  String?             
+  command    String               @db.VarChar(20)
+  function   String               @db.VarChar(20)
+  function2  String?              @db.VarChar(20)
 
-  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Song {
   id            Int    @id @default(autoincrement())
   userId        Int
-  youtubeId     String // 유튜브 영상 ID
-  title         String
-  videoUploader String // 영상 게시자
-  requester     String // 신청자
-  order         Int    // 순서
+  youtubeId     String @db.VarChar(11) // 유튜브 영상 ID
+  title         String @db.VarChar(150) // 영상 제목
+  videoUploader String @db.VarChar(150) // 영상 게시자
+  requester     String @db.VarChar(40) // 신청자
+  order         Int    @db.Int // 순서
 
   user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -100,10 +106,10 @@ model SongPlayback {
   id            Int        @id @default(autoincrement())
   userId        Int        @unique // 각 유저당 한 개의 재생정보
   status        SongStatus // 재생상태: PLAYING, PAUSED, STOPPED
-  youtubeId     String?    
-  title         String?    
-  videoUploader String?    
-  requester     String?    
+  youtubeId     String?    @db.VarChar(11) // 유튜브 영상 ID
+  title         String?    @db.VarChar(150) // 영상 제목
+  videoUploader String?    @db.VarChar(150) // 영상 게시자
+  requester     String?    @db.VarChar(40) // 신청자
 
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -111,7 +117,7 @@ model SongPlayback {
 model Playlist {
   id       Int    @id @default(autoincrement())
   userId   Int
-  name     String
+  name     String @db.VarChar(50)
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items    PlaylistItem[]
@@ -120,9 +126,9 @@ model Playlist {
 model PlaylistItem {
   id            Int    @id @default(autoincrement())
   playlistId    Int
-  youtubeId     String? 
-  title         String? 
-  videoUploader String? 
+  youtubeId     String     @db.VarChar(11) // 유튜브 영상 ID
+  title         String     @db.VarChar(150) // 영상 제목
+  videoUploader String     @db.VarChar(150) // 영상 게시자
   order         Int     // 재생목록 내 순서
 
   playlist      Playlist   @relation(fields: [playlistId], references: [id], onDelete: Cascade)
@@ -131,11 +137,11 @@ model PlaylistItem {
 model CafeChzzk {
   id         Int     @id @default(autoincrement())
   userId     Int
-  channelId  String
-  background String
-  title      String? 
-  category   String? 
-  openDate   String? 
+  channelId  String  @db.VarChar(32)
+  background String  @db.Text
+  title      String? @db.Text
+  category   String? @db.Text
+  openDate   String? @db.Text
 
   user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -143,7 +149,7 @@ model CafeChzzk {
 model CafeYoutube {
   id         Int     @id @default(autoincrement())
   userId     Int
-  channelId  String
+  channelId  String  @db.VarChar(24)
 
   user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
