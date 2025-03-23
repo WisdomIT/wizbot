@@ -1,0 +1,16 @@
+{
+  "trailingComma": "all",
+  "tabWidth": 2,
+  "semi": true,
+  "printWidth": 100,
+  "singleQuote": true,
+  "bracketSpacing": true,
+  "overrides": [
+    {
+      "files": ["*.json", ".eslintrc"],
+      "options": { "tabWidth": 2, "trailingComma": "none" }
+    }
+  ],
+  "useTabs": false,
+  "endOfLine": "lf"
+}

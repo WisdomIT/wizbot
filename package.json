@@ -1,0 +1,31 @@
+{
+  "name": "wizbot",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "workspaces/*"
+  ],
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "pnpm -r run dev",
+    "build": "pnpm build:api && pnpm -r run build",
+    "build:api": "pnpm --filter api start & sleep 5 && pnpm --filter api stop",
+    "build:withoutapi": "pnpm -r run build",
+    "start": "pm2 start ecosystem.config.js",
+    "list": "pm2 list",
+    "stop": "pm2 stop ecosystem.config.js",
+    "restart": "pm2 restart ecosystem.config.js",
+    "lint": "pnpm -r run lint",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.5.2",
+  "devDependencies": {
+    "@wizbot/eslint-config": "workspace:^",
+    "typescript": "^5.8.2"
+  }
+}

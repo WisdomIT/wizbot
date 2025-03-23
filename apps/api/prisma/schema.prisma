@@ -1,0 +1,149 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+enum ChatbotFunctionType {
+  API_QUERY
+  API_CONFIG
+  CHATBOT_CONFIG
+}
+
+enum ChatbotPermission {
+  STREAMER
+  MANAGER
+  VIEWER
+}
+
+enum SongStatus {
+  PLAYING
+  PAUSED
+  STOPPED
+}
+
+model Whitelist {
+  id       Int    @id @default(autoincrement())
+  nickname String
+}
+
+model User {
+  id                Int      @id @default(autoincrement())
+  nickname          String
+  songFeatureActive Boolean
+
+  // OAuth credentials relationship (분리된 OAuth 정보)
+  oauth             OAuthCredential?
+
+  // Relations
+  simpleCommands    ChatbotEchoCommand[]
+  functionCommands  ChatbotFunctionCommand[]
+  songs             Song[]
+  songPlayback      SongPlayback?
+  playlists         Playlist[]
+  cafeChzzks        CafeChzzk[]
+  cafeYoutubes      CafeYoutube[]
+}
+
+model OAuthCredential {
+  id           Int    @id @default(autoincrement())
+  userId       Int    @unique
+  accessToken  String
+  refreshToken String
+  tokenType    String   // 예: "Bearer"
+  expiresIn    Int      // 예: 3600
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ChatbotEchoCommand {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  command  String
+  response String
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ChatbotFunctionCommand {
+  id         Int                 @id @default(autoincrement())
+  userId     Int
+  type       ChatbotFunctionType
+  permission ChatbotPermission
+  command    String
+  function   String
+  function2  String?             
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Song {
+  id            Int    @id @default(autoincrement())
+  userId        Int
+  youtubeId     String // 유튜브 영상 ID
+  title         String
+  videoUploader String // 영상 게시자
+  requester     String // 신청자
+  order         Int    // 순서
+
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SongPlayback {
+  id            Int        @id @default(autoincrement())
+  userId        Int        @unique // 각 유저당 한 개의 재생정보
+  status        SongStatus // 재생상태: PLAYING, PAUSED, STOPPED
+  youtubeId     String?    
+  title         String?    
+  videoUploader String?    
+  requester     String?    
+
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Playlist {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  name     String
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items    PlaylistItem[]
+}
+
+model PlaylistItem {
+  id            Int    @id @default(autoincrement())
+  playlistId    Int
+  youtubeId     String? 
+  title         String? 
+  videoUploader String? 
+  order         Int     // 재생목록 내 순서
+
+  playlist      Playlist   @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+}
+
+model CafeChzzk {
+  id         Int     @id @default(autoincrement())
+  userId     Int
+  channelId  String
+  background String
+  title      String? 
+  category   String? 
+  openDate   String? 
+
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CafeYoutube {
+  id         Int     @id @default(autoincrement())
+  userId     Int
+  channelId  String
+
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
