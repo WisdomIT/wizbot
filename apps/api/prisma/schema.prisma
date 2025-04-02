@@ -50,13 +50,39 @@ model User {
   oauth             OAuthCredential?
 
   // Relations
-  simpleCommands    ChatbotEchoCommand[]
+  userSetting       UserSetting?
+  userShortcuts     UserShortcut[]
+  echoCommands      ChatbotEchoCommand[]
   functionCommands  ChatbotFunctionCommand[]
+  repeatCommands    ChatbotRepeat[]
   songs             Song[]
   songPlayback      SongPlayback?
-  playlists         Playlist[]
+  playlists         SongFavorite[]
   cafeChzzks        CafeChzzk[]
   cafeYoutubes      CafeYoutube[]
+}
+
+model UserSetting {
+  id                    Int     @id @default(autoincrement())
+  userId                Int     @unique     // 각 유저당 한 개의 설정정보
+  useSongFeature        Boolean @db.TinyInt // 노래 기능 사용 여부
+  songFavoriteAuto      Int?    @db.Int     // 자동 재생될 Favorite ID
+  songKeyboardShortcut  Boolean @db.TinyInt // 노래 단축키 사용 여부
+  chatbotNoticeRepeat   Int?    @db.Int     // 챗봇 공지알림 반복 시간(초)
+  chatbotDefaultRepeat  Int     @db.Int @default(300) // 챗봇 기본 반복 시간(초)
+  
+  user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserShortcut {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  name     String @db.VarChar(20)
+  icon     String @db.VarChar(40)
+  url      String @db.Text
+  order    Int    @db.Int
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model OAuthCredential {
@@ -90,6 +116,15 @@ model ChatbotFunctionCommand {
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model ChatbotRepeat {
+  id         Int                  @id @default(autoincrement())
+  userId     Int
+  response   String               @db.Text
+  interval   Int                  @db.Int
+
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model Song {
   id            Int    @id @default(autoincrement())
   userId        Int
@@ -114,24 +149,24 @@ model SongPlayback {
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model Playlist {
+model SongFavorite {
   id       Int    @id @default(autoincrement())
   userId   Int
   name     String @db.VarChar(50)
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items    PlaylistItem[]
+  items    SongFavoriteItem[]
 }
 
-model PlaylistItem {
+model SongFavoriteItem {
   id            Int    @id @default(autoincrement())
-  playlistId    Int
+  favoriteId    Int
   youtubeId     String     @db.VarChar(11) // 유튜브 영상 ID
   title         String     @db.VarChar(150) // 영상 제목
   videoUploader String     @db.VarChar(150) // 영상 게시자
   order         Int     // 재생목록 내 순서
 
-  playlist      Playlist   @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  favorite      SongFavorite   @relation(fields: [favoriteId], references: [id], onDelete: Cascade)
 }
 
 model CafeChzzk {
