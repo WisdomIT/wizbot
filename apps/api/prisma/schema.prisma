@@ -92,6 +92,7 @@ model OAuthCredential {
   refreshToken String @db.Text
   tokenType    String @db.VarChar(20)  // 예: "Bearer"
   expiresIn    Int    @db.Int  // 예: 3600
+  
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
