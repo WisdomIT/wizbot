@@ -18,7 +18,9 @@
     "stop": "pm2 stop ecosystem.config.js",
     "restart": "pm2 restart ecosystem.config.js",
     "lint": "pnpm -r run lint",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prisma:generate": "dotenv -e apps/api/.env -- prisma generate --schema=apps/api/prisma/schema.prisma",
+    "prisma:migrate": "dotenv -e apps/api/.env -- prisma migrate dev --schema=apps/api/prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +28,8 @@
   "packageManager": "pnpm@10.5.2",
   "devDependencies": {
     "@wizbot/eslint-config": "workspace:^",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "^6.5.0",
     "typescript": "^5.8.2"
   }
 }
