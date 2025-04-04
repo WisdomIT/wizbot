@@ -37,8 +37,17 @@ model Whitelist {
 
 model Admin {
   id       Int    @id @default(autoincrement())
-  nickname String @unique @db.VarChar(10)
-  password String @db.VarChar(60)
+  email    String @unique @db.VarChar(250)
+
+  passcode AdminLogin?
+}
+
+model AdminLogin {
+  adminId  Int    @unique
+  passcode String @db.VarChar(6)
+  createdAt DateTime @default(now()) @db.DateTime(6)
+
+  admin    Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
 }
 
 model User {
