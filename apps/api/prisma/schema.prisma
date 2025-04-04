@@ -43,8 +43,9 @@ model Admin {
 
 model User {
   id                Int      @id @default(autoincrement())
-  nickname          String
-  songFeatureActive Boolean
+  channelId         String   @unique @db.VarChar(32)
+  channelImageUrl   String?  @db.Text
+  channelName       String   @db.VarChar(50)
 
   // OAuth credentials relationship (분리된 OAuth 정보)
   oauth             OAuthCredential?
@@ -64,12 +65,12 @@ model User {
 
 model UserSetting {
   id                    Int     @id @default(autoincrement())
-  userId                Int     @unique     // 각 유저당 한 개의 설정정보
-  useSongFeature        Boolean @db.TinyInt // 노래 기능 사용 여부
-  songFavoriteAuto      Int?    @db.Int     // 자동 재생될 Favorite ID
-  songKeyboardShortcut  Boolean @db.TinyInt // 노래 단축키 사용 여부
-  chatbotNoticeRepeat   Int?    @db.Int     // 챗봇 공지알림 반복 시간(초)
-  chatbotDefaultRepeat  Int     @db.Int @default(300) // 챗봇 기본 반복 시간(초)
+  userId                Int     @unique                     // 각 유저당 한 개의 설정정보
+  songActive            Boolean @db.TinyInt @default(true)  // 노래 기능 사용 여부
+  songFavoriteAuto      Int?    @db.Int                     // 자동 재생될 Favorite ID
+  songKeyboardShortcut  Boolean @db.TinyInt @default(true)  // 노래 단축키 사용 여부
+  chatbotNoticeRepeat   Int?    @db.Int                     // 챗봇 공지알림 반복 시간(초)
+  chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -92,7 +93,7 @@ model OAuthCredential {
   refreshToken String @db.Text
   tokenType    String @db.VarChar(20)  // 예: "Bearer"
   expiresIn    Int    @db.Int  // 예: 3600
-  
+
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
