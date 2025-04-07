@@ -13,7 +13,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@trpc/client": "^10.45.2",
+    "@trpc/client": "^11.0.2",
     "@wizbot/shared": "workspace:^",
     "fast-xml-parser": "^5.0.9",
     "puppeteer": "^24.4.0"

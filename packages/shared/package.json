@@ -9,13 +9,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "exports": {
-    "./http": "./lib/http.ts"
-  },
   "packageManager": "pnpm@10.5.2",
   "devDependencies": {
     "@prisma/client": "^6.5.0",
-    "@trpc/server": "^11.0.0",
+    "@trpc/server": "^11.0.2",
     "zod": "^3.24.2"
   }
 }
