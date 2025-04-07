@@ -1,5 +1,8 @@
 /* eslint-disable no-console */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import * as trpcExpress from '@trpc/server/adapters/express';
 import { appRouter } from '@wizbot/shared/src/router';
 import express from 'express';
