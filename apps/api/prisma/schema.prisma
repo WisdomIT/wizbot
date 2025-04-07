@@ -96,12 +96,12 @@ model UserShortcut {
 }
 
 model OAuthCredential {
-  id           Int    @id @default(autoincrement())
-  userId       Int    @unique @db.Int
-  accessToken  String @db.Text
-  refreshToken String @db.Text
-  tokenType    String @db.VarChar(20)  // 예: "Bearer"
-  expiresIn    Int    @db.Int  // 예: 3600
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique @db.Int
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  tokenType    String   @db.VarChar(20)  // 예: "Bearer"
+  expiresIn    DateTime @db.DateTime() 
 
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
