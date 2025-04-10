@@ -16,6 +16,7 @@ export const userRouter = t.router({
     .input(z.object({ code: z.string() }))
     .query(async ({ ctx, input }) => {
       const { code } = input;
+
       const { CHZZK_ID, CHZZK_SECRET } = process.env;
 
       try {
@@ -27,11 +28,15 @@ export const userRouter = t.router({
         }
 
         const response = await http<{
-          accessToken: string;
-          refreshToken: string;
-          tokenType: 'Bearer';
-          expiresIn: string;
-          scope: string;
+          code: number;
+          message: string | null;
+          content?: {
+            accessToken: string;
+            refreshToken: string;
+            tokenType: 'Bearer';
+            expiresIn: string;
+            scope: string;
+          };
         }>(`${CHZZK_URI}/auth/v1/token`, 'POST', {
           json: {
             grantType: 'authorization_code',
@@ -42,8 +47,8 @@ export const userRouter = t.router({
           },
         });
 
-        if (response.accessToken) {
-          const { accessToken, refreshToken, tokenType, expiresIn } = response;
+        if (response.code === 200 && response.content) {
+          const { accessToken, refreshToken, tokenType, expiresIn } = response.content;
           return {
             accessToken,
             refreshToken,

@@ -13,10 +13,10 @@ export async function http<T>(
   method: HttpMethod = 'GET',
   options: HttpRequestOptions = {},
 ): Promise<T> {
-  const { params, json, timeout = 10000, baseUrl = '', headers, ...rest } = options;
+  const { params, json, timeout = 10000, headers = [], ...rest } = options;
 
   // 1. URL 생성 및 쿼리 파라미터 추가
-  const fullUrl = new URL(url, baseUrl);
+  const fullUrl = new URL(url);
   if (params) {
     Object.entries(params).forEach(([key, value]) =>
       fullUrl.searchParams.append(key, String(value)),
@@ -50,9 +50,11 @@ export async function http<T>(
 
     const contentType = res.headers.get('content-type');
     if (contentType?.includes('application/json')) {
-      return await res.json();
+      const json = (await res.json()) as T;
+      return json;
     } else {
       // 비 JSON 응답 처리 (예: text, blob 등)
+      const text = (await res.text()) as T;
       return (await res.text()) as unknown as T;
     }
   } catch (err) {
