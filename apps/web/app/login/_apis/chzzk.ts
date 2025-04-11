@@ -7,7 +7,7 @@ export async function getChzzkId() {
   return chzzkId;
 }
 
-export async function getChzzkTokenInterlock(code: string) {
-  const chzzkToken = await trpc.user.getChzzkTokenInterlock.query({ code });
+export async function getChzzkTokenInterlock(input: { code: string; state: string }) {
+  const chzzkToken = await trpc.user.getChzzkTokenInterlock.query(input);
   return chzzkToken;
 }

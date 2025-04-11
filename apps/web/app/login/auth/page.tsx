@@ -1,44 +1,32 @@
-'use client';
-
-import { useEffect } from 'react';
-
-import { Button } from '@/components/ui/button';
-
 import { getChzzkTokenInterlock } from '../_apis/chzzk';
 
 // app/page.tsx
-export default function Page({ searchParams }: { searchParams: { code: string; state: string } }) {
-  const { code } = searchParams;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: { code: string; state: string };
+}) {
+  const { code, state } = await searchParams;
+  try {
+    const auth = await getChzzkTokenInterlock({ code, state });
 
-  const handleCode = async (code: string) => {
-    try {
-      const auth = await getChzzkTokenInterlock(code);
-      alert(`accessToken: ${auth.accessToken}\nrefreshToken: ${auth.refreshToken}`);
-    } catch (error) {
-      if (error instanceof Error) {
-        alert(error.message);
-      } else {
-        alert('토큰 발행 실패');
-      }
-    }
-  };
+    const { accessToken, refreshToken } = auth;
 
-  useEffect(() => {
-    if (code) {
-      void handleCode(code);
-    }
-  }, [code]);
-
-  return (
-    <div>
-      코드: {code}
-      <Button
-        onClick={() => {
-          void handleCode(code);
-        }}
-      >
-        토큰발행
-      </Button>
-    </div>
-  );
+    return (
+      <>
+        <p>코드: {code}</p>
+        <p>accessToken: {accessToken}</p>
+        <p>refreshToken: {refreshToken}</p>
+      </>
+    );
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Error during authentication:', error);
+    return (
+      <div>
+        <h1>오류가 발생했습니다. 잠시 후 다시 시도해주세요.</h1>
+        <p>{(error as Error).message}</p>
+      </div>
+    );
+  }
 }

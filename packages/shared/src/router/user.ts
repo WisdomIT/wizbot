@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { ChzzkAccessTokenRequest, ChzzkApiResponse, ChzzkTokenResponse } from '../../lib/chzzk';
 import { http } from '../../lib/http';
 import { t } from '../trpc';
 
@@ -13,9 +14,9 @@ export const userRouter = t.router({
     return process.env.CHZZK_ID;
   }),
   getChzzkTokenInterlock: t.procedure
-    .input(z.object({ code: z.string() }))
+    .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {
-      const { code } = input;
+      const { code, state } = input;
 
       const { CHZZK_ID, CHZZK_SECRET } = process.env;
 
@@ -27,27 +28,21 @@ export const userRouter = t.router({
           throw new Error('Authorization code is required');
         }
 
-        const response = await http<{
-          code: number;
-          message: string | null;
-          content?: {
-            accessToken: string;
-            refreshToken: string;
-            tokenType: 'Bearer';
-            expiresIn: string;
-            scope: string;
-          };
-        }>(`${CHZZK_URI}/auth/v1/token`, 'POST', {
-          json: {
-            grantType: 'authorization_code',
-            clientId: CHZZK_ID,
-            clientSecret: CHZZK_SECRET,
-            code,
-            state: 'zxclDasdfA25',
+        const response = await http<ChzzkApiResponse<ChzzkTokenResponse>>(
+          `${CHZZK_URI}/auth/v1/token`,
+          'POST',
+          {
+            json: {
+              grantType: 'authorization_code',
+              clientId: CHZZK_ID,
+              clientSecret: CHZZK_SECRET,
+              code,
+              state,
+            } as ChzzkAccessTokenRequest,
           },
-        });
+        );
 
-        if (response.code === 200 && response.content) {
+        if (response.code === 200) {
           const { accessToken, refreshToken, tokenType, expiresIn } = response.content;
           return {
             accessToken,
