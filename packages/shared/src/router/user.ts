@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
-import { ChzzkAccessTokenRequest, ChzzkApiResponse, ChzzkTokenResponse } from '../../lib/chzzk';
-import { http } from '../../lib/http';
 import { t } from '../trpc';
+import { accessToken } from '../chzzk/authorization';
 
 const CHZZK_URI = 'https://openapi.chzzk.naver.com';
 
@@ -28,19 +27,10 @@ export const userRouter = t.router({
           throw new Error('Authorization code is required');
         }
 
-        const response = await http<ChzzkApiResponse<ChzzkTokenResponse>>(
-          `${CHZZK_URI}/auth/v1/token`,
-          'POST',
-          {
-            json: {
-              grantType: 'authorization_code',
-              clientId: CHZZK_ID,
-              clientSecret: CHZZK_SECRET,
-              code,
-              state,
-            } as ChzzkAccessTokenRequest,
-          },
-        );
+        const response = await accessToken({
+          code,
+          state,
+        });
 
         if (response.code === 200) {
           const { accessToken, refreshToken, tokenType, expiresIn } = response.content;

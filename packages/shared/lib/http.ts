@@ -2,7 +2,7 @@
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface HttpRequestOptions extends RequestInit {
-  params?: Record<string, string | number>;
+  params?: Record<string, string | number | undefined | null>;
   json?: any;
   timeout?: number; // milliseconds
   baseUrl?: string;
@@ -18,9 +18,11 @@ export async function http<T>(
   // 1. URL 생성 및 쿼리 파라미터 추가
   const fullUrl = new URL(url);
   if (params) {
-    Object.entries(params).forEach(([key, value]) =>
-      fullUrl.searchParams.append(key, String(value)),
-    );
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        fullUrl.searchParams.append(key, String(value));
+      }
+    });
   }
 
   // 2. 요청 옵션 구성
