@@ -1,6 +1,6 @@
 import { http } from '../../lib/http';
 import { CHZZK_URI, CLIENT_AUTH_HEADERS } from './chzzk.config';
-import { ChzzkTokenResponse, ChzzkApiResponse, ChzzkChannelsRequest } from './index.d';
+import { ChzzkApiResponse, ChzzkChannelsRequest, ChzzkTokenResponse } from './index.d';
 
 export function channels(
   data: ChzzkChannelsRequest,

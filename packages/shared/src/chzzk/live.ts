@@ -19,40 +19,37 @@ export function lives(data: ChzzkLivesRequest): Promise<ChzzkApiResponse<ChzzkLi
   });
 }
 
-export function streamsKey(data: {
-  token: string;
-}): Promise<ChzzkApiResponse<ChzzkStreamsKeyResponse>> {
+export function streamsKey(token: string): Promise<ChzzkApiResponse<ChzzkStreamsKeyResponse>> {
   return http<ChzzkApiResponse<ChzzkStreamsKeyResponse>>(
     `${CHZZK_URI}/open/v1/streams/key`,
     'GET',
     {
-      headers: ACCESS_TOKEN_HEADERS(data.token),
+      headers: ACCESS_TOKEN_HEADERS(token),
     },
   );
 }
 
-export function livesSetting(data: {
-  token: string;
-}): Promise<ChzzkApiResponse<ChzzkLivesSettingResponse>> {
+export function setting(token: string): Promise<ChzzkApiResponse<ChzzkLivesSettingResponse>> {
   return http<ChzzkApiResponse<ChzzkLivesSettingResponse>>(
     `${CHZZK_URI}/open/v1/lives/setting`,
     'GET',
     {
-      headers: ACCESS_TOKEN_HEADERS(data.token),
+      headers: ACCESS_TOKEN_HEADERS(token),
     },
   );
 }
 
-export function livesSettingUpdate(
-  data: { token: string } & ChzzkLivesSettingPatch,
+export function settingUpdate(
+  token: string,
+  data: ChzzkLivesSettingPatch,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(`${CHZZK_URI}/open/v1/lives/setting`, 'PATCH', {
-    headers: ACCESS_TOKEN_HEADERS(data.token),
-    params: {
+    headers: ACCESS_TOKEN_HEADERS(token),
+    json: {
       defaultLiveTitle: data.defaultLiveTitle,
       categoryType: data.categoryType,
       categoryId: data.categoryId,
-      tags: data.tags?.join(',') ?? undefined,
+      tags: data.tags,
     },
   });
 }
