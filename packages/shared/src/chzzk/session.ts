@@ -64,14 +64,15 @@ export function sessions(
 }
 
 export function eventsSubscribeChat(
+  token: string,
   data: ChzzkSessionsEventsSubscribeChatRequest,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(
     `${CHZZK_URI}/open/v1/sessions/events/subscribe/chat`,
     'POST',
     {
-      headers: CLIENT_AUTH_HEADERS,
-      json: {
+      headers: ACCESS_TOKEN_HEADERS(token),
+      params: {
         sessionKey: data.sessionKey,
       },
     },
@@ -79,14 +80,15 @@ export function eventsSubscribeChat(
 }
 
 export function eventsUnsubscribeChat(
+  token: string,
   data: ChzzkSessionsEventsUnsubscribeChatRequest,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(
     `${CHZZK_URI}/open/v1/sessions/events/unsubscribe/chat`,
     'POST',
     {
-      headers: CLIENT_AUTH_HEADERS,
-      json: {
+      headers: ACCESS_TOKEN_HEADERS(token),
+      params: {
         sessionKey: data.sessionKey,
       },
     },
@@ -94,14 +96,15 @@ export function eventsUnsubscribeChat(
 }
 
 export function eventsSubscribeDonation(
+  token: string,
   data: ChzzkSessionsEventsSubscribeDonationRequest,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(
     `${CHZZK_URI}/open/v1/sessions/events/subscribe/donation`,
     'POST',
     {
-      headers: CLIENT_AUTH_HEADERS,
-      json: {
+      headers: ACCESS_TOKEN_HEADERS(token),
+      params: {
         sessionKey: data.sessionKey,
       },
     },
@@ -109,14 +112,15 @@ export function eventsSubscribeDonation(
 }
 
 export function eventsUnsubscribeDonation(
+  token: string,
   data: ChzzkSessionsEventsUnsubscribeDonationRequest,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(
     `${CHZZK_URI}/open/v1/sessions/events/unsubscribe/donation`,
     'POST',
     {
-      headers: CLIENT_AUTH_HEADERS,
-      json: {
+      headers: ACCESS_TOKEN_HEADERS(token),
+      params: {
         sessionKey: data.sessionKey,
       },
     },
