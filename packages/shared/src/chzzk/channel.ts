@@ -1,10 +1,10 @@
 import { http } from '../../lib/http';
 import { CHZZK_URI, CLIENT_AUTH_HEADERS } from './chzzk.config';
-import { ChzzkApiResponse, ChzzkChannelsRequest, ChzzkTokenResponse } from './index.d';
+import { ChzzkApiResponse, ChzzkChannelsRequest, ChzzkChannelsResponse } from './index.d';
 
 export function channels(
   data: ChzzkChannelsRequest,
-): Promise<ChzzkApiResponse<ChzzkTokenResponse>> {
+): Promise<ChzzkApiResponse<ChzzkChannelsResponse>> {
   if (!data.channelIds || data.channelIds.length === 0) {
     throw new Error('Channel IDs are required');
   }
@@ -12,7 +12,7 @@ export function channels(
     throw new Error('channelIds length must be less than or equal to 20');
   }
 
-  return http<ChzzkApiResponse<ChzzkTokenResponse>>(`${CHZZK_URI}/open/v1/channels`, 'GET', {
+  return http<ChzzkApiResponse<ChzzkChannelsResponse>>(`${CHZZK_URI}/open/v1/channels`, 'GET', {
     headers: CLIENT_AUTH_HEADERS,
     params: {
       channelIds: data.channelIds.join(','),

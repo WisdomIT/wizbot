@@ -10,13 +10,13 @@ export default async function Page({
   try {
     const auth = await getChzzkTokenInterlock({ code, state });
 
-    const { accessToken, refreshToken } = auth;
+    const { channelId, channelName, channelImageUrl } = auth;
 
     return (
       <>
-        <p>코드: {code}</p>
-        <p>accessToken: {accessToken}</p>
-        <p>refreshToken: {refreshToken}</p>
+        <p>channelId: {channelId}</p>
+        <p>channelName: {channelName}</p>
+        <img src={channelImageUrl} alt="channel thumbnail" width={200} />
       </>
     );
   } catch (error) {

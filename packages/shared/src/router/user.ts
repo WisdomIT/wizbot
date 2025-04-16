@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { t } from '../trpc';
-import { accessToken } from '../chzzk/authorization';
+import chzzk from '../chzzk';
 
 const CHZZK_URI = 'https://openapi.chzzk.naver.com';
 
@@ -17,35 +17,85 @@ export const userRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { code, state } = input;
 
-      const { CHZZK_ID, CHZZK_SECRET } = process.env;
-
-      try {
-        if (!CHZZK_ID || !CHZZK_SECRET) {
-          throw new Error('Chzzk credentials are not set');
-        }
-        if (!code) {
-          throw new Error('Authorization code is required');
-        }
-
-        const response = await accessToken({
-          code,
-          state,
-        });
-
-        if (response.code === 200) {
-          const { accessToken, refreshToken, tokenType, expiresIn } = response.content;
-          return {
-            accessToken,
-            refreshToken,
-            tokenType,
-            expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
-          };
-        } else {
-          throw new Error('Invalid response from Chzzk');
-        }
-      } catch (error) {
-        console.error('Error fetching access token:', error);
-        throw new Error('Failed to get access token');
+      const accessTokenRequest = await chzzk.authorization.accessToken({
+        code,
+        state,
+      });
+      if (accessTokenRequest.code !== 200) {
+        throw new Error('Invalid response from Chzzk on access token request');
       }
+
+      const { accessToken, refreshToken, tokenType, expiresIn } = accessTokenRequest.content;
+
+      const meRequest = await chzzk.user.me(accessToken);
+      if (meRequest.code !== 200) {
+        throw new Error('Invalid response from Chzzk on me request');
+      }
+
+      const { channelId } = meRequest.content;
+
+      const findMe = await ctx.prisma.whitelist.findFirst({
+        where: {
+          channelId,
+        },
+      });
+      if (!findMe) {
+        throw new Error('화이트리스트에 등록되지 않은 채널입니다.');
+      }
+
+      const channelsRequest = await chzzk.channel.channels({ channelIds: [channelId] });
+      if (channelsRequest.code !== 200) {
+        throw new Error('Invalid response from Chzzk on channels request');
+      }
+      const { channelName, channelImageUrl } = channelsRequest.content.data[0];
+
+      const user = await ctx.prisma.user.upsert({
+        where: { channelId },
+        update: {
+          channelName,
+          channelImageUrl,
+        },
+        create: {
+          channelId,
+          channelName,
+          channelImageUrl,
+        },
+      });
+
+      const findSetting = await ctx.prisma.userSetting.findFirst({
+        where: {
+          userId: user.id,
+        },
+      });
+      if (!findSetting) {
+        await ctx.prisma.userSetting.create({
+          data: {
+            userId: user.id,
+          },
+        });
+      }
+
+      await ctx.prisma.oAuthCredential.upsert({
+        where: { userId: user.id },
+        update: {
+          accessToken,
+          refreshToken,
+          tokenType,
+          expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
+        },
+        create: {
+          userId: user.id,
+          accessToken,
+          refreshToken,
+          tokenType,
+          expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
+        },
+      });
+
+      return {
+        channelId,
+        channelName,
+        channelImageUrl,
+      };
     }),
 });
