@@ -1,10 +1,10 @@
 import { http } from '../../lib/http';
 import { CHZZK_ID, CHZZK_SECRET, CHZZK_URI } from './chzzk.config';
 import {
-  ChzzkTokenResponse,
   ChzzkAccessTokenRequest,
   ChzzkApiResponse,
   ChzzkRefreshTokenRequest,
+  ChzzkTokenResponse,
   ChzzkTokenRevokeRequest,
 } from './index.d';
 

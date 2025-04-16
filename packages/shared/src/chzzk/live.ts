@@ -29,7 +29,7 @@ export function streamsKey(token: string): Promise<ChzzkApiResponse<ChzzkStreams
   );
 }
 
-export function livesSetting(token): Promise<ChzzkApiResponse<ChzzkLivesSettingResponse>> {
+export function setting(token: string): Promise<ChzzkApiResponse<ChzzkLivesSettingResponse>> {
   return http<ChzzkApiResponse<ChzzkLivesSettingResponse>>(
     `${CHZZK_URI}/open/v1/lives/setting`,
     'GET',
@@ -39,17 +39,17 @@ export function livesSetting(token): Promise<ChzzkApiResponse<ChzzkLivesSettingR
   );
 }
 
-export function livesSettingUpdate(
+export function settingUpdate(
   token: string,
   data: ChzzkLivesSettingPatch,
 ): Promise<ChzzkApiResponse<null>> {
   return http<ChzzkApiResponse<null>>(`${CHZZK_URI}/open/v1/lives/setting`, 'PATCH', {
     headers: ACCESS_TOKEN_HEADERS(token),
-    params: {
+    json: {
       defaultLiveTitle: data.defaultLiveTitle,
       categoryType: data.categoryType,
       categoryId: data.categoryId,
-      tags: data.tags?.join(',') ?? undefined,
+      tags: data.tags,
     },
   });
 }

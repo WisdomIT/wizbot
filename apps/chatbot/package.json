@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts"
   },
   "keywords": [],
   "author": "",
@@ -15,11 +15,11 @@
   "dependencies": {
     "@trpc/client": "^11.0.2",
     "@wizbot/shared": "workspace:^",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^2.0.3"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.2"
   }
 }
