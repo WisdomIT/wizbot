@@ -1,7 +1,9 @@
+/* eslint-disable no-console */
 import chzzk from '@wizbot/shared/src/chzzk';
-import { trpc } from './trpc';
+
 import { ChatStatus } from './index.d';
 import connectSocket from './socket';
+import { trpc } from './trpc';
 
 console.log('🚀 Chatbot 서버가 실행되었습니다!');
 

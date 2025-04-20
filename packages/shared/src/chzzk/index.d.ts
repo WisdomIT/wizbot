@@ -150,15 +150,13 @@ export interface ChzzkSessionsMessageChat {
   profile: {
     nickname: string;
     badges: {
-      key: string;
-      value: string;
+      imageUrl: string;
     }[];
     verifiedMark: boolean;
   };
   content: string;
   emojis: {
-    key: string;
-    value: string;
+    [key: string]: string;
   }[];
   messageTime: number;
 }

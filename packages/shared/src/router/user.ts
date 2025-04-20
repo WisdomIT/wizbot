@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { t } from '../trpc';
 import chzzk from '../chzzk';
+import { getAccessToken } from '../lib/accessToken';
 
 const CHZZK_URI = 'https://openapi.chzzk.naver.com';
 
@@ -102,44 +103,16 @@ export const userRouter = t.router({
     .input(z.object({ userId: z.number() }))
     .query(async ({ ctx, input }) => {
       const { userId } = input;
-      const credential = await ctx.prisma.oAuthCredential.findFirst({
-        where: {
-          userId,
-        },
-      });
-      if (!credential) {
-        throw new Error('Invalid response from Chzzk on me request');
-      }
 
-      if (credential.expiresIn.getTime() > new Date().getTime()) {
-        return {
-          accessToken: credential.accessToken,
-        };
-      }
+      const accessToken = await getAccessToken(ctx, userId);
 
-      // Refresh token
-      const refreshTokenRequest = await chzzk.authorization.refreshToken({
-        refreshToken: credential.refreshToken,
-      });
-      if (refreshTokenRequest.code !== 200) {
-        throw new Error('Invalid response from Chzzk on refresh token request');
+      if (!accessToken) {
+        throw new Error('Access token not found');
       }
-      const { accessToken, refreshToken, tokenType, expiresIn } = refreshTokenRequest.content;
-      await ctx.prisma.oAuthCredential.update({
-        where: {
-          userId,
-        },
-        data: {
-          accessToken,
-          refreshToken,
-          tokenType,
-          expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
-        },
-      });
 
       // Return new access token
       return {
-        accessToken,
+        accessToken: accessToken.accessToken,
       };
     }),
 });
