@@ -19,8 +19,8 @@
     "restart": "pm2 restart ecosystem.config.js",
     "lint": "pnpm -r run lint",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prisma:generate": "dotenv -e apps/api/.env -- prisma generate --schema=apps/api/prisma/schema.prisma",
-    "prisma:migrate": "dotenv -e apps/api/.env -- prisma migrate dev --schema=apps/api/prisma/schema.prisma"
+    "prisma:generate": "cd apps/api && prisma generate",
+    "prisma:migrate": "cd apps/api && prisma migrate dev"
   },
   "keywords": [],
   "author": "",
