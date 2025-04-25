@@ -1,10 +1,8 @@
 import { z } from 'zod';
 
-import { t } from '../trpc';
 import chzzk from '../chzzk';
 import { getAccessToken } from '../lib/accessToken';
-
-const CHZZK_URI = 'https://openapi.chzzk.naver.com';
+import { t } from '../trpc';
 
 export const userRouter = t.router({
   getUser: t.procedure.query(async ({ ctx }) => {
