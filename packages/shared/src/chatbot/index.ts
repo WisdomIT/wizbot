@@ -34,7 +34,7 @@ export const functions = {
 };
 
 export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
-  const { userId, senderNickname, content } = data;
+  const { userId, senderNickname, senderRole, content } = data;
 
   const contentWithoutPrefix = content.slice(1);
   const command1 = contentWithoutPrefix.split(' ')[0];
@@ -65,6 +65,26 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return {
       ok: false,
       message: 'Command not found',
+    };
+  }
+
+  const ROLE_PRIORITY = {
+    VIEWER: 1,
+    MANAGER: 2,
+    STREAMER: 3,
+  } as const;
+
+  type Role = keyof typeof ROLE_PRIORITY;
+
+  // 권한 비교 함수
+  function hasPermission(senderRole: Role, requiredPermission: Role): boolean {
+    return ROLE_PRIORITY[senderRole] >= ROLE_PRIORITY[requiredPermission];
+  }
+
+  if (!hasPermission(senderRole, commandFind.permission)) {
+    return {
+      ok: true,
+      message: '권한이 없습니다',
     };
   }
 
