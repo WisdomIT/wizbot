@@ -11,7 +11,8 @@ export async function getAccessToken(ctx: Context, userId: number) {
     throw new Error('Invalid response from Chzzk on me request');
   }
 
-  if (credential.expiresIn.getTime() > new Date().getTime()) {
+  // 안전하게 10초 정도 여유를 두고 만료된 것으로 판단
+  if (credential.expiresIn.getTime() - 10_000 > new Date().getTime()) {
     return {
       accessToken: credential.accessToken,
     };
@@ -36,4 +37,8 @@ export async function getAccessToken(ctx: Context, userId: number) {
       expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
     },
   });
+
+  return {
+    accessToken,
+  };
 }
