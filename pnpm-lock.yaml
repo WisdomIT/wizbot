@@ -44,6 +44,9 @@ importers:
       prisma:
         specifier: ^6.5.0
         version: 6.5.0(typescript@5.8.3)
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@20.17.30)(typescript@5.8.3)
       zod:
         specifier: ^3.24.2
         version: 3.24.2
@@ -78,13 +81,13 @@ importers:
       puppeteer:
         specifier: ^24.4.0
         version: 24.6.0(typescript@5.8.3)
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@20.17.30)(typescript@5.8.3)
     devDependencies:
       '@types/node':
         specifier: ^20
         version: 20.17.30
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@20.17.30)(typescript@5.8.3)
       typescript:
         specifier: ^5.8.2
         version: 5.8.3
@@ -100,6 +103,9 @@ importers:
       socket.io-client:
         specifier: ^2.0.3
         version: 2.0.3
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@20.17.30)(typescript@5.8.3)
     devDependencies:
       '@types/node':
         specifier: ^20

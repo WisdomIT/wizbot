@@ -4,8 +4,8 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "echo 'No build needed for Cafe (ts-node runtime)'",
+    "start": "ts-node src/index.ts",
     "dev": "ts-node src/index.ts"
   },
   "keywords": [],
@@ -16,11 +16,11 @@
     "@trpc/client": "^11.0.2",
     "@wizbot/shared": "workspace:^",
     "fast-xml-parser": "^5.0.9",
-    "puppeteer": "^24.4.0"
+    "puppeteer": "^24.4.0",
+    "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
   }
 }

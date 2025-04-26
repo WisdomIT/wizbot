@@ -5,11 +5,7 @@
     "module": "commonjs",
     "target": "ES2020",
     "esModuleInterop": true,
-    "strict": true,
-    "baseUrl": ".",
-    "paths": {
-      "@wizbot/shared/*": ["../../workspaces/shared/src/*"]
-    }
+    "strict": true
   },
   "include": ["src"]
 }

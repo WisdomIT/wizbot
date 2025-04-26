@@ -4,8 +4,8 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && tsc-alias",
-    "start": "node dist/server.js",
+    "build": "echo 'No build needed for API (ts-node runtime)'",
+    "start": "ts-node src/server.ts",
     "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts"
   },
   "keywords": [],
@@ -20,6 +20,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "prisma": "^6.5.0",
+    "ts-node": "^10.9.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {

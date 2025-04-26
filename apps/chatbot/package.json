@@ -4,8 +4,8 @@
   "description": "",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "echo 'No build needed for Chatbot (ts-node runtime)'",
+    "start": "ts-node src/index.ts",
     "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts"
   },
   "keywords": [],
@@ -15,7 +15,8 @@
   "dependencies": {
     "@trpc/client": "^11.0.2",
     "@wizbot/shared": "workspace:^",
-    "socket.io-client": "^2.0.3"
+    "socket.io-client": "^2.0.3",
+    "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "@types/node": "^20",
