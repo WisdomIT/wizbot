@@ -65,6 +65,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
           break;
         case 'revoked':
           console.log('🔒 권한 해제됨:', channelId);
+          break;
         case 'subscribed':
           console.log('🔔 이벤트 구독됨:', channelId, parsedData.data.eventType);
           break;
