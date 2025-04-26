@@ -106,21 +106,29 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const functionAction = await thisFunction(ctx, {
-    ...data,
-    query: commandFind,
-    accessToken: accessToken.accessToken,
-  });
+  try {
+    const functionAction = await thisFunction(ctx, {
+      ...data,
+      query: commandFind,
+      accessToken: accessToken.accessToken,
+    });
 
-  if (!functionAction.ok) {
+    if (!functionAction.ok) {
+      return {
+        ok: false,
+        message: functionAction.message,
+      };
+    }
+
     return {
-      ok: false,
+      ok: true,
       message: functionAction.message,
     };
+  } catch (error) {
+    console.error('Error in function:', error);
+    return {
+      ok: false,
+      message: 'Function execution failed',
+    };
   }
-
-  return {
-    ok: true,
-    message: functionAction.message,
-  };
 }
