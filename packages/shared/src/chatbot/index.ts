@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
 
 import { getAccessToken } from '../lib/accessToken';

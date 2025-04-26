@@ -15,5 +15,8 @@
     "@trpc/server": "^11.0.2",
     "@types/node": "^20",
     "zod": "^3.24.2"
+  },
+  "dependencies": {
+    "chzzk": "^1.10.4"
   }
 }

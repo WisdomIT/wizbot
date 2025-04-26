@@ -1,6 +1,10 @@
+import { ChzzkClient } from 'chzzk';
+
 import chzzk from '../chzzk';
 import { FunctionCommand } from '.';
-import { splitContent } from './lib';
+import { formatTime, splitContent } from './lib';
+
+const chzzkClient = new ChzzkClient();
 
 export const functionChzzk = {
   getChzzkTitle: async (ctx, data) => {
@@ -138,4 +142,50 @@ export const functionChzzk = {
       message: `채널 공지사항이 변경되었습니다.`,
     };
   },
+  /* 
+    !! chzzk 비공식 라이브러리를 통한 조회 !!
+    TODO: 추후 공식 라이브러리로 변경
+    - chzzk 라이브러리에서 제공하는 메서드가 대체 라이브러리로 구현
+  */
+  getChzzkUptime: async (ctx, data) => {
+    const user = await ctx.prisma.user.findFirst({
+      where: {
+        id: data.userId,
+      },
+      select: {
+        channelId: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        ok: false,
+        message: '사용자를 찾을 수 없습니다.',
+      };
+    }
+
+    const { channelId } = user;
+
+    const liveDetail = await chzzkClient.live.detail(channelId);
+
+    if (!liveDetail) {
+      return {
+        ok: true,
+        message: '채널 정보를 가져오는 데 실패했습니다.',
+      };
+    }
+
+    const { openDate } = liveDetail;
+
+    const date = new Date(openDate);
+    const diff = new Date().getTime() - date.getTime();
+
+    return {
+      ok: true,
+      message: `업타임: ${formatTime(diff)}`,
+    };
+  },
+  /*
+    !! chzzk 비공식 라이브러리 여기까지 !!
+  */
 } as FunctionCommand;
