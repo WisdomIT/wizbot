@@ -31,7 +31,7 @@ function getChatRole(badges: ChzzkSessionsMessageChat['profile']['badges']) {
 }
 
 export default function connectSocket(data: ChatStatus, onDisconnect: () => void) {
-  const { userId, channelId, sessionURL } = data;
+  const { userId, channelId, sessionURL, botChannelId } = data;
 
   if (!sessionURL) {
     console.error('❌ sessionURL이 null이거나 정의되지 않았습니다.');
@@ -79,6 +79,11 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
       const { content, senderChannelId, profile } = parsedData;
       const { nickname: senderNickname, badges } = profile;
 
+      // 봇 채팅은 무시
+      if (senderChannelId === botChannelId) {
+        return;
+      }
+
       // 메시지 내용이 '!'로 시작하지 않으면 무시
       if (!content.startsWith('!')) {
         return;
@@ -103,7 +108,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
       // 메시지 전송
       const token = await trpc.user.getAccessToken.query({ userId });
       await chzzk.chat.send(token.accessToken, {
-        message: `봇) ${apiRequest.message}`,
+        message: apiRequest.message,
       });
     });
 

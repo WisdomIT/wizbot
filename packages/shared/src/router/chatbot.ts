@@ -4,6 +4,9 @@ import chatbot from '../chatbot';
 import { t } from '../trpc';
 
 export const chatbotRouter = t.router({
+  getChatbotChannelId: t.procedure.query(() => {
+    return process.env.CHZZK_BOT_CHANNEL_ID;
+  }),
   getChannels: t.procedure.query(async ({ ctx }) => {
     return ctx.prisma.user.findMany({
       select: {

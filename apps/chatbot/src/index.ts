@@ -11,6 +11,12 @@ const status: ChatStatus[] = [];
 
 async function getStatusInterval() {
   const statusRequest = await trpc.chatbot.getChannels.query();
+  const botChannelId = await trpc.chatbot.getChatbotChannelId.query();
+
+  if (!statusRequest || !botChannelId) {
+    console.error('❌ statusRequest 또는 botChannelId를 가져오는 데 실패했습니다.');
+    return;
+  }
 
   for (const channel of statusRequest) {
     let thisStatus = status.find((s) => s.channelId === channel.channelId);
@@ -32,6 +38,7 @@ async function getStatusInterval() {
           userId: channel.id,
           channelId: channel.channelId,
           sessionURL: sessionURL.content.url,
+          botChannelId,
         };
 
         status.push(tempStatus);
