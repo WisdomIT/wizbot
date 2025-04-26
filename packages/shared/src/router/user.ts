@@ -11,6 +11,9 @@ export const userRouter = t.router({
   getChzzkId: t.procedure.query(() => {
     return process.env.CHZZK_ID;
   }),
+  getChzzkRedirectUrl: t.procedure.query(() => {
+    return process.env.CHZZK_REDIRECT_URI;
+  }),
   getChzzkTokenInterlock: t.procedure
     .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {

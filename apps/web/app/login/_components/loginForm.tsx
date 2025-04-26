@@ -8,12 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
-import { getChzzkId } from '../_apis/chzzk';
+import { getChzzkId, getChzzkRedirectUrl } from '../_apis/chzzk';
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
   async function handleChzzkLogin() {
     const chzzkId = await getChzzkId();
-    window.location.href = `https://chzzk.naver.com/account-interlock?clientId=${chzzkId}&redirectUri=http://localhost:3001/login/auth&state=zxclDasdfA25`;
+    const redirectUri = await getChzzkRedirectUrl();
+    if (!chzzkId || !redirectUri) {
+      throw new Error('Chzzk ID or redirect URI is not defined');
+    }
+
+    window.location.href = `https://chzzk.naver.com/account-interlock?clientId=${chzzkId}&redirectUri=${redirectUri}&state=zxclDasdfA25`;
   }
 
   return (
