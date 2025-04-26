@@ -10,9 +10,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
-    "build": "pnpm build:api && pnpm -r run build",
-    "build:api": "pnpm --filter api start & sleep 5 && pnpm --filter api stop",
-    "build:withoutapi": "pnpm -r run build",
+    "build": "pnpm -r run build",
     "start": "pm2 start ecosystem.config.js",
     "list": "pm2 list",
     "stop": "pm2 stop ecosystem.config.js",
