@@ -110,4 +110,32 @@ export const functionChzzk = {
       message: `채널 카테고리가 변경되었습니다.`,
     };
   },
+  setChzzkNotice: async (ctx, data) => {
+    const { accessToken, content } = data;
+
+    const splittedContent = splitContent(content, 1);
+    const query = splittedContent[1];
+
+    if (query === '') {
+      return {
+        ok: true,
+        message: '공지사항 내용을 입력해주세요.',
+      };
+    }
+
+    const updateRequest = await chzzk.chat.notice(accessToken, {
+      message: query,
+    });
+    if (updateRequest.code !== 200) {
+      return {
+        ok: true,
+        message: '채널 공지사항을 변경하는 데 실패했습니다.',
+      };
+    }
+
+    return {
+      ok: true,
+      message: `채널 공지사항이 변경되었습니다.`,
+    };
+  },
 } as FunctionCommand;
