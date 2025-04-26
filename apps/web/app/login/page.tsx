@@ -1,7 +1,7 @@
-import { GalleryVerticalEnd } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import Link from 'next/link';
 
-import { LoginForm } from '@/components/login-form';
+import { LoginForm } from './_components/loginForm';
 
 export default function LoginPage() {
   return (
@@ -9,9 +9,9 @@ export default function LoginPage() {
       <div className="flex w-full max-w-sm flex-col gap-6">
         <Link href="/" className="flex items-center gap-2 self-center font-medium">
           <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
-            <GalleryVerticalEnd className="size-4" />
+            <Bot className="size-4" />
           </div>
-          Acme Inc.
+          위즈봇
         </Link>
         <LoginForm />
       </div>
