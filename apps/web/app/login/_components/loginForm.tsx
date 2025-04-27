@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,11 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
-import { getChzzkId, getChzzkRedirectUrl } from '../_apis/chzzk';
-import { toast } from 'sonner';
 import { adminLogin } from '../_apis/admin';
+import { getChzzkId, getChzzkRedirectUrl } from '../_apis/chzzk';
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
+  const [loading, setLoading] = useState(false);
+
   async function handleChzzkLogin() {
     const chzzkId = await getChzzkId();
     const redirectUri = await getChzzkRedirectUrl();
@@ -27,6 +30,10 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
     event.preventDefault();
     event.stopPropagation();
 
+    if (loading) return;
+
+    setLoading(true);
+
     const formData = new FormData(event.currentTarget);
     const email = formData.get('email') as string;
 
@@ -36,12 +43,28 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
     }
 
     try {
-      await adminLogin(email);
-      toast.success('이메일을 확인해주세요.');
+      toast.promise(adminLogin(email), {
+        loading: '로그인 중...',
+        success: (data) => {
+          if (data.ok) {
+            return '로그인 링크가 발송되었습니다. 이메일을 확인해주세요.';
+          } else {
+            return '로그인에 실패했습니다.';
+          }
+        },
+        error: (error) => {
+          if (error instanceof Error) {
+            return error.message;
+          }
+          return '로그인에 실패했습니다.';
+        },
+      });
     } catch (error) {
       if (error instanceof Error) {
         toast.error(error.message);
       }
+    } finally {
+      setLoading(false);
     }
   }
 

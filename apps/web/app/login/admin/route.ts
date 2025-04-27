@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
     const token = await signJwt({ id: check.id, role: 'admin' });
 
-    return NextResponse.redirect(new URL('/streamer', request.url), {
+    return NextResponse.redirect(new URL('/admin', request.url), {
       headers: {
         'Set-Cookie': `session-token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${
           isProduction ? '; Secure' : ''
