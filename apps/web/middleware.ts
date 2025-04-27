@@ -1,11 +1,13 @@
+/* eslint-disable no-console */
 // /middleware.ts
-import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { signJwt, verifyJwt } from './lib/jwt';
+import { NextResponse } from 'next/server';
+
+import { signJwt, verifyJwt } from './lib/jwt'; // JOSE 기반으로 변환된 버전 사용
 
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const token = request.cookies.get('session-token')?.value;
 
   if (!token) {
@@ -13,20 +15,20 @@ export function middleware(request: NextRequest) {
   }
 
   try {
-    const payload = verifyJwt(token);
+    const payload = await verifyJwt(token);
 
     const now = Math.floor(Date.now() / 1000); // 현재 시각 (초 단위)
-    const issuedAt = payload.iat;
+    const issuedAt = payload.iat ?? 0;
 
     let response = NextResponse.next();
 
     // 1일 넘었으면 토큰 재발급
-    if (issuedAt && now - issuedAt > ONE_DAY_SECONDS) {
-      const newToken = signJwt({ id: payload.id, role: payload.role });
+    if (now - issuedAt > ONE_DAY_SECONDS) {
+      const newToken = await signJwt({ id: payload.id, role: payload.role });
 
       response.cookies.set('session-token', newToken, {
         httpOnly: true,
-        secure: true,
+        secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         path: '/',
         maxAge: 60 * 60 * 24 * 7, // 7일
@@ -45,6 +47,7 @@ export function middleware(request: NextRequest) {
 
     return response;
   } catch (err) {
+    console.error('JWT verification error:', err);
     return NextResponse.redirect(new URL('/login', request.url));
   }
 }

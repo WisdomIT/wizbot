@@ -46,7 +46,7 @@ export const adminRouter = t.router({
       subject: '위즈봇 관리자 로그인',
       text: `위즈봇 관리자 로그인 링크입니다. 아래 링크를 클릭하여 로그인하세요.\n\n${
         process.env.PUBLIC_SITE_URL ?? ''
-      }/admin/login/admin?email=${email}&code=${randomCode}`,
+      }/login/admin?email=${email}&code=${randomCode}`,
     }).catch((error) => {
       // eslint-disable-next-line no-console
       console.error('Error sending email:', error);
@@ -90,7 +90,7 @@ export const adminRouter = t.router({
       }
 
       return {
-        ok: true,
+        id: adminFind.id,
       };
     }),
 });
