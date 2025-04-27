@@ -12,7 +12,7 @@ export const userRouter = t.router({
     return process.env.CHZZK_ID;
   }),
   getChzzkRedirectUrl: t.procedure.query(() => {
-    return process.env.CHZZK_REDIRECT_URI;
+    return process.env.PUBLIC_SITE_URL + '/login/auth';
   }),
   getChzzkTokenInterlock: t.procedure
     .input(z.object({ code: z.string(), state: z.string() }))
@@ -95,6 +95,7 @@ export const userRouter = t.router({
       });
 
       return {
+        userId: user.id,
         channelId,
         channelName,
         channelImageUrl,

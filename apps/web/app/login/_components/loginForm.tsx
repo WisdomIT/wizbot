@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 import { getChzzkId, getChzzkRedirectUrl } from '../_apis/chzzk';
+import { toast } from 'sonner';
+import { adminLogin } from '../_apis/admin';
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
   async function handleChzzkLogin() {
@@ -21,6 +23,28 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
     window.location.href = `https://chzzk.naver.com/account-interlock?clientId=${chzzkId}&redirectUri=${redirectUri}&state=zxclDasdfA25`;
   }
 
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get('email') as string;
+
+    if (!email) {
+      toast.warning('이메일을 입력해주세요.');
+      return;
+    }
+
+    try {
+      await adminLogin(email);
+      toast.success('이메일을 확인해주세요.');
+    } catch (error) {
+      if (error instanceof Error) {
+        toast.error(error.message);
+      }
+    }
+  }
+
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
       <Card>
@@ -29,10 +53,11 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
           <CardDescription>스트리머 대시보드</CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
+          <form onSubmit={handleSubmit}>
             <div className="grid gap-6">
               <div className="flex flex-col gap-4">
                 <Button
+                  type="button"
                   variant="outline"
                   className="w-full cursor-pointer"
                   onClick={handleChzzkLogin}
@@ -52,7 +77,13 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
               <div className="grid gap-6">
                 <div className="grid gap-3">
                   <Label htmlFor="email">이메일</Label>
-                  <Input id="email" type="email" placeholder="m@example.com" required />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="m@example.com"
+                    required
+                  />
                 </div>
                 <Button type="submit" className="w-full">
                   로그인
