@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 
+import { signJwt } from '@/lib/jwt';
+
 import { getChzzkTokenInterlock } from '../_apis/chzzk';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -14,10 +18,21 @@ export async function GET(request: Request) {
 
   try {
     const auth = await getChzzkTokenInterlock({ code, state });
-    return NextResponse.json(auth);
+
+    const { userId } = auth;
+
+    const token = signJwt({ id: userId, role: 'streamer' });
+
+    return NextResponse.redirect(new URL('/streamer', request.url), {
+      headers: {
+        'Set-Cookie': `session-token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${
+          isProduction ? '; Secure' : ''
+        }`,
+      },
+    });
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Error during authentication:', error);
-    return NextResponse.json({ message: (error as Error).message }, { status: 500 });
+    return NextResponse.redirect(new URL('/unauthorized'));
   }
 }
