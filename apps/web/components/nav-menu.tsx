@@ -14,6 +14,7 @@ import {
 export function NavMenu({
   title,
   items,
+  pathname,
 }: {
   title: string;
   items: {
@@ -21,6 +22,7 @@ export function NavMenu({
     url: string;
     icon: LucideIcon;
   }[];
+  pathname: string;
 }) {
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -28,7 +30,7 @@ export function NavMenu({
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton asChild>
+            <SidebarMenuButton asChild isActive={pathname === item.url}>
               <a href={item.url}>
                 <item.icon />
                 <span>{item.name}</span>

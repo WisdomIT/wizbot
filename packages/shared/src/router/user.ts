@@ -5,7 +5,7 @@ import { getAccessToken } from '../lib/accessToken';
 import { t } from '../trpc';
 
 export const userRouter = t.router({
-  getUser: t.procedure.query(async ({ ctx }) => {
+  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx }) => {
     return ctx.prisma.user.findFirst();
   }),
   getChzzkId: t.procedure.query(() => {
