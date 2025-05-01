@@ -123,7 +123,7 @@ model ChatbotFunctionCommand {
   permission ChatbotPermission
   command    String               @db.VarChar(20)
   function   String               @db.VarChar(20)
-  function2  String?              @db.VarChar(20)
+  option     String?              @db.VarChar(20)
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
