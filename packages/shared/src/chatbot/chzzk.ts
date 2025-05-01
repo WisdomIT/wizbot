@@ -185,6 +185,41 @@ export const functionChzzk = {
       message: `업타임: ${formatTime(diff)}`,
     };
   },
+  getChzzkViewer: async (ctx, data) => {
+    const user = await ctx.prisma.user.findFirst({
+      where: {
+        id: data.userId,
+      },
+      select: {
+        channelId: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        ok: false,
+        message: '사용자를 찾을 수 없습니다.',
+      };
+    }
+
+    const { channelId } = user;
+
+    const liveDetail = await chzzkClient.live.detail(channelId);
+
+    if (!liveDetail) {
+      return {
+        ok: true,
+        message: '채널 정보를 가져오는 데 실패했습니다.',
+      };
+    }
+
+    const { concurrentUserCount } = liveDetail;
+
+    return {
+      ok: true,
+      message: `현재 시청자 수: ${concurrentUserCount}`,
+    };
+  },
   /*
     !! chzzk 비공식 라이브러리 여기까지 !!
   */
