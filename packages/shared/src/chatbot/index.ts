@@ -37,32 +37,65 @@ export const functions = {
 export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
   const { userId, senderNickname, senderRole, content } = data;
 
-  const contentWithoutPrefix = content.slice(1);
+  const contentWithoutPrefix = content.slice(1).trim();
   const command1 = contentWithoutPrefix.split(' ')[0];
   const commandOthers = contentWithoutPrefix.split(' ').slice(1).join(' ');
 
-  const echoFind = await ctx.prisma.chatbotEchoCommand.findFirst({
+  const echoFind = await ctx.prisma.chatbotEchoCommand.findMany({
     where: {
       userId,
-      command: command1,
+      command: {
+        startsWith: command1,
+      },
     },
   });
 
-  if (echoFind) {
+  if (echoFind.length > 0) {
+    const matched = echoFind
+      .filter((cmd) => {
+        const prefix = cmd.command;
+        return (
+          contentWithoutPrefix === prefix || // 완전히 같거나
+          contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
+        );
+      })
+      .sort((a, b) => b.command.length - a.command.length)[0];
+
+    if (matched) {
+      return {
+        ok: true,
+        message: matched.response,
+      };
+    }
+  }
+
+  const functionFind = await ctx.prisma.chatbotFunctionCommand.findMany({
+    where: {
+      userId,
+      command: {
+        startsWith: command1,
+      },
+    },
+  });
+
+  if (!functionFind) {
     return {
-      ok: true,
-      message: echoFind.response,
+      ok: false,
+      message: 'Command not found',
     };
   }
 
-  const commandFind = await ctx.prisma.chatbotFunctionCommand.findFirst({
-    where: {
-      userId,
-      command: command1,
-    },
-  });
+  const matched = functionFind
+    .filter((cmd) => {
+      const prefix = cmd.command;
+      return (
+        contentWithoutPrefix === prefix || // 완전히 같거나
+        contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
+      );
+    })
+    .sort((a, b) => b.command.length - a.command.length)[0];
 
-  if (!commandFind) {
+  if (!matched) {
     return {
       ok: false,
       message: 'Command not found',
@@ -82,14 +115,14 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return ROLE_PRIORITY[senderRole] >= ROLE_PRIORITY[requiredPermission];
   }
 
-  if (!hasPermission(senderRole, commandFind.permission)) {
+  if (!hasPermission(senderRole, matched.permission)) {
     return {
       ok: true,
       message: '권한이 없습니다',
     };
   }
 
-  const thisFunction = functions[commandFind.function];
+  const thisFunction = functions[matched.function];
 
   if (!thisFunction) {
     return {
@@ -110,7 +143,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
   try {
     const functionAction = await thisFunction(ctx, {
       ...data,
-      query: commandFind,
+      query: matched,
       accessToken: accessToken.accessToken,
     });
 

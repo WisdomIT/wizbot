@@ -40,12 +40,12 @@ export const functionChzzk = {
     };
   },
   updateChzzkTitle: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const title = splittedContent[0];
 
-    if (query === '') {
+    if (title === '') {
       return {
         ok: true,
         message: '변경할 제목을 입력해주세요.',
@@ -53,7 +53,7 @@ export const functionChzzk = {
     }
 
     const updateRequest = await chzzk.live.settingUpdate(accessToken, {
-      defaultLiveTitle: query,
+      defaultLiveTitle: title,
     });
     if (updateRequest.code !== 200) {
       return {
@@ -68,19 +68,19 @@ export const functionChzzk = {
     };
   },
   updateChzzkCategory: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const category = splittedContent[0];
 
-    if (query === '') {
+    if (category === '') {
       return {
         ok: true,
         message: '변경할 카테고리를 입력해주세요.',
       };
     }
 
-    const getCategory = await chzzk.category.search({ query });
+    const getCategory = await chzzk.category.search({ query: category });
     if (getCategory.code !== 200) {
       return {
         ok: true,
@@ -115,12 +115,12 @@ export const functionChzzk = {
     };
   },
   setChzzkNotice: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const notice = splittedContent[0];
 
-    if (query === '') {
+    if (notice === '') {
       return {
         ok: true,
         message: '공지사항 내용을 입력해주세요.',
@@ -128,7 +128,7 @@ export const functionChzzk = {
     }
 
     const updateRequest = await chzzk.chat.notice(accessToken, {
-      message: query,
+      message: notice,
     });
     if (updateRequest.code !== 200) {
       return {

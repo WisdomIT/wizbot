@@ -4,11 +4,11 @@ import { splitContent } from './lib';
 
 export const functionCommand = {
   createCommandEcho: async (ctx, data) => {
-    const { content } = data;
+    const { content, query } = data;
 
-    const splittedContent = splitContent(content, 2);
-    const commandName = splittedContent[1];
-    const commandResponse = splittedContent[2];
+    const splittedContent = splitContent(content, query.command, 2);
+    const commandName = splittedContent[0];
+    const commandResponse = splittedContent[1];
 
     if (commandName === '') {
       return {
@@ -59,10 +59,10 @@ export const functionCommand = {
     };
   },
   deleteCommandEcho: async (ctx, data) => {
-    const { content } = data;
+    const { content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const commandName = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const commandName = splittedContent[0];
 
     const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
       where: {
@@ -90,11 +90,11 @@ export const functionCommand = {
     };
   },
   updateCommandEcho: async (ctx, data) => {
-    const { content } = data;
+    const { content, query } = data;
 
-    const splittedContent = splitContent(content, 2);
-    const commandName = splittedContent[1];
-    const commandResponse = splittedContent[2];
+    const splittedContent = splitContent(content, query.command, 2);
+    const commandName = splittedContent[0];
+    const commandResponse = splittedContent[1];
 
     if (commandName === '') {
       return {
