@@ -11,7 +11,7 @@ export const command = {
     usage: (command: string) => (
       <>
         !{command} <Badge variant="outline">명령어 이름</Badge>{' '}
-        <Badge variant="secondary">응답</Badge>
+        <Badge variant="outline">응답</Badge>
       </>
     ),
     usageString: (command: string) => `!${command} <명령어 이름> <응답>`,
@@ -36,7 +36,7 @@ export const command = {
     usage: (command: string) => (
       <>
         !{command} <Badge variant="outline">명령어 이름</Badge>{' '}
-        <Badge variant="secondary">응답</Badge>
+        <Badge variant="outline">응답</Badge>
       </>
     ),
     usageString: (command: string) => `!${command} <명령어 이름> <응답>`,
