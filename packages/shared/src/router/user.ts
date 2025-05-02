@@ -3,6 +3,7 @@ import { z } from 'zod';
 import chzzk from '../chzzk';
 import { getAccessToken } from '../lib/accessToken';
 import { t } from '../trpc';
+import { getChatbotDatabaseInitial } from '../chatbot';
 
 export const userRouter = t.router({
   getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx }) => {
@@ -96,6 +97,24 @@ export const userRouter = t.router({
           expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
         },
       });
+
+      //functionCommand에 데이터가 하나도 없다면 기본값 세팅 (첫 로그인 시)
+      const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
+        where: {
+          userId: user.id,
+        },
+      });
+
+      const { initialFunction, initialEcho } = getChatbotDatabaseInitial(user.id);
+
+      if (!findCommand) {
+        await ctx.prisma.chatbotFunctionCommand.createMany({
+          data: initialFunction,
+        });
+        await ctx.prisma.chatbotEchoCommand.createMany({
+          data: initialEcho,
+        });
+      }
 
       return {
         userId: user.id,

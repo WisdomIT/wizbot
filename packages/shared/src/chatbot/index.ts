@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
+import { ChatbotEchoCommand, ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
 
 import { getAccessToken } from '../lib/accessToken';
 import { Context } from '../trpc';
@@ -165,4 +165,89 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
       message: 'Function execution failed',
     };
   }
+}
+
+interface ChatbotDatabaseInitial {
+  initialFunction: ChatbotFunctionCommand[];
+  initialEcho: ChatbotEchoCommand[];
+}
+
+export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitial {
+  const initialFunction = [
+    {
+      userId: userId,
+      type: 'WIZBOT_CONFIG',
+      permission: 'MANAGER',
+      command: '추가',
+      function: 'createCommandEcho',
+    },
+    {
+      userId: userId,
+      type: 'WIZBOT_CONFIG',
+      permission: 'MANAGER',
+      command: '삭제',
+      function: 'deleteCommandEcho',
+    },
+    {
+      userId: userId,
+      type: 'WIZBOT_CONFIG',
+      permission: 'MANAGER',
+      command: '수정',
+      function: 'updateCommandEcho',
+    },
+    {
+      userId: userId,
+      type: 'API_QUERY',
+      permission: 'VIEWER',
+      command: '방제',
+      function: 'getChzzkTitle',
+    },
+    {
+      userId: userId,
+      type: 'API_QUERY',
+      permission: 'VIEWER',
+      command: '카테고리',
+      function: 'getChzzkCategory',
+    },
+    {
+      userId: userId,
+      type: 'API_QUERY',
+      permission: 'VIEWER',
+      command: '업타임',
+      function: 'getChzzkUptime',
+    },
+    {
+      userId: userId,
+      type: 'API_CONFIG',
+      permission: 'MANAGER',
+      command: '방제 수정',
+      function: 'updateChzzkTitle',
+    },
+    {
+      userId: userId,
+      type: 'API_CONFIG',
+      permission: 'MANAGER',
+      command: '카테고리 수정',
+      function: 'updateChzzkCategory',
+    },
+    {
+      userId: userId,
+      type: 'API_CONFIG',
+      permission: 'MANAGER',
+      command: '공지',
+      function: 'setChzzkNotice',
+    },
+  ] as ChatbotFunctionCommand[];
+  const initialEcho = [
+    {
+      userId: userId,
+      command: '테스트',
+      response: '챗봇 명령어 테스트입니다',
+    },
+  ] as ChatbotEchoCommand[];
+
+  return {
+    initialFunction,
+    initialEcho,
+  };
 }
