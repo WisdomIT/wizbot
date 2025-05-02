@@ -6,7 +6,6 @@ export const chzzk = {
   getChzzkTitle: {
     name: '방송 제목 조회',
     type: 'API_QUERY',
-    option: null,
     description: <>방송 제목을 조회합니다.</>,
     descriptionShort: '방송 제목을 조회합니다.',
     usage: (command: string) => <>!{command}</>,
@@ -15,7 +14,6 @@ export const chzzk = {
   getChzzkCategory: {
     name: '방송 카테고리 조회',
     type: 'API_QUERY',
-    option: null,
     description: <>방송 카테고리를 조회합니다.</>,
     descriptionShort: '방송 카테고리를 조회합니다.',
     usage: (command: string) => <>!{command}</>,
@@ -24,12 +22,11 @@ export const chzzk = {
   updateChzzkTitle: {
     name: '방송 제목 수정',
     type: 'API_CONFIG',
-    option: null,
     description: <>방송 제목을 수정합니다.</>,
     descriptionShort: '방송 제목을 수정합니다.',
     usage: (command: string) => (
       <>
-        !{command} <Badge variant="secondary">제목</Badge>
+        !{command} <Badge variant="outline">제목</Badge>
       </>
     ),
     usageString: (command: string) => `!${command} <제목>`,
@@ -37,12 +34,11 @@ export const chzzk = {
   updateChzzkCategory: {
     name: '방송 카테고리 수정',
     type: 'API_CONFIG',
-    option: null,
     description: <>방송 카테고리를 수정합니다.</>,
     descriptionShort: '방송 카테고리를 수정합니다.',
     usage: (command: string) => (
       <>
-        !{command} <Badge variant="secondary">카테고리</Badge>
+        !{command} <Badge variant="outline">카테고리</Badge>
       </>
     ),
     usageString: (command: string) => `!${command} <카테고리>`,
@@ -50,12 +46,11 @@ export const chzzk = {
   setChzzkNotice: {
     name: '방송 공지 설정',
     type: 'API_CONFIG',
-    option: null,
     description: <>방송 공지를 설정합니다.</>,
     descriptionShort: '방송 공지를 설정합니다.',
     usage: (command: string) => (
       <>
-        !{command} <Badge variant="secondary">공지</Badge>
+        !{command} <Badge variant="outline">공지</Badge>
       </>
     ),
     usageString: (command: string) => `!${command} <공지>`,
@@ -63,7 +58,6 @@ export const chzzk = {
   getChzzkUptime: {
     name: '방송 시간 조회',
     type: 'API_QUERY',
-    option: null,
     description: <>방송 시간을 조회합니다.</>,
     descriptionShort: '방송 시간을 조회합니다.',
     usage: (command: string) => <>!{command}</>,
@@ -72,7 +66,6 @@ export const chzzk = {
   getChzzkViewer: {
     name: '방송 시청자 수 조회',
     type: 'API_QUERY',
-    option: null,
     description: <>방송 시청자 수를 조회합니다.</>,
     descriptionShort: '방송 시청자 수를 조회합니다.',
     usage: (command: string) => <>!{command}</>,

@@ -7,7 +7,8 @@ import { song } from './song';
 export interface ChatbotFunction {
   name: string;
   type: 'API_QUERY' | 'API_CONFIG' | 'WIZBOT_CONFIG';
-  option: string | null;
+  optionLabel?: string | null;
+  optionInput?: (data: any) => { type: 'text' } | { type: 'select'; options: string[] };
   description: JSX.Element;
   descriptionShort: string;
   usage: (command: string, option?: string) => JSX.Element;
