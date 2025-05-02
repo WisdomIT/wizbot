@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 
-export default function RedirectPage() {
+function RedirectPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -23,5 +23,13 @@ export default function RedirectPage() {
     <div>
       <p>Redirecting...</p>
     </div>
+  );
+}
+
+export default function SuspensePage() {
+  return (
+    <Suspense fallback={<div>Redirecting...</div>}>
+      <RedirectPage />;
+    </Suspense>
   );
 }
