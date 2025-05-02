@@ -3,15 +3,17 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { getPublicSiteUrl } from './app/login/_apis/chzzk';
 import { signJwt, verifyJwt } from './lib/jwt'; // JOSE 기반으로 변환된 버전 사용
 
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 
 export async function middleware(request: NextRequest) {
   const token = request.cookies.get('session-token')?.value;
+  const publicSiteUrl = await getPublicSiteUrl();
 
   if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(`${publicSiteUrl}/login`);
   }
 
   try {
@@ -38,17 +40,17 @@ export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     if (pathname.startsWith('/admin') && payload.role !== 'admin') {
-      return NextResponse.redirect(new URL('/unauthorized', request.url));
+      return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
     }
 
     if (pathname.startsWith('/streamer') && payload.role !== 'streamer') {
-      return NextResponse.redirect(new URL('/unauthorized', request.url));
+      return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
     }
 
     return response;
   } catch (err) {
     console.error('JWT verification error:', err);
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(`${publicSiteUrl}/login`);
   }
 }
 

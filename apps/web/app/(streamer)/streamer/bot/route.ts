@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
-export function GET(request: Request) {
-  return NextResponse.redirect(new URL('/streamer/bot/command', request.url));
+import { getPublicSiteUrl } from '@/app/login/_apis/chzzk';
+
+export async function GET(request: Request) {
+  const publicSiteUrl = await getPublicSiteUrl();
+  return NextResponse.redirect(`${publicSiteUrl}/streamer/bot/command`);
 }

@@ -16,13 +16,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'Missing code or state' }, { status: 400 });
   }
 
+  const publicSiteUrl = await getPublicSiteUrl();
   try {
     const auth = await getChzzkTokenInterlock({ code, state });
 
     const { userId } = auth;
 
     const token = await signJwt({ id: userId, role: 'streamer' });
-    const publicSiteUrl = getPublicSiteUrl();
 
     return NextResponse.redirect(`${publicSiteUrl}/login/redirect?to=/streamer`, {
       headers: {
@@ -34,6 +34,6 @@ export async function GET(request: Request) {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Error during authentication:', error);
-    return NextResponse.redirect(new URL('/unauthorized', request.url));
+    return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
   }
 }
