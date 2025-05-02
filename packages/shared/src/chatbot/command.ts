@@ -45,6 +45,19 @@ export const functionCommand = {
       };
     }
 
+    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
+      where: {
+        userId: data.userId,
+        command: commandName,
+      },
+    });
+    if (findCommand2) {
+      return {
+        ok: true,
+        message: '이미 존재하는 명령어입니다.',
+      };
+    }
+
     await ctx.prisma.chatbotEchoCommand.create({
       data: {
         userId: data.userId,
@@ -63,6 +76,19 @@ export const functionCommand = {
 
     const splittedContent = splitContent(content, query.command, 1);
     const commandName = splittedContent[0];
+
+    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
+      where: {
+        userId: data.userId,
+        command: commandName,
+      },
+    });
+    if (findCommand2) {
+      return {
+        ok: true,
+        message: 'function 명령어는 삭제할 수 없습니다. 사이트를 통해 삭제해주세요.',
+      };
+    }
 
     const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
       where: {
@@ -114,6 +140,19 @@ export const functionCommand = {
       return {
         ok: true,
         message: '봇이 응답할 메시지를 함께 입력해주세요.',
+      };
+    }
+
+    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
+      where: {
+        userId: data.userId,
+        command: commandName,
+      },
+    });
+    if (findCommand2) {
+      return {
+        ok: true,
+        message: 'function 명령어는 수정할 수 없습니다. 사이트를 통해 수정해주세요.',
       };
     }
 
