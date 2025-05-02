@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { signJwt } from '@/lib/jwt';
 
-import { getChzzkTokenInterlock } from '../_apis/chzzk';
+import { getChzzkTokenInterlock, getPublicSiteUrl } from '../_apis/chzzk';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -22,8 +22,9 @@ export async function GET(request: Request) {
     const { userId } = auth;
 
     const token = await signJwt({ id: userId, role: 'streamer' });
+    const publicSiteUrl = getPublicSiteUrl();
 
-    return NextResponse.redirect(new URL('/login/redirect?to=/streamer', request.url), {
+    return NextResponse.redirect(`${publicSiteUrl}/login/redirect?to=/streamer`, {
       headers: {
         'Set-Cookie': `session-token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${
           isProduction ? '; Secure' : ''

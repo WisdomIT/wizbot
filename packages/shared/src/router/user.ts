@@ -14,6 +14,9 @@ export const userRouter = t.router({
   getChzzkRedirectUrl: t.procedure.query(() => {
     return process.env.PUBLIC_SITE_URL + '/login/auth';
   }),
+  getPublicSiteUrl: t.procedure.query(() => {
+    return process.env.PUBLIC_SITE_URL;
+  }),
   getChzzkTokenInterlock: t.procedure
     .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {
