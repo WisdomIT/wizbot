@@ -35,7 +35,7 @@ export const columns: ColumnDef<Command>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           명령어
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="h-4 w-4" />
         </Button>
       );
     },
@@ -53,7 +53,7 @@ export const columns: ColumnDef<Command>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           타입
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="h-4 w-4" />
         </Button>
       );
     },
@@ -85,7 +85,7 @@ export const columns: ColumnDef<Command>[] = [
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           권한
-          <ArrowUpDown className="ml-2 h-4 w-4" />
+          <ArrowUpDown className="h-4 w-4" />
         </Button>
       );
     },
