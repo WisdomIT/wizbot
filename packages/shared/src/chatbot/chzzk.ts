@@ -184,8 +184,7 @@ export const functionChzzk = {
       };
     }
 
-    const date = new Date(openDate);
-    const diff = new Date().getTime() - date.getTime();
+    const diff = new Date().getTime() - new Date(openDate).getTime();
 
     return {
       ok: true,

@@ -36,17 +36,14 @@ export function splitContent(content: string, command: string, slice: number): s
 }
 
 export function formatDuration(ms: number): string {
-  if (typeof ms !== 'number') {
-    throw new Error('입력은 밀리초 숫자여야 합니다.');
-  }
+  const totalSeconds = Math.abs(Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
 
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
-
-  const hoursString = hours < 10 ? '0' + hours : hours.toString();
   const minutesString = minutes < 10 ? '0' + minutes : minutes.toString();
   const secondsString = seconds < 10 ? '0' + seconds : seconds.toString();
+  const hoursString = hours < 10 ? '0' + hours : hours.toString();
 
   if (hours === 0) {
     return `${minutesString}분 ${secondsString}초`;
