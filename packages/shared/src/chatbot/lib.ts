@@ -35,13 +35,15 @@ export function splitContent(content: string, command: string, slice: number): s
   return [...head, tail];
 }
 
-export function formatTime(milliseconds: number): string {
-  // 시간, 분, 초 계산
-  let hours = Math.floor(milliseconds / (1000 * 60 * 60));
-  let minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
-  let seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+export function formatDuration(ms: number): string {
+  if (typeof ms !== 'number') {
+    throw new Error('입력은 밀리초 숫자여야 합니다.');
+  }
 
-  // 한 자리 숫자에 '0' 추가
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+
   const hoursString = hours < 10 ? '0' + hours : hours.toString();
   const minutesString = minutes < 10 ? '0' + minutes : minutes.toString();
   const secondsString = seconds < 10 ? '0' + seconds : seconds.toString();

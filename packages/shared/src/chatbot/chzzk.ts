@@ -2,7 +2,7 @@ import { ChzzkClient } from 'chzzk';
 
 import chzzk from '../chzzk';
 import { FunctionCommand } from '.';
-import { formatTime, splitContent } from './lib';
+import { formatDuration, splitContent } from './lib';
 
 const chzzkClient = new ChzzkClient();
 
@@ -175,14 +175,21 @@ export const functionChzzk = {
       };
     }
 
-    const { openDate } = liveDetail;
+    const { openDate, closeDate } = liveDetail;
+
+    if (closeDate) {
+      return {
+        ok: true,
+        message: `종료된 방송입니다.`,
+      };
+    }
 
     const date = new Date(openDate);
     const diff = new Date().getTime() - date.getTime();
 
     return {
       ok: true,
-      message: `업타임: ${formatTime(diff)}`,
+      message: `업타임: ${formatDuration(diff)}`,
     };
   },
   getChzzkViewer: async (ctx, data) => {
