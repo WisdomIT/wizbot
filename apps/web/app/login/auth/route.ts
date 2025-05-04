@@ -34,6 +34,9 @@ export async function GET(request: Request) {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Error during authentication:', error);
-    return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
+    if (error instanceof Error) {
+      return NextResponse.redirect(`${publicSiteUrl}/login?error=${error.message}`);
+    }
+    return NextResponse.redirect(`${publicSiteUrl}/login?error=Unknown error occurred`);
   }
 }

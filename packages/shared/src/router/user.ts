@@ -46,7 +46,9 @@ export const userRouter = t.router({
         },
       });
       if (!findMe) {
-        throw new Error('화이트리스트에 등록되지 않은 채널입니다.');
+        throw new Error(
+          '화이트리스트에 등록되지 않은 채널입니다. 하단 신청하기를 통해 신청해주세요.',
+        );
       }
 
       const channelsRequest = await chzzk.channel.channels({ channelIds: [channelId] });

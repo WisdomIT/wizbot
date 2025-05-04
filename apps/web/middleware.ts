@@ -7,13 +7,15 @@ import { getPublicSiteUrl } from './app/login/_apis/chzzk';
 import { signJwt, verifyJwt } from './lib/jwt'; // JOSE 기반으로 변환된 버전 사용
 
 const ONE_DAY_SECONDS = 60 * 60 * 24;
+const loginError = '로그인 후 이용해주세요.';
 
 export async function middleware(request: NextRequest) {
   const token = request.cookies.get('session-token')?.value;
   const publicSiteUrl = await getPublicSiteUrl();
+  const errorUrl = `${publicSiteUrl}/login?error=${loginError}`;
 
   if (!token) {
-    return NextResponse.redirect(`${publicSiteUrl}/login`);
+    return NextResponse.redirect(errorUrl);
   }
 
   try {
@@ -40,17 +42,17 @@ export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     if (pathname.startsWith('/admin') && payload.role !== 'admin') {
-      return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
+      return NextResponse.redirect(errorUrl);
     }
 
     if (pathname.startsWith('/streamer') && payload.role !== 'streamer') {
-      return NextResponse.redirect(`${publicSiteUrl}/unauthorized`);
+      return NextResponse.redirect(errorUrl);
     }
 
     return response;
   } catch (err) {
     console.error('JWT verification error:', err);
-    return NextResponse.redirect(`${publicSiteUrl}/login`);
+    return NextResponse.redirect(errorUrl);
   }
 }
 

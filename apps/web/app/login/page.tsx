@@ -1,9 +1,24 @@
+'use client';
+
 import { Bot } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
+import { toast } from 'sonner';
 
 import { LoginForm } from './_components/loginForm';
 
-export default function LoginPage() {
+function LoginPage() {
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const error = searchParams.get('error');
+
+    if (error) {
+      toast.error(`오류가 발생했습니다: ${error}`);
+    }
+  }, [searchParams]);
+
   return (
     <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
       <div className="flex w-full max-w-sm flex-col gap-6">
@@ -16,5 +31,13 @@ export default function LoginPage() {
         <LoginForm />
       </div>
     </div>
+  );
+}
+
+export default function SuspensePage() {
+  return (
+    <Suspense>
+      <LoginPage />
+    </Suspense>
   );
 }
