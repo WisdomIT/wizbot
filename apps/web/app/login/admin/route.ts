@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { signJwt } from '@/lib/jwt';
 import { trpc } from '@/src/utils/trpc';
+
 import { getPublicSiteUrl } from '../_apis/chzzk';
 
 const isProduction = process.env.NODE_ENV === 'production';

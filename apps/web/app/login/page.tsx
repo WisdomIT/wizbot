@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 import { toast } from 'sonner';
 
+import { getCurrentUser } from './_apis/user';
 import { LoginForm } from './_components/loginForm';
 
 function LoginPage() {
@@ -18,6 +19,21 @@ function LoginPage() {
       toast.error(`오류가 발생했습니다: ${error}`);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    async function getUser() {
+      const currentUser = await getCurrentUser();
+      if (currentUser) {
+        if (currentUser.role === 'admin') {
+          window.location.href = '/admin';
+        } else if (currentUser.role === 'streamer') {
+          window.location.href = '/streamer';
+        }
+      }
+    }
+
+    void getUser();
+  }, []);
 
   return (
     <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">

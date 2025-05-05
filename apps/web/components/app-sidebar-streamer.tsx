@@ -16,7 +16,7 @@ import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 
-import { getCurrentStreamer } from '@/app/(streamer)/streamer/_api/streamer';
+import { getCurrentUser } from '@/app/login/_apis/user';
 import {
   Sidebar,
   SidebarContent,
@@ -132,7 +132,12 @@ export default function AppSidebarStreamer({ children, ...props }: AppSidebarStr
 
   useEffect(() => {
     async function fetchUser() {
-      const getUserData = await getCurrentStreamer();
+      const getUserData = await getCurrentUser();
+
+      if (getUserData?.role !== 'streamer') {
+        throw new Error('Unauthorized');
+      }
+
       setUser({
         nickname: getUserData.channelName,
         id: getUserData.channelId,

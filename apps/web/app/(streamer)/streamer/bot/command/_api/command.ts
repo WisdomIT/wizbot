@@ -3,14 +3,18 @@ import { createElement } from 'react';
 import chatbotData from '@/src/chatbot';
 import { trpc } from '@/src/utils/trpc';
 
-import { getCurrentStreamer } from '../../../_api/streamer';
+import { getCurrentUser } from '../../../../../login/_apis/user';
 import { Command } from '../_components/columns';
 
 export async function fetchCommandList() {
-  const currentStreamer = await getCurrentStreamer();
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
 
   const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query({
-    userId: currentStreamer.id,
+    userId: currentUser.id,
   });
 
   const functionList = functionFind.map((item) => {
