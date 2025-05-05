@@ -1,3 +1,5 @@
+'use server';
+
 import { createElement } from 'react';
 
 import chatbotData from '@/src/chatbot';
@@ -53,4 +55,44 @@ export async function fetchCommandList() {
   })) as Command[];
 
   return [...functionList, ...echoList];
+}
+
+interface CreateCommandEcho {
+  command: string;
+  type: 'echo';
+  response: string;
+}
+
+interface CreateCommandFunction {
+  command: string;
+  type: 'function';
+  name: string;
+  permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
+  option?: string;
+}
+
+export type CreateCommand = CreateCommandEcho | CreateCommandFunction;
+
+export async function createCommand(data: CreateCommand) {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  if (data.type === 'echo') {
+    await trpc.command.createCommandEcho.mutate({
+      userId: currentUser.id,
+      command: data.command,
+      response: data.response,
+    });
+  } else {
+    await trpc.command.createCommandFunction.mutate({
+      userId: currentUser.id,
+      command: data.command,
+      permission: data.permission,
+      function: data.name,
+      option: data.option,
+    });
+  }
 }
