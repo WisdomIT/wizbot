@@ -8,7 +8,7 @@ export interface ChatbotFunction {
   name: string;
   type: 'API_QUERY' | 'API_CONFIG' | 'WIZBOT_CONFIG';
   optionLabel?: string | null;
-  optionInput?: (data: any) => { type: 'text' } | { type: 'select'; options: string[] };
+  optionInput?: (userId: number) => { type: 'text' } | { type: 'select'; options: string[] };
   description: JSX.Element;
   descriptionShort: string;
   usage: (command: string, option?: string) => JSX.Element;
