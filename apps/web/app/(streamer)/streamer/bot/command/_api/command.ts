@@ -96,3 +96,17 @@ export async function createCommand(data: CreateCommand) {
     });
   }
 }
+
+export async function deleteCommand(id: number, type: 'echo' | 'function') {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  await trpc.command.deleteCommand.mutate({
+    userId: currentUser.id,
+    id,
+    type,
+  });
+}

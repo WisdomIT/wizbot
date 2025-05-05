@@ -1,5 +1,4 @@
 import { fetchCommandList } from './_api/command';
-import { columns, Command } from './_components/columns';
 import { DataTable } from './_components/data-table';
 
 export default async function Page() {
@@ -7,7 +6,7 @@ export default async function Page() {
 
   return (
     <div>
-      <DataTable columns={columns} data={data} />
+      <DataTable data={data} />
     </div>
   );
 }

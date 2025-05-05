@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
+import { getChatbotDatabaseInitial } from '../chatbot';
 import chzzk from '../chzzk';
 import { getAccessToken } from '../lib/accessToken';
 import { t } from '../trpc';
-import { getChatbotDatabaseInitial } from '../chatbot';
 
 export const userRouter = t.router({
   getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx }) => {

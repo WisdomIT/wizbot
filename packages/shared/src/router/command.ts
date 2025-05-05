@@ -141,4 +141,42 @@ export const commandRouter = t.router({
         data: create,
       };
     }),
+  deleteCommand: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+        type: z.enum(['echo', 'function']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, id, type } = input;
+
+      if (!userId || !id || !type) {
+        return {
+          ok: false,
+          message: 'Invalid input',
+        };
+      }
+
+      if (type === 'echo') {
+        await ctx.prisma.chatbotEchoCommand.deleteMany({
+          where: {
+            userId,
+            id,
+          },
+        });
+      } else if (type === 'function') {
+        await ctx.prisma.chatbotFunctionCommand.deleteMany({
+          where: {
+            userId,
+            id,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+      };
+    }),
 });
