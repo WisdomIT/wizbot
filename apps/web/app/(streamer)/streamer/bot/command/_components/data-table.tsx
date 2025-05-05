@@ -22,6 +22,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+import NewCommand from './new';
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -89,6 +91,7 @@ export function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData
         </Table>
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
+        <NewCommand />
         <Button
           variant="outline"
           size="sm"

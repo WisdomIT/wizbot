@@ -37,7 +37,7 @@ export async function fetchCommandList() {
       type: 'function',
       usage: findCommand.usage(item.command, item.option ?? undefined),
       usageString: findCommand.usageString(item.command, item.option ?? undefined),
-      description: findCommand.description,
+      description: findCommand.descriptionShort,
       permission: item.permission,
     };
   }) as Command[];
@@ -48,7 +48,7 @@ export async function fetchCommandList() {
     type: 'echo',
     usage: createElement('span', { className: 'text-sm' }, `!${item.command}`),
     usageString: `!${item.command}`,
-    description: `반환: ${item.response}`,
+    description: `응답: ${item.response}`,
     permission: 'VIEWER',
   })) as Command[];
 
