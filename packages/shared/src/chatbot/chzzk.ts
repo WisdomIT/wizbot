@@ -223,7 +223,7 @@ export const functionChzzk = {
 
     return {
       ok: true,
-      message: `현재 시청자 수: ${concurrentUserCount}`,
+      message: `현재 시청자 수: ${concurrentUserCount}명`,
     };
   },
   /*
