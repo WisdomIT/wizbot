@@ -12,11 +12,6 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
-enum ChatbotFunctionType {
-  API_QUERY
-  API_CONFIG
-  WIZBOT_CONFIG
-}
 
 enum ChatbotPermission {
   STREAMER
@@ -119,7 +114,6 @@ model ChatbotEchoCommand {
 model ChatbotFunctionCommand {
   id         Int                  @id @default(autoincrement())
   userId     Int
-  type       ChatbotFunctionType
   permission ChatbotPermission
   command    String               @db.VarChar(20)
   function   String               @db.VarChar(20)
