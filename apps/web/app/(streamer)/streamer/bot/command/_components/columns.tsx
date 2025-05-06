@@ -97,7 +97,24 @@ export function createColumns({
         );
       },
       cell: ({ getValue }) => {
-        return <span className="text-sm">{getValue<Command['permission']>()}</span>;
+        const permission = getValue<Command['permission']>();
+        let permissionText = '';
+        switch (permission) {
+          case 'STREAMER':
+            permissionText = '스트리머';
+            break;
+          case 'MANAGER':
+            permissionText = '매니저';
+            break;
+          case 'VIEWER':
+            permissionText = '시청자';
+            break;
+          default:
+            permissionText = '알 수 없음';
+            break;
+        }
+
+        return <span className="text-sm">{permissionText}</span>;
       },
     },
     {
