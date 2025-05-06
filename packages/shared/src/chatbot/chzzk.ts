@@ -20,7 +20,7 @@ export const functionChzzk = {
     const { defaultLiveTitle } = settingRequest.content;
     return {
       ok: true,
-      message: defaultLiveTitle,
+      message: `제목: ${defaultLiveTitle}`,
     };
   },
   getChzzkCategory: async (ctx, data) => {
@@ -36,7 +36,7 @@ export const functionChzzk = {
     const { category } = settingRequest.content;
     return {
       ok: true,
-      message: category.categoryValue,
+      message: `카테고리: ${category.categoryValue}`,
     };
   },
   updateChzzkTitle: async (ctx, data) => {

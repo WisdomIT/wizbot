@@ -6,7 +6,14 @@ export const chzzk = {
   getChzzkTitle: {
     name: '방송 제목 조회',
     type: 'API_QUERY',
-    description: <>현재 방송 제목을 조회합니다.</>,
+    description: (
+      <>
+        현재 방송 제목을 조회합니다.
+        <br />
+        <br />
+        예) 제목: 안녕하세요
+      </>
+    ),
     descriptionShort: '방송 제목을 조회합니다.',
     usage: (command: string) => <>!{command}</>,
     usageString: (command: string) => `!${command}`,
@@ -14,7 +21,14 @@ export const chzzk = {
   getChzzkCategory: {
     name: '방송 카테고리 조회',
     type: 'API_QUERY',
-    description: <>현재 방송 카테고리를 조회합니다.</>,
+    description: (
+      <>
+        현재 방송 카테고리를 조회합니다.
+        <br />
+        <br />
+        예) 카테고리: talk
+      </>
+    ),
     descriptionShort: '방송 카테고리를 조회합니다.',
     usage: (command: string) => <>!{command}</>,
     usageString: (command: string) => `!${command}`,
