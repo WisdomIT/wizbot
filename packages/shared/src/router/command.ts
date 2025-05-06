@@ -87,10 +87,15 @@ export const commandRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, command, response } = input;
+      const { userId, response } = input;
+      let { command } = input;
 
       if (!userId || !command || !response) {
         throw new Error('Invalid input.');
+      }
+
+      if (command.startsWith('!')) {
+        command = command.slice(1);
       }
 
       const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
@@ -139,10 +144,15 @@ export const commandRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, command, permission, function: func, option } = input;
+      const { userId, permission, function: func, option } = input;
+      let { command } = input;
 
       if (!userId || !command || !permission || !func) {
         throw new Error('Invalid input.');
+      }
+
+      if (command.startsWith('!')) {
+        command = command.slice(1);
       }
 
       const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
@@ -236,14 +246,19 @@ export const commandRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, id, type, command, response, permission, function: func, option } = input;
+      const { userId, id, type, response, permission, function: func, option } = input;
+      let { command } = input;
 
-      if (!userId || !id || !type) {
+      if (!userId || !id || !type || !command) {
         throw new Error('Invalid input.');
       }
 
+      if (command.startsWith('!')) {
+        command = command.slice(1);
+      }
+
       if (type === 'echo') {
-        if (!command || !response) {
+        if (!response) {
           throw new Error('Invalid input.');
         }
 
@@ -278,7 +293,7 @@ export const commandRouter = t.router({
           },
         });
       } else if (type === 'function') {
-        if (!command || !permission || !func) {
+        if (!permission || !func) {
           throw new Error('Invalid input.');
         }
 

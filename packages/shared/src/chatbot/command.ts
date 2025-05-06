@@ -7,7 +7,10 @@ export const functionCommand = {
     const { content, query } = data;
 
     const splittedContent = splitContent(content, query.command, 2);
-    const commandName = splittedContent[0];
+    let commandName = splittedContent[0];
+    if (commandName.startsWith('!')) {
+      commandName = commandName.slice(1);
+    }
     const commandResponse = splittedContent[1];
 
     if (commandName === '') {
@@ -75,7 +78,10 @@ export const functionCommand = {
     const { content, query } = data;
 
     const splittedContent = splitContent(content, query.command, 1);
-    const commandName = splittedContent[0];
+    let commandName = splittedContent[0];
+    if (commandName.startsWith('!')) {
+      commandName = commandName.slice(1);
+    }
 
     const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
       where: {
@@ -119,7 +125,10 @@ export const functionCommand = {
     const { content, query } = data;
 
     const splittedContent = splitContent(content, query.command, 2);
-    const commandName = splittedContent[0];
+    let commandName = splittedContent[0];
+    if (commandName.startsWith('!')) {
+      commandName = commandName.slice(1);
+    }
     const commandResponse = splittedContent[1];
 
     if (commandName === '') {
