@@ -57,6 +57,46 @@ export async function fetchCommandList() {
   return [...functionList, ...echoList];
 }
 
+export async function fetchCommandListById(id: number, type: 'echo' | 'function') {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  const findCommand = await trpc.command.getCommandById.query({
+    userId: currentUser.id,
+    id,
+    type,
+  });
+
+  if (!findCommand) {
+    throw new Error('Command not found');
+  }
+
+  if (type === 'echo' && findCommand.type === 'echo') {
+    return {
+      id: findCommand.id,
+      command: findCommand.command,
+      type: 'echo',
+      response: findCommand.response,
+    } as CreateCommandEcho;
+  }
+
+  if (type === 'function' && findCommand.type === 'function') {
+    return {
+      id: findCommand.id,
+      command: findCommand.command,
+      type: 'function',
+      function: findCommand.function,
+      permission: findCommand.permission,
+      option: findCommand.option,
+    } as CreateCommandFunction;
+  }
+
+  throw new Error('Command not found');
+}
+
 interface CreateCommandEcho {
   command: string;
   type: 'echo';
@@ -66,7 +106,7 @@ interface CreateCommandEcho {
 interface CreateCommandFunction {
   command: string;
   type: 'function';
-  name: string;
+  function: string;
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
   option?: string;
 }
@@ -91,7 +131,7 @@ export async function createCommand(data: CreateCommand) {
       userId: currentUser.id,
       command: data.command,
       permission: data.permission,
-      function: data.name,
+      function: data.function,
       option: data.option,
     });
   }
@@ -109,4 +149,32 @@ export async function deleteCommand(id: number, type: 'echo' | 'function') {
     id,
     type,
   });
+}
+
+export async function updateCommand(data: CreateCommand & { id: number }) {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  if (data.type === 'echo') {
+    await trpc.command.updateCommand.mutate({
+      type: 'echo',
+      userId: currentUser.id,
+      id: data.id,
+      command: data.command,
+      response: data.response,
+    });
+  } else {
+    await trpc.command.updateCommand.mutate({
+      type: 'function',
+      userId: currentUser.id,
+      id: data.id,
+      command: data.command,
+      permission: data.permission,
+      function: data.function,
+      option: data.option,
+    });
+  }
 }

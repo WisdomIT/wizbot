@@ -28,6 +28,7 @@ import {
 import { Command, createColumns } from './columns';
 import DeleteCommand from './delete';
 import NewCommand from './new';
+import UpdateCommand from './update';
 
 interface DataTableProps {
   data: Command[];
@@ -41,9 +42,13 @@ export function DataTable({ data }: DataTableProps) {
     pageSize: 20,
   });
 
+  const [updateTarget, setUpdateTarget] = useState<Command | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Command | null>(null);
 
-  const columns: ColumnDef<Command>[] = useMemo(() => createColumns(setDeleteTarget), []);
+  const columns: ColumnDef<Command>[] = useMemo(
+    () => createColumns({ onUpdate: setUpdateTarget, onDelete: setDeleteTarget }),
+    [],
+  );
 
   const table = useReactTable({
     data,
@@ -140,6 +145,7 @@ export function DataTable({ data }: DataTableProps) {
         </div>
       </div>
       <DeleteCommand command={deleteTarget} setDeleteTarget={setDeleteTarget} />
+      <UpdateCommand command={updateTarget} setUpdateTarget={setUpdateTarget} />
     </>
   );
 }

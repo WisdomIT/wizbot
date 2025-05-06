@@ -27,9 +27,9 @@ import chatbotData from '@/src/chatbot';
 
 import { CreateCommand, createCommand } from '../_api/command';
 
-interface FunctionArgs {
+export interface FunctionArgs {
   type: ChatbotFunction['type'];
-  name: string;
+  func: string;
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
   option?: string;
 }
@@ -41,7 +41,7 @@ export default function NewCommand() {
   const [echo, setEcho] = useState('');
   const [functionArgs, setFunctionArgs] = useState<FunctionArgs>({
     type: 'API_QUERY',
-    name: 'getChzzkTitle',
+    func: 'getChzzkTitle',
     permission: 'STREAMER',
   });
 
@@ -59,7 +59,7 @@ export default function NewCommand() {
       data = {
         command,
         type: 'function',
-        name: functionArgs.name,
+        function: functionArgs.func,
         permission: functionArgs.permission,
         option: functionArgs.option,
       };
@@ -74,7 +74,7 @@ export default function NewCommand() {
         setEcho('');
         setFunctionArgs({
           type: 'API_QUERY',
-          name: 'getChzzkTitle',
+          func: 'getChzzkTitle',
           permission: 'STREAMER',
         });
 
@@ -150,7 +150,7 @@ export default function NewCommand() {
   );
 }
 
-function InputsEcho({
+export function InputsEcho({
   echo,
   setEcho,
 }: {
@@ -174,7 +174,7 @@ function InputsEcho({
   );
 }
 
-function InputsFunction({
+export function InputsFunction({
   functionArgs,
   setFunctionArgs,
 }: {
@@ -189,7 +189,7 @@ function InputsFunction({
     return acc;
   }, [] as { key: string; value: ChatbotFunction }[]);
 
-  const selectedCommand = chatbotData[functionArgs.name];
+  const selectedCommand = chatbotData[functionArgs.func];
 
   return (
     <>
@@ -203,7 +203,7 @@ function InputsFunction({
             setFunctionArgs((prev) => ({
               ...prev,
               type: value as FunctionArgs['type'],
-              name: '',
+              func: '',
             }));
           }}
         >
@@ -222,11 +222,11 @@ function InputsFunction({
           기능
         </Label>
         <Select
-          value={functionArgs.name}
+          value={functionArgs.func}
           onValueChange={(value) => {
             setFunctionArgs((prev) => ({
               ...prev,
-              name: value,
+              func: value,
             }));
           }}
         >
@@ -242,11 +242,11 @@ function InputsFunction({
           </SelectContent>
         </Select>
       </div>
-      {functionArgs.name !== '' && selectedCommand ? (
+      {functionArgs.func !== '' && selectedCommand ? (
         <Alert>
           <Terminal className="h-4 w-4" />
-          <AlertTitle>{chatbotData[functionArgs.name].name}</AlertTitle>
-          <AlertDescription>{chatbotData[functionArgs.name].description}</AlertDescription>
+          <AlertTitle>{chatbotData[functionArgs.func].name}</AlertTitle>
+          <AlertDescription>{chatbotData[functionArgs.func].description}</AlertDescription>
         </Alert>
       ) : null}
       <div className="grid grid-cols-4 items-center gap-4">

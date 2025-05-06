@@ -24,7 +24,13 @@ export interface Command {
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
 }
 
-export function createColumns(onClickDelete: (command: Command) => void): ColumnDef<Command>[] {
+export function createColumns({
+  onUpdate,
+  onDelete,
+}: {
+  onUpdate: (command: Command) => void;
+  onDelete: (command: Command) => void;
+}): ColumnDef<Command>[] {
   return [
     {
       accessorKey: 'command',
@@ -118,11 +124,17 @@ export function createColumns(onClickDelete: (command: Command) => void): Column
                   사용법 복사
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>명령어 수정</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    onUpdate(command);
+                  }}
+                >
+                  명령어 수정
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-red-500"
                   onClick={() => {
-                    onClickDelete(command);
+                    onDelete(command);
                   }}
                 >
                   명령어 삭제

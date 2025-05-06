@@ -1,3 +1,4 @@
+import { ChatbotEchoCommand, ChatbotFunctionCommand } from '@prisma/client';
 import { z } from 'zod';
 
 import { functions } from '../chatbot';
@@ -26,6 +27,57 @@ export const commandRouter = t.router({
         function: functionFind,
       };
     }),
+  getCommandById: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+        type: z.enum(['echo', 'function']),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { userId, id, type } = input;
+
+      if (!userId || !id || !type) {
+        throw new Error('Invalid input.');
+      }
+
+      if (type === 'echo') {
+        const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
+          where: {
+            userId,
+            id,
+          },
+        });
+
+        if (!findCommand) {
+          throw new Error('Command not found');
+        }
+
+        return {
+          type: 'echo' as const,
+          ...findCommand,
+        };
+      } else if (type === 'function') {
+        const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
+          where: {
+            userId,
+            id,
+          },
+        });
+
+        if (!findCommand) {
+          throw new Error('Command not found');
+        }
+
+        return {
+          type: 'function' as const,
+          ...findCommand,
+        };
+      }
+
+      throw new Error('Command not found');
+    }),
   createCommandEcho: t.procedure
     .input(
       z.object({
@@ -38,10 +90,7 @@ export const commandRouter = t.router({
       const { userId, command, response } = input;
 
       if (!userId || !command || !response) {
-        return {
-          ok: false,
-          message: 'Invalid input',
-        };
+        throw new Error('Invalid input.');
       }
 
       const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
@@ -93,10 +142,7 @@ export const commandRouter = t.router({
       const { userId, command, permission, function: func, option } = input;
 
       if (!userId || !command || !permission || !func) {
-        return {
-          ok: false,
-          message: 'Invalid input',
-        };
+        throw new Error('Invalid input.');
       }
 
       const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
@@ -153,10 +199,7 @@ export const commandRouter = t.router({
       const { userId, id, type } = input;
 
       if (!userId || !id || !type) {
-        return {
-          ok: false,
-          message: 'Invalid input',
-        };
+        throw new Error('Invalid input.');
       }
 
       if (type === 'echo') {
@@ -171,6 +214,104 @@ export const commandRouter = t.router({
           where: {
             userId,
             id,
+          },
+        });
+      }
+
+      return {
+        ok: true,
+      };
+    }),
+  updateCommand: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+        type: z.enum(['echo', 'function']),
+        command: z.string(),
+        response: z.string().optional(),
+        permission: z.enum(['STREAMER', 'MANAGER', 'VIEWER']).optional(),
+        function: z.string().optional(),
+        option: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, id, type, command, response, permission, function: func, option } = input;
+
+      if (!userId || !id || !type) {
+        throw new Error('Invalid input.');
+      }
+
+      if (type === 'echo') {
+        if (!command || !response) {
+          throw new Error('Invalid input.');
+        }
+
+        const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
+          where: {
+            userId,
+            id,
+          },
+        });
+        if (!findCommand) {
+          throw new Error('Command not found');
+        }
+
+        const findCommand2 = await ctx.prisma.chatbotEchoCommand.findFirst({
+          where: {
+            userId,
+            command,
+          },
+        });
+        if (findCommand2 && findCommand2.id !== id) {
+          throw new Error('이미 존재하는 명령어입니다.');
+        }
+
+        await ctx.prisma.chatbotEchoCommand.update({
+          where: {
+            userId,
+            id,
+          },
+          data: {
+            command,
+            response,
+          },
+        });
+      } else if (type === 'function') {
+        if (!command || !permission || !func) {
+          throw new Error('Invalid input.');
+        }
+
+        const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
+          where: {
+            userId,
+            id,
+          },
+        });
+        if (!findCommand) {
+          throw new Error('Command not found');
+        }
+
+        const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
+          where: {
+            userId,
+            command,
+          },
+        });
+        if (findCommand2 && findCommand2.id !== id) {
+          throw new Error('이미 존재하는 명령어입니다.');
+        }
+
+        await ctx.prisma.chatbotFunctionCommand.update({
+          where: {
+            userId,
+            id,
+          },
+          data: {
+            command,
+            permission,
+            function: func,
+            option,
           },
         });
       }
