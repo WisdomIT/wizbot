@@ -50,24 +50,15 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     },
   });
 
-  if (echoFind.length > 0) {
-    const matched = echoFind
-      .filter((cmd) => {
-        const prefix = cmd.command;
-        return (
-          contentWithoutPrefix === prefix || // 완전히 같거나
-          contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
-        );
-      })
-      .sort((a, b) => b.command.length - a.command.length)[0];
-
-    if (matched) {
-      return {
-        ok: true,
-        message: matched.response,
-      };
-    }
-  }
+  const matchedEcho = echoFind
+    .filter((cmd) => {
+      const prefix = cmd.command;
+      return (
+        contentWithoutPrefix === prefix || // 완전히 같거나
+        contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
+      );
+    })
+    .sort((a, b) => b.command.length - a.command.length)[0];
 
   const functionFind = await ctx.prisma.chatbotFunctionCommand.findMany({
     where: {
@@ -85,7 +76,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const matched = functionFind
+  const matchedFunction = functionFind
     .filter((cmd) => {
       const prefix = cmd.command;
       return (
@@ -95,10 +86,17 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     })
     .sort((a, b) => b.command.length - a.command.length)[0];
 
-  if (!matched) {
+  if (!matchedFunction && !matchedEcho) {
     return {
       ok: false,
       message: 'Command not found',
+    };
+  }
+
+  if (!matchedFunction || matchedEcho.command.length > matchedFunction.command.length) {
+    return {
+      ok: true,
+      message: matchedEcho.response,
     };
   }
 
@@ -115,14 +113,14 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return ROLE_PRIORITY[senderRole] >= ROLE_PRIORITY[requiredPermission];
   }
 
-  if (!hasPermission(senderRole, matched.permission)) {
+  if (!hasPermission(senderRole, matchedFunction.permission)) {
     return {
       ok: true,
       message: '권한이 없습니다',
     };
   }
 
-  const thisFunction = functions[matched.function];
+  const thisFunction = functions[matchedFunction.function];
 
   if (!thisFunction) {
     return {
@@ -143,7 +141,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
   try {
     const functionAction = await thisFunction(ctx, {
       ...data,
-      query: matched,
+      query: matchedFunction,
       accessToken: accessToken.accessToken,
     });
 
