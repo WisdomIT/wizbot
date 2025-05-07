@@ -177,9 +177,8 @@ export const commandRouter = t.router({
         throw new Error('이미 존재하는 명령어입니다.');
       }
 
-      const thisFunction = functions[func];
-      if (!thisFunction) {
-        throw new Error('존재하지 않는 기능입니다.');
+      if (!(func in functions)) {
+        throw new Error(`"${func}"은(는) functions에 존재하지 않습니다.`);
       }
 
       const create = await ctx.prisma.chatbotFunctionCommand.create({

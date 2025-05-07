@@ -193,4 +193,40 @@ export const functionCommand = {
       message: `${commandName} 명령어가 수정되었습니다.`,
     };
   },
+  updateSpecificCommandEcho: async (ctx, data) => {
+    const { content, query } = data;
+
+    const splittedContent = splitContent(content, query.command, 1);
+    let response = splittedContent[0];
+
+    const commandId = Number(query.option);
+
+    const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
+      where: {
+        userId: data.userId,
+        id: commandId,
+      },
+    });
+
+    if (!findCommand) {
+      return {
+        ok: true,
+        message: '존재하지 않는 명령어입니다.',
+      };
+    }
+
+    await ctx.prisma.chatbotEchoCommand.update({
+      where: {
+        id: findCommand.id,
+      },
+      data: {
+        response,
+      },
+    });
+
+    return {
+      ok: true,
+      message: `${findCommand.command} 명령어가 수정되었습니다.`,
+    };
+  },
 } as FunctionCommand;
