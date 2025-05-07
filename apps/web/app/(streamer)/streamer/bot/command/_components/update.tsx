@@ -22,9 +22,9 @@ import {
 } from '@/components/ui/select';
 import chatbotData from '@/src/chatbot';
 
-import { CreateCommand, fetchCommandListById, updateCommand } from '../_api/command';
+import { CreateCommand, fetchCommandById, updateCommand } from '../_api/command';
 import { Command } from './columns';
-import { FunctionArgs, InputsEcho, InputsFunction } from './new';
+import { FunctionArgs, InputsEcho, InputsFunction } from './inputs';
 
 export default function UpdateCommand({
   command: initialCommand,
@@ -46,7 +46,7 @@ export default function UpdateCommand({
     if (!initialCommand) return;
 
     async function fetchCommand(initialCommand: Command) {
-      const getCommand = await fetchCommandListById(initialCommand.id, initialCommand.type);
+      const getCommand = await fetchCommandById(initialCommand.id, initialCommand.type);
       setCommand(getCommand.command);
       setType(getCommand.type);
       setEcho(getCommand.type === 'echo' ? getCommand.response : '');

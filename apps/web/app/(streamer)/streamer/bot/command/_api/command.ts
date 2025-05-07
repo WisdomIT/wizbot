@@ -57,7 +57,7 @@ export async function fetchCommandList() {
   return [...functionList, ...echoList];
 }
 
-export async function fetchCommandListById(id: number, type: 'echo' | 'function') {
+export async function fetchCommandById(id: number, type: 'echo' | 'function') {
   const currentUser = await getCurrentUser();
 
   if (currentUser.role !== 'streamer') {
@@ -97,6 +97,40 @@ export async function fetchCommandListById(id: number, type: 'echo' | 'function'
   throw new Error('Command not found');
 }
 
+export async function getFunctionOption(selectedCommandKey: string) {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  const findCommand = chatbotData[selectedCommandKey as keyof typeof chatbotData];
+  if (!findCommand) {
+    throw new Error('Command not found');
+  }
+
+  const option = findCommand.optionInput;
+  if (!option) {
+    return null;
+  }
+
+  const optionData = await option(currentUser.id);
+
+  if (optionData.type === 'text') {
+    return {
+      type: 'text' as const,
+    };
+  }
+  if (optionData.type === 'select') {
+    return {
+      type: 'select' as const,
+      options: optionData.options,
+    };
+  }
+
+  throw new Error('Invalid option type');
+}
+
 interface CreateCommandEcho {
   command: string;
   type: 'echo';
@@ -115,6 +149,8 @@ export type CreateCommand = CreateCommandEcho | CreateCommandFunction;
 
 export async function createCommand(data: CreateCommand) {
   const currentUser = await getCurrentUser();
+
+  console.log(data);
 
   if (currentUser.role !== 'streamer') {
     throw new Error('Unauthorized');
