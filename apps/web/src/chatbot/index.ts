@@ -11,6 +11,7 @@ export interface ChatbotFunction {
   optionInput?: (
     userId: number,
   ) => Promise<{ type: 'text' } | { type: 'select'; options: { key: string; value: string }[] }>;
+  optionVerify?: (userId: number, option: string) => Promise<boolean>;
   description: JSX.Element;
   descriptionShort: string;
   usage: (command: string, option?: string) => JSX.Element;

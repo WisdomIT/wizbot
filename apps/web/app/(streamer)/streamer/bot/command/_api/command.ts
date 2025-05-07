@@ -150,8 +150,6 @@ export type CreateCommand = CreateCommandEcho | CreateCommandFunction;
 export async function createCommand(data: CreateCommand) {
   const currentUser = await getCurrentUser();
 
-  console.log(data);
-
   if (currentUser.role !== 'streamer') {
     throw new Error('Unauthorized');
   }
@@ -163,6 +161,7 @@ export async function createCommand(data: CreateCommand) {
       response: data.response,
     });
   } else {
+    //TODO: option이 정상적인 값인지 검증하는 로직 추가
     await trpc.command.createCommandFunction.mutate({
       userId: currentUser.id,
       command: data.command,
@@ -203,6 +202,7 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
       response: data.response,
     });
   } else {
+    //TODO: option이 정상적인 값인지 검증하는 로직 추가
     await trpc.command.updateCommand.mutate({
       type: 'function',
       userId: currentUser.id,

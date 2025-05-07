@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 
-import type { ChatbotData } from '.';
 import { trpc } from '../utils/trpc';
+import type { ChatbotData } from '.';
 
 export const command = {
   createCommandEcho: {
@@ -82,6 +82,15 @@ export const command = {
           value: command.id.toString(),
         })),
       };
+    },
+    optionVerify: async (userId: number, option: string) => {
+      const response = await trpc.command.getCommandList.query({
+        userId,
+      });
+
+      const echoCommands = response.echo;
+
+      return echoCommands.some((command) => command.id.toString() === option);
     },
   },
 } as ChatbotData;
