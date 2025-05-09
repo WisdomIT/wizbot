@@ -6,8 +6,12 @@ import { getAccessToken } from '../lib/accessToken';
 import { t } from '../trpc';
 
 export const userRouter = t.router({
-  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx }) => {
-    return ctx.prisma.user.findFirst();
+  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    return ctx.prisma.user.findFirst({
+      where: {
+        id: input.id,
+      },
+    });
   }),
   getChzzkId: t.procedure.query(() => {
     return process.env.CHZZK_ID;
