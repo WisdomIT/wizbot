@@ -37,6 +37,7 @@ async function getStatusInterval() {
         const tempStatus: ChatStatus = {
           userId: channel.id,
           channelId: channel.channelId,
+          channelName: channel.channelName,
           sessionURL: sessionURL.content.url,
           botChannelId,
         };

@@ -12,6 +12,7 @@ export const chatbotRouter = t.router({
       select: {
         id: true,
         channelId: true,
+        channelName: true,
       },
     });
   }),

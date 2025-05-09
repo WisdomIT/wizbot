@@ -5,6 +5,7 @@ import {
   ChzzkSessionsMessageDonation,
   ChzzkSessionsMessageSystem,
 } from '@wizbot/shared/src/chzzk/index.d';
+import chalk from 'chalk';
 import io from 'socket.io-client';
 
 import { ChatStatus } from './index.d';
@@ -31,7 +32,7 @@ function getChatRole(badges: ChzzkSessionsMessageChat['profile']['badges']) {
 }
 
 export default function connectSocket(data: ChatStatus, onDisconnect: () => void) {
-  const { userId, channelId, sessionURL, botChannelId } = data;
+  const { userId, channelId, channelName, sessionURL, botChannelId } = data;
 
   if (!sessionURL) {
     console.error('❌ sessionURL이 null이거나 정의되지 않았습니다.');
@@ -91,7 +92,13 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
 
       const senderRole = getChatRole(badges);
 
-      console.log('💬 CHAT:', senderNickname, senderChannelId, content);
+      console.log(
+        '💬 ',
+        chalk.blue(`[${channelName}]`),
+        senderRole !== 'VIEWER' ? chalk.green(senderNickname) : chalk.white(senderNickname),
+        chalk.gray(`(${senderChannelId})`),
+        content,
+      );
       const apiRequest = await trpc.chatbot.message.query({
         userId,
         senderNickname,
@@ -103,7 +110,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
         console.error('❌ API 요청 실패:', apiRequest.message);
         return;
       }
-      console.log('ㅤ🤖', apiRequest.message);
+      console.log('ㅤ🤖', chalk.blue(`[${channelName}]`), apiRequest.message);
 
       // 메시지 전송
       const token = await trpc.user.getAccessToken.query({ userId });
@@ -114,7 +121,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
 
     socket.on('DONATION', (data) => {
       const parsedData = JSON.parse(data) as ChzzkSessionsMessageDonation;
-      console.log('🎁 DONATION:', parsedData);
+      //console.log('🎁 DONATION:', parsedData);
     });
   });
 
