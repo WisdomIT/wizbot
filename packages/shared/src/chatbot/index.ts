@@ -34,69 +34,56 @@ export const functions = {
   ...functionChzzk,
 };
 
+function findExactCommandMatch<T extends { command: string }>(
+  content: string,
+  commands: T[],
+): { matched: T; args: string } | null {
+  const contentTrimmed = content.trim();
+  const sorted = [...commands].sort((a, b) => b.command.length - a.command.length);
+
+  for (const cmd of sorted) {
+    const prefix = cmd.command.trim();
+    if (
+      contentTrimmed === prefix || // 완전 일치
+      contentTrimmed.startsWith(prefix + ' ') // 명령어 + 공백으로 구분된 인수
+    ) {
+      const args = contentTrimmed.slice(prefix.length).trim();
+      return { matched: cmd, args };
+    }
+  }
+
+  return null;
+}
+
 export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
   const { userId, senderNickname, senderRole, content } = data;
 
   const contentWithoutPrefix = content.slice(1).trim();
-  const command1 = contentWithoutPrefix.split(' ')[0];
-  const commandOthers = contentWithoutPrefix.split(' ').slice(1).join(' ');
 
-  const echoFind = await ctx.prisma.chatbotEchoCommand.findMany({
-    where: {
-      userId,
-      command: {
-        startsWith: command1,
-      },
-    },
-  });
+  const echoCommands = await ctx.prisma.chatbotEchoCommand.findMany({ where: { userId } });
+  const matchedEcho = findExactCommandMatch(contentWithoutPrefix, echoCommands);
 
-  const matchedEcho = echoFind
-    .filter((cmd) => {
-      const prefix = cmd.command;
-      return (
-        contentWithoutPrefix === prefix || // 완전히 같거나
-        contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
-      );
-    })
-    .sort((a, b) => b.command.length - a.command.length)[0];
+  const functionCommands = await ctx.prisma.chatbotFunctionCommand.findMany({ where: { userId } });
+  const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);
 
-  const functionFind = await ctx.prisma.chatbotFunctionCommand.findMany({
-    where: {
-      userId,
-      command: {
-        startsWith: command1,
-      },
-    },
-  });
-
-  if (!functionFind) {
-    return {
-      ok: false,
-      message: 'Command not found',
-    };
+  if (!matchedEcho && !matchedFunction) {
+    return { ok: false, message: 'Command not found' };
   }
 
-  const matchedFunction = functionFind
-    .filter((cmd) => {
-      const prefix = cmd.command;
-      return (
-        contentWithoutPrefix === prefix || // 완전히 같거나
-        contentWithoutPrefix.startsWith(prefix + ' ') // 정확한 접두사 + 공백
-      );
-    })
-    .sort((a, b) => b.command.length - a.command.length)[0];
+  const echoLen = matchedEcho?.matched.command.length ?? 0;
+  const funcLen = matchedFunction?.matched.command.length ?? 0;
 
-  if (!matchedFunction && !matchedEcho) {
-    return {
-      ok: false,
-      message: 'Command not found',
-    };
-  }
-
-  if (!matchedFunction || matchedEcho.command.length > matchedFunction.command.length) {
+  if (!matchedFunction || echoLen > funcLen) {
     return {
       ok: true,
-      message: matchedEcho.response,
+      message: matchedEcho!.matched.response,
+    };
+  }
+
+  if (!matchedFunction) {
+    return {
+      ok: false,
+      message: 'Command not found',
     };
   }
 
@@ -113,14 +100,14 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return ROLE_PRIORITY[senderRole] >= ROLE_PRIORITY[requiredPermission];
   }
 
-  if (!hasPermission(senderRole, matchedFunction.permission)) {
+  if (!hasPermission(senderRole, matchedFunction.matched.permission)) {
     return {
       ok: true,
       message: '권한이 없습니다',
     };
   }
 
-  const thisFunction = functions[matchedFunction.function];
+  const thisFunction = functions[matchedFunction.matched.function];
 
   if (!thisFunction) {
     return {
@@ -141,7 +128,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
   try {
     const functionAction = await thisFunction(ctx, {
       ...data,
-      query: matchedFunction,
+      query: matchedFunction.matched,
       accessToken: accessToken.accessToken,
     });
 
