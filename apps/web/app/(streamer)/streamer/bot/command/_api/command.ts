@@ -161,7 +161,24 @@ export async function createCommand(data: CreateCommand) {
       response: data.response,
     });
   } else {
-    //TODO: option이 정상적인 값인지 검증하는 로직 추가
+    const findCommand = chatbotData[data.function as keyof typeof chatbotData];
+    if (!findCommand) {
+      throw new Error('Command not found');
+    }
+    const option = findCommand.optionInput;
+    if (option) {
+      const optionData = await option(currentUser.id);
+      if (optionData.type === 'text') {
+        data.option = data.option ?? '';
+      } else if (optionData.type === 'select') {
+        const selectedOption = optionData.options.find((item) => item.value === data.option);
+        if (!selectedOption) {
+          throw new Error(`${findCommand.optionLabel}을(를) 선택해주세요.`);
+        }
+        data.option = selectedOption.key;
+      }
+    }
+
     await trpc.command.createCommandFunction.mutate({
       userId: currentUser.id,
       command: data.command,
@@ -202,7 +219,24 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
       response: data.response,
     });
   } else {
-    //TODO: option이 정상적인 값인지 검증하는 로직 추가
+    const findCommand = chatbotData[data.function as keyof typeof chatbotData];
+    if (!findCommand) {
+      throw new Error('Command not found');
+    }
+    const option = findCommand.optionInput;
+    if (option) {
+      const optionData = await option(currentUser.id);
+      if (optionData.type === 'text') {
+        data.option = data.option ?? '';
+      } else if (optionData.type === 'select') {
+        const selectedOption = optionData.options.find((item) => item.value === data.option);
+        if (!selectedOption) {
+          throw new Error(`${findCommand.optionLabel}을(를) 선택해주세요.`);
+        }
+        data.option = selectedOption.key;
+      }
+    }
+
     await trpc.command.updateCommand.mutate({
       type: 'function',
       userId: currentUser.id,
