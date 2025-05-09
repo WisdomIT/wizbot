@@ -13,10 +13,17 @@ export const functionCommand = {
     }
     const commandResponse = splittedContent[1];
 
-    if (commandName === '') {
+    if (!commandName) {
       return {
         ok: true,
         message: '추가할 명령어와 응답을 입력해주세요. 예) !추가 멤버 빅헤드 마뫄 양아지',
+      };
+    }
+
+    if (!commandResponse) {
+      return {
+        ok: true,
+        message: '봇이 응답할 메시지를 함께 입력해주세요.',
       };
     }
 
@@ -24,13 +31,6 @@ export const functionCommand = {
       return {
         ok: false,
         message: '비정상적인 메시지입니다.',
-      };
-    }
-
-    if (commandResponse === '') {
-      return {
-        ok: true,
-        message: '봇이 응답할 메시지를 함께 입력해주세요.',
       };
     }
 
@@ -131,10 +131,17 @@ export const functionCommand = {
     }
     const commandResponse = splittedContent[1];
 
-    if (commandName === '') {
+    if (!commandName) {
       return {
         ok: true,
         message: '수정할 명령어와 응답을 입력해주세요. 예) !수정 멤버 빅헤드 마뫄 양아지',
+      };
+    }
+
+    if (!commandResponse) {
+      return {
+        ok: true,
+        message: '봇이 응답할 메시지를 함께 입력해주세요.',
       };
     }
 
@@ -142,13 +149,6 @@ export const functionCommand = {
       return {
         ok: false,
         message: '비정상적인 메시지입니다.',
-      };
-    }
-
-    if (commandResponse === '') {
-      return {
-        ok: true,
-        message: '봇이 응답할 메시지를 함께 입력해주세요.',
       };
     }
 
@@ -197,7 +197,14 @@ export const functionCommand = {
     const { content, query } = data;
 
     const splittedContent = splitContent(content, query.command, 1);
-    let response = splittedContent[0];
+    const response = splittedContent[0];
+
+    if (!response) {
+      return {
+        ok: true,
+        message: '봇이 응답할 메시지를 함께 입력해주세요.',
+      };
+    }
 
     const commandId = Number(query.option);
 
