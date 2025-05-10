@@ -80,8 +80,6 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
       const { content, senderChannelId, profile } = parsedData;
       const { nickname: senderNickname, badges } = profile;
 
-      console.log(data);
-
       // 봇 채팅은 무시
       if (senderChannelId === botChannelId) {
         return;

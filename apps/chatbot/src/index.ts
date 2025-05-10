@@ -71,7 +71,7 @@ async function getStatusInterval() {
           thisStatus.sessionURL = null; // 연결 실패 혹은 해제 시 sessionURL을 null로 설정
         });
       } catch (error) {
-        console.error('❌ 에러가 발생했습니다:', error);
+        console.error(`❌ 에러가 발생했습니다: ${channel.channelName}`, error);
         continue;
       }
     }
