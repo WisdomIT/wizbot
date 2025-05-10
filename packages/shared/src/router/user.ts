@@ -145,4 +145,21 @@ export const userRouter = t.router({
         accessToken: accessToken.accessToken,
       };
     }),
+  getUserSetting: t.procedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const { userId } = input;
+
+      const findSetting = await ctx.prisma.userSetting.findFirst({
+        where: {
+          userId,
+        },
+      });
+
+      if (!findSetting) {
+        throw new Error('User setting not found');
+      }
+
+      return findSetting;
+    }),
 });

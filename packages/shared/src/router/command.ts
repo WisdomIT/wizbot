@@ -334,4 +334,130 @@ export const commandRouter = t.router({
         ok: true,
       };
     }),
+  getRepeatList: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const findRepeat = await ctx.prisma.chatbotRepeat.findMany({
+        where: {
+          userId: input.userId,
+        },
+      });
+
+      return findRepeat;
+    }),
+  getRepeatById: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { userId, id } = input;
+
+      if (!userId || !id) {
+        throw new Error('Invalid input.');
+      }
+
+      const findRepeat = await ctx.prisma.chatbotRepeat.findFirst({
+        where: {
+          userId,
+          id,
+        },
+      });
+
+      if (!findRepeat) {
+        throw new Error('Repeat not found');
+      }
+
+      return findRepeat;
+    }),
+  createRepeat: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        response: z.string(),
+        interval: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, response, interval } = input;
+
+      if (!userId || !response || !interval) {
+        throw new Error('Invalid input.');
+      }
+
+      const create = await ctx.prisma.chatbotRepeat.create({
+        data: {
+          userId,
+          response,
+          interval,
+        },
+      });
+
+      return {
+        ok: true,
+        data: create,
+      };
+    }),
+  deleteRepeat: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, id } = input;
+
+      if (!userId || !id) {
+        throw new Error('Invalid input.');
+      }
+
+      await ctx.prisma.chatbotRepeat.delete({
+        where: {
+          userId,
+          id,
+        },
+      });
+
+      return {
+        ok: true,
+      };
+    }),
+  updateRepeat: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        id: z.number(),
+        response: z.string(),
+        interval: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, id, response, interval } = input;
+
+      if (!userId || !id || !response || !interval) {
+        throw new Error('Invalid input.');
+      }
+
+      await ctx.prisma.chatbotRepeat.update({
+        where: {
+          userId,
+          id,
+        },
+        data: {
+          response,
+          interval,
+        },
+      });
+
+      return {
+        ok: true,
+      };
+    }),
 });
