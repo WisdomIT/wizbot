@@ -28,12 +28,29 @@ export const chatbotRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { userId, senderNickname, senderRole, content } = input;
       if (!userId || !senderNickname || !senderRole || !content) {
-        return {
-          ok: false,
-          message: 'Invalid input',
-        };
+        throw new Error('Invalid input.');
       }
 
       return await chatbot(ctx, { userId, senderNickname, senderRole, content });
+    }),
+  repeat: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { userId } = input;
+      if (!userId) {
+        throw new Error('Invalid input.');
+      }
+
+      const findRepeat = await ctx.prisma.chatbotRepeat.findMany({
+        where: {
+          userId,
+        },
+      });
+
+      return findRepeat;
     }),
 });

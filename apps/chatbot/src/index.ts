@@ -2,7 +2,7 @@
 import chzzk from '@wizbot/shared/src/chzzk';
 
 import { ChatStatus } from './index.d';
-import connectSocket from './socket';
+import connectSocket, { updateRepeats } from './socket';
 import { trpc } from './trpc';
 
 console.log('🚀 Chatbot 서버가 실행되었습니다!');
@@ -72,3 +72,19 @@ setInterval(() => {
 setTimeout(() => {
   void getStatusInterval();
 }, 1000);
+
+function updateRepeatsInterval() {
+  for (const s of status) {
+    if (s.sessionURL) {
+      void updateRepeats(s.userId);
+    }
+  }
+}
+
+setInterval(() => {
+  void updateRepeatsInterval();
+}, 60 * 1000);
+
+setTimeout(() => {
+  void updateRepeatsInterval();
+}, 5000);
