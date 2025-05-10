@@ -1,8 +1,5 @@
 'use server';
 
-import { createElement } from 'react';
-
-import chatbotData from '@/src/chatbot';
 import { trpc } from '@/src/utils/trpc';
 
 import { getCurrentUser } from '../../../../../login/_apis/user';
@@ -129,6 +126,27 @@ export async function updateRepeat({
       id,
       response,
       interval,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(error.message);
+    }
+  }
+}
+
+export async function updateInterval(interval: number) {
+  const currentUser = await getCurrentUser();
+
+  if (currentUser.role !== 'streamer') {
+    throw new Error('Unauthorized');
+  }
+
+  try {
+    await trpc.user.updateUserSettiong.mutate({
+      userId: currentUser.id,
+      setting: {
+        chatbotDefaultRepeat: interval,
+      },
     });
   } catch (error) {
     if (error instanceof Error) {

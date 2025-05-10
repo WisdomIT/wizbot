@@ -15,7 +15,6 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -27,6 +26,7 @@ import {
 
 import { createColumns, Repeat } from './columns';
 import DeleteCommand from './delete';
+import UpdateInterval from './interval';
 import NewRepeat from './new';
 import UpdateCommand from './update';
 
@@ -71,7 +71,8 @@ export function DataTable({ data, interval }: DataTableProps) {
   return (
     <>
       <div>
-        <div className="flex items-center justify-end py-4">
+        <div className="flex items-center justify-end py-4 gap-2">
+          <UpdateInterval interval={interval} />
           <NewRepeat interval={interval} />
         </div>
         <div className="rounded-md border">

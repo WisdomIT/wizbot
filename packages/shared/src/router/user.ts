@@ -162,4 +162,39 @@ export const userRouter = t.router({
 
       return findSetting;
     }),
+  updateUserSettiong: t.procedure
+    .input(
+      z.object({
+        userId: z.number(),
+        setting: z.object({
+          songFavoriteAuto: z.number().nullable().optional(),
+          songKeyboardShortcut: z.boolean().optional(),
+          songActive: z.boolean().optional(),
+          chatbotNoticeRepeat: z.number().nullable().optional(),
+          chatbotDefaultRepeat: z.number().optional(),
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId, setting } = input;
+
+      const findSetting = await ctx.prisma.userSetting.findFirst({
+        where: {
+          userId,
+        },
+      });
+
+      if (!findSetting) {
+        throw new Error('User setting not found');
+      }
+
+      await ctx.prisma.userSetting.update({
+        where: {
+          id: findSetting.id,
+        },
+        data: {
+          ...setting,
+        },
+      });
+    }),
 });
