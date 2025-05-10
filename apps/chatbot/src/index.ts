@@ -28,10 +28,15 @@ async function getStatusInterval() {
 
   for (const channel of statusRequest) {
     let thisStatus = status.find((s) => s.channelId === channel.channelId);
-    const token = await trpc.user.getAccessToken.query({ userId: channel.id });
+    let token;
+    try {
+      token = await trpc.user.getAccessToken.query({ userId: channel.id });
+    } catch (error) {
+      console.error('❌ 토큰을 가져오는 데 실패했습니다:', error);
+    }
 
     // sessionURL이 null이거나 thisStatus가 없으면 세션 URL을 가져옴
-    if (!thisStatus?.sessionURL) {
+    if (!thisStatus?.sessionURL && token) {
       try {
         const sessionURL = await chzzk.session.auth(token.accessToken);
 
