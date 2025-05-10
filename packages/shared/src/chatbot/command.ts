@@ -16,14 +16,14 @@ export const functionCommand = {
     if (!commandName) {
       return {
         ok: true,
-        message: '추가할 명령어와 응답을 입력해주세요. 예) !추가 멤버 빅헤드 마뫄 양아지',
+        message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
       };
     }
 
     if (!commandResponse) {
       return {
         ok: true,
-        message: '봇이 응답할 메시지를 함께 입력해주세요.',
+        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${commandName} <응답>`,
       };
     }
 
@@ -134,14 +134,14 @@ export const functionCommand = {
     if (!commandName) {
       return {
         ok: true,
-        message: '수정할 명령어와 응답을 입력해주세요. 예) !수정 멤버 빅헤드 마뫄 양아지',
+        message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
       };
     }
 
     if (!commandResponse) {
       return {
         ok: true,
-        message: '봇이 응답할 메시지를 함께 입력해주세요.',
+        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${commandName} <응답>`,
       };
     }
 
@@ -202,7 +202,7 @@ export const functionCommand = {
     if (!response) {
       return {
         ok: true,
-        message: '봇이 응답할 메시지를 함께 입력해주세요.',
+        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
       };
     }
 
