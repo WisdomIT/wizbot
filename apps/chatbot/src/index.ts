@@ -10,8 +10,16 @@ console.log('🚀 Chatbot 서버가 실행되었습니다!');
 const status: ChatStatus[] = [];
 
 async function getStatusInterval() {
-  const statusRequest = await trpc.chatbot.getChannels.query();
-  const botChannelId = await trpc.chatbot.getChatbotChannelId.query();
+  let statusRequest;
+  let botChannelId;
+
+  try {
+    statusRequest = await trpc.chatbot.getChannels.query();
+    botChannelId = await trpc.chatbot.getChatbotChannelId.query();
+  } catch (error) {
+    console.error('❌ statusRequest를 가져오는 데 실패했습니다:', error);
+    return;
+  }
 
   if (!statusRequest || !botChannelId) {
     console.error('❌ statusRequest 또는 botChannelId를 가져오는 데 실패했습니다.');

@@ -134,16 +134,16 @@ export const userRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { userId } = input;
 
-      const accessToken = await getAccessToken(ctx, userId);
+      try {
+        const accessToken = await getAccessToken(ctx, userId);
 
-      if (!accessToken) {
+        // Return new access token
+        return {
+          accessToken: accessToken,
+        };
+      } catch (error) {
         throw new Error('Access token not found');
       }
-
-      // Return new access token
-      return {
-        accessToken: accessToken.accessToken,
-      };
     }),
   getUserSetting: t.procedure
     .input(z.object({ userId: z.number() }))
