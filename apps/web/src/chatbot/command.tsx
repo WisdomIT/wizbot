@@ -93,4 +93,43 @@ export const command = {
       return echoCommands.some((command) => command.id.toString() === option);
     },
   },
+  createChatbotRepeat: {
+    name: '반복 명령어 추가',
+    type: 'WIZBOT_CONFIG',
+    description: (
+      <>
+        특정 메시지를 반복하는 명령어를 추가합니다.
+        <br />
+        <br />
+        반복 주기는 {`'반복'`}메뉴의 기본 주기로 자동 설정됩니다.
+      </>
+    ),
+    descriptionShort: '특정 메시지를 반복하는 명령어를 추가합니다.',
+    usage: (command: string) => (
+      <>
+        !{command} <Badge variant="outline">반복 메시지</Badge>
+      </>
+    ),
+    usageString: (command: string) => `!${command} <반복 메시지>`,
+  },
+  deleteChatbotRepeat: {
+    name: '반복 명령어 삭제',
+    type: 'WIZBOT_CONFIG',
+    description: (
+      <>
+        특정 메시지를 반복하는 명령어를 삭제합니다.
+        <br />
+        <br />
+        옵션으로 삭제할 반복 메시지의 id 혹은 {`"all"`}을 입력하세요.
+      </>
+    ),
+    descriptionShort: '특정 메시지를 반복하는 명령어를 삭제합니다.',
+    usage: (command: string) => (
+      <>
+        !{command} <Badge variant="outline">반복메시지 id</Badge> or{' '}
+        <Badge variant="outline">all</Badge>
+      </>
+    ),
+    usageString: (command: string) => `!${command} <id> or all`,
+  },
 } as ChatbotData;

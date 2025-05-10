@@ -236,4 +236,96 @@ export const functionCommand = {
       message: `${findCommand.command} 명령어가 수정되었습니다.`,
     };
   },
+  createChatbotRepeat: async (ctx, data) => {
+    const { content, query } = data;
+
+    const splittedContent = splitContent(content, query.command, 1);
+    const commandResponse = splittedContent[0];
+
+    if (!commandResponse) {
+      return {
+        ok: true,
+        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
+      };
+    }
+
+    const findSetting = await ctx.prisma.userSetting.findFirst({
+      where: {
+        userId: data.userId,
+      },
+    });
+
+    if (!findSetting) {
+      return {
+        ok: true,
+        message: '설정이 존재하지 않습니다.',
+      };
+    }
+
+    const createRepeat = await ctx.prisma.chatbotRepeat.create({
+      data: {
+        userId: data.userId,
+        response: commandResponse,
+        interval: findSetting.chatbotDefaultRepeat,
+      },
+    });
+
+    return {
+      ok: true,
+      message: `반복 출력 메시지가 생성되었습니다. 반복:${findSetting.chatbotDefaultRepeat}초 id: ${createRepeat.id}`,
+    };
+  },
+  deleteChatbotRepeat: async (ctx, data) => {
+    const { content, query } = data;
+
+    const splittedContent = splitContent(content, query.command, 1);
+    const repeatId = splittedContent[0];
+
+    if (!repeatId) {
+      return {
+        ok: true,
+        message: `삭제할 반복 메시지의 id를 입력하거나, all 옵션을 입력해주세요. 예) !${query.command} <id> or all`,
+      };
+    }
+
+    if (repeatId === 'all') {
+      await ctx.prisma.chatbotRepeat.deleteMany({
+        where: {
+          userId: data.userId,
+        },
+      });
+
+      return {
+        ok: true,
+        message: `유저의 모든 반복 메시지가 삭제되었습니다.`,
+      };
+    }
+
+    const repeatIdNum = Number(repeatId);
+
+    const findRepeat = await ctx.prisma.chatbotRepeat.findFirst({
+      where: {
+        userId: data.userId,
+        id: repeatIdNum,
+      },
+    });
+
+    if (!findRepeat) {
+      return {
+        ok: true,
+        message: '존재하지 않는 반복 메시지입니다.',
+      };
+    }
+
+    await ctx.prisma.chatbotRepeat.delete({
+      where: {
+        id: findRepeat.id,
+      },
+    });
+
+    return {
+      ok: true,
+      message: `${findRepeat.response} 반복 메시지가 삭제되었습니다.`,
+    };
+  },
 } as FunctionCommand;
