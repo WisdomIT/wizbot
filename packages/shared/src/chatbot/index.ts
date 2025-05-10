@@ -129,7 +129,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     const functionAction = await thisFunction(ctx, {
       ...data,
       query: matchedFunction.matched,
-      accessToken: accessToken.accessToken,
+      accessToken: accessToken,
     });
 
     if (!functionAction.ok) {
