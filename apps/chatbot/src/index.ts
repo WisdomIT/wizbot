@@ -32,7 +32,7 @@ async function getStatusInterval() {
     try {
       token = await trpc.user.getAccessToken.query({ userId: channel.id });
     } catch (error) {
-      console.error('❌ 토큰을 가져오는 데 실패했습니다:', error);
+      console.error('❌ 토큰을 가져오는 데 실패했습니다:', channel.channelName);
     }
 
     // sessionURL이 null이거나 thisStatus가 없으면 세션 URL을 가져옴
