@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { renderTextWithLink } from '../../_components/utils';
 
 export interface Repeat {
   id: number;
@@ -49,7 +50,9 @@ export function createColumns({
       accessorKey: 'response',
       header: '메시지',
       cell: ({ getValue }) => {
-        return <span className="text-sm">{getValue<Repeat['response']>()}</span>;
+        return (
+          <span className="text-sm">{renderTextWithLink(getValue<Repeat['response']>())}</span>
+        );
       },
     },
     {

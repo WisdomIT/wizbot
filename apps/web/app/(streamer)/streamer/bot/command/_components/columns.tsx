@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { renderTextWithLink } from '../../_components/utils';
 
 export interface Command {
   id: number;
@@ -79,7 +80,9 @@ export function createColumns({
       accessorKey: 'description',
       header: '설명',
       cell: ({ getValue }) => {
-        return <span className="text-sm">{getValue<Command['description']>()}</span>;
+        return (
+          <span className="text-sm">{renderTextWithLink(getValue<Command['description']>())}</span>
+        );
       },
     },
     {
