@@ -162,7 +162,7 @@ export const userRouter = t.router({
 
       return findSetting;
     }),
-  updateUserSettiong: t.procedure
+  updateUserSetting: t.procedure
     .input(
       z.object({
         userId: z.number(),

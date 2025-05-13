@@ -79,7 +79,6 @@ export default function UpdateCommand({
       func: 'getChzzkTitle',
       permission: 'STREAMER',
     });
-    setUpdateTarget(null);
   }
 
   async function handleSubmit(event: React.FormEvent) {

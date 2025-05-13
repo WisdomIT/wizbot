@@ -142,7 +142,7 @@ export async function updateInterval(interval: number) {
   }
 
   try {
-    await trpc.user.updateUserSettiong.mutate({
+    await trpc.user.updateUserSetting.mutate({
       userId: currentUser.id,
       setting: {
         chatbotDefaultRepeat: interval,
