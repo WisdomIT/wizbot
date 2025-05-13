@@ -5,6 +5,7 @@ import {
   ChzzkSessionsMessageDonation,
   ChzzkSessionsMessageSystem,
 } from '@wizbot/shared/src/chzzk/index.d';
+import chalk from 'chalk';
 import io from 'socket.io-client';
 
 import { ChatStatus } from './index.d';
@@ -31,7 +32,7 @@ function getChatRole(badges: ChzzkSessionsMessageChat['profile']['badges']) {
 }
 
 export default function connectSocket(data: ChatStatus, onDisconnect: () => void) {
-  const { userId, channelId, sessionURL } = data;
+  const { userId, channelId, channelName, sessionURL, botChannelId } = data;
 
   if (!sessionURL) {
     console.error('❌ sessionURL이 null이거나 정의되지 않았습니다.');
@@ -79,6 +80,11 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
       const { content, senderChannelId, profile } = parsedData;
       const { nickname: senderNickname, badges } = profile;
 
+      // 봇 채팅은 무시
+      if (senderChannelId === botChannelId) {
+        return;
+      }
+
       // 메시지 내용이 '!'로 시작하지 않으면 무시
       if (!content.startsWith('!')) {
         return;
@@ -86,7 +92,13 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
 
       const senderRole = getChatRole(badges);
 
-      console.log('💬 CHAT:', senderNickname, senderChannelId, content);
+      console.log(
+        '💬 ',
+        chalk.blue(`[${channelName}]`),
+        senderRole !== 'VIEWER' ? chalk.green(senderNickname) : chalk.white(senderNickname),
+        chalk.gray(`(${senderChannelId})`),
+        content,
+      );
       const apiRequest = await trpc.chatbot.message.query({
         userId,
         senderNickname,
@@ -98,18 +110,18 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
         console.error('❌ API 요청 실패:', apiRequest.message);
         return;
       }
-      console.log('ㅤ🤖', apiRequest.message);
+      console.log('ㅤ🤖', chalk.blue(`[${channelName}]`), apiRequest.message);
 
       // 메시지 전송
       const token = await trpc.user.getAccessToken.query({ userId });
       await chzzk.chat.send(token.accessToken, {
-        message: `봇) ${apiRequest.message}`,
+        message: apiRequest.message,
       });
     });
 
     socket.on('DONATION', (data) => {
       const parsedData = JSON.parse(data) as ChzzkSessionsMessageDonation;
-      console.log('🎁 DONATION:', parsedData);
+      //console.log('🎁 DONATION:', parsedData);
     });
   });
 
@@ -146,4 +158,75 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
     console.error('❌ 재연결 에러:', error);
     onDisconnect();
   });
+}
+
+/* repeat 기능 */
+
+type RepeatKey = `repeat-${number}`;
+type TrackedRepeat = {
+  id: number;
+  response: string;
+  intervalSeconds: number;
+  intervalId: NodeJS.Timeout;
+};
+
+const repeatMap: Map<number, Map<RepeatKey, TrackedRepeat>> = new Map(); // userId 기준
+
+export async function updateRepeats(userId: number) {
+  const result = await trpc.chatbot.repeat.query({ userId });
+  const token = await trpc.user.getAccessToken.query({ userId });
+  const user = await trpc.user.getUser.query({ id: userId });
+
+  if (!token || !user) {
+    console.error('❌ Access token 또는 user 정보가 없습니다.');
+    return;
+  }
+
+  const currentMap = repeatMap.get(userId) ?? new Map<RepeatKey, TrackedRepeat>();
+  const nextMap = new Map<RepeatKey, TrackedRepeat>();
+
+  for (const r of result) {
+    const key: RepeatKey = `repeat-${r.id}`;
+    const prev = currentMap.get(key);
+
+    const shouldUpdate =
+      !prev || prev.response !== r.response || prev.intervalSeconds !== r.interval;
+
+    if (shouldUpdate) {
+      if (prev) clearInterval(prev.intervalId);
+
+      console.log(
+        '🔁 ',
+        chalk.blue(`[${user.channelName}]`),
+        r.response,
+        chalk.gray(`(${r.interval}s)`),
+      );
+
+      // 한번은 즉시 실행
+      await chzzk.chat.send(token.accessToken, { message: r.response });
+
+      const intervalId = setInterval(async () => {
+        await chzzk.chat.send(token.accessToken, { message: r.response });
+      }, r.interval * 1000);
+
+      nextMap.set(key, {
+        id: r.id,
+        response: r.response,
+        intervalSeconds: r.interval,
+        intervalId,
+      });
+    } else {
+      nextMap.set(key, prev); // 유지
+    }
+  }
+
+  // 삭제된 repeat 정리
+  for (const [key, prev] of currentMap.entries()) {
+    if (!nextMap.has(key)) {
+      console.log('🔁 🗑️ ', chalk.blue(`[${user.channelName}]`), prev.response);
+      clearInterval(prev.intervalId);
+    }
+  }
+
+  repeatMap.set(userId, nextMap);
 }

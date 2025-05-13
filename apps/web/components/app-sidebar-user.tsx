@@ -102,9 +102,9 @@ export function AppSidebarUser({ ...props }: React.ComponentProps<typeof Sidebar
         <NavTitle data={data.user} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMenu title="봇" items={data.bot} />
-        <NavMenu title="노래" items={data.song} />
-        <NavMenu title="링크" items={data.links} />
+        <NavMenu title="봇" items={data.bot} pathname="" />
+        <NavMenu title="노래" items={data.song} pathname="" />
+        <NavMenu title="링크" items={data.links} pathname="" />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>

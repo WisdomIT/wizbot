@@ -56,7 +56,11 @@ export function NavUser({
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                location.href = '/login/logout';
+              }}
+            >
               <LogOut />
               Log out
             </DropdownMenuItem>

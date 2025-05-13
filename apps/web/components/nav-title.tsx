@@ -15,8 +15,8 @@ export function NavTitle({
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
-          <Link href="#">
-            <div className="border border-gray-100 bg-background text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+          <Link href="/streamer">
+            <div className="border border-gray-100 bg-background text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
               <img src={data.avatar} alt={data.avatar} />
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">

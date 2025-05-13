@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
+import { ChatbotEchoCommand, ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
 
 import { getAccessToken } from '../lib/accessToken';
 import { Context } from '../trpc';
@@ -34,35 +34,53 @@ export const functions = {
   ...functionChzzk,
 };
 
+function findExactCommandMatch<T extends { command: string }>(
+  content: string,
+  commands: T[],
+): { matched: T; args: string } | null {
+  const contentTrimmed = content.trim();
+  const sorted = [...commands].sort((a, b) => b.command.length - a.command.length);
+
+  for (const cmd of sorted) {
+    const prefix = cmd.command.trim();
+    if (
+      contentTrimmed === prefix || // 완전 일치
+      contentTrimmed.startsWith(prefix + ' ') // 명령어 + 공백으로 구분된 인수
+    ) {
+      const args = contentTrimmed.slice(prefix.length).trim();
+      return { matched: cmd, args };
+    }
+  }
+
+  return null;
+}
+
 export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
   const { userId, senderNickname, senderRole, content } = data;
 
-  const contentWithoutPrefix = content.slice(1);
-  const command1 = contentWithoutPrefix.split(' ')[0];
-  const commandOthers = contentWithoutPrefix.split(' ').slice(1).join(' ');
+  const contentWithoutPrefix = content.slice(1).trim();
 
-  const echoFind = await ctx.prisma.chatbotEchoCommand.findFirst({
-    where: {
-      userId,
-      command: command1,
-    },
-  });
+  const echoCommands = await ctx.prisma.chatbotEchoCommand.findMany({ where: { userId } });
+  const matchedEcho = findExactCommandMatch(contentWithoutPrefix, echoCommands);
 
-  if (echoFind) {
+  const functionCommands = await ctx.prisma.chatbotFunctionCommand.findMany({ where: { userId } });
+  const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);
+
+  if (!matchedEcho && !matchedFunction) {
+    return { ok: false, message: 'Command not found' };
+  }
+
+  const echoLen = matchedEcho?.matched.command.length ?? 0;
+  const funcLen = matchedFunction?.matched.command.length ?? 0;
+
+  if (!matchedFunction || echoLen > funcLen) {
     return {
       ok: true,
-      message: echoFind.response,
+      message: matchedEcho!.matched.response,
     };
   }
 
-  const commandFind = await ctx.prisma.chatbotFunctionCommand.findFirst({
-    where: {
-      userId,
-      command: command1,
-    },
-  });
-
-  if (!commandFind) {
+  if (!matchedFunction) {
     return {
       ok: false,
       message: 'Command not found',
@@ -82,14 +100,14 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return ROLE_PRIORITY[senderRole] >= ROLE_PRIORITY[requiredPermission];
   }
 
-  if (!hasPermission(senderRole, commandFind.permission)) {
+  if (!hasPermission(senderRole, matchedFunction.matched.permission)) {
     return {
       ok: true,
       message: '권한이 없습니다',
     };
   }
 
-  const thisFunction = functions[commandFind.function];
+  const thisFunction = functions[matchedFunction.matched.function];
 
   if (!thisFunction) {
     return {
@@ -110,8 +128,8 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
   try {
     const functionAction = await thisFunction(ctx, {
       ...data,
-      query: commandFind,
-      accessToken: accessToken.accessToken,
+      query: matchedFunction.matched,
+      accessToken: accessToken,
     });
 
     if (!functionAction.ok) {
@@ -132,4 +150,80 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
       message: 'Function execution failed',
     };
   }
+}
+
+interface ChatbotDatabaseInitial {
+  initialFunction: ChatbotFunctionCommand[];
+  initialEcho: ChatbotEchoCommand[];
+}
+
+export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitial {
+  const initialFunction = [
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '추가',
+      function: 'createCommandEcho',
+    },
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '삭제',
+      function: 'deleteCommandEcho',
+    },
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '수정',
+      function: 'updateCommandEcho',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '방제',
+      function: 'getChzzkTitle',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '카테고리',
+      function: 'getChzzkCategory',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '업타임',
+      function: 'getChzzkUptime',
+    },
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '방제 수정',
+      function: 'updateChzzkTitle',
+    },
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '카테고리 수정',
+      function: 'updateChzzkCategory',
+    },
+    {
+      userId: userId,
+      permission: 'MANAGER',
+      command: '공지',
+      function: 'setChzzkNotice',
+    },
+  ] as ChatbotFunctionCommand[];
+  const initialEcho = [
+    {
+      userId: userId,
+      command: '테스트',
+      response: '챗봇 명령어 테스트입니다',
+    },
+  ] as ChatbotEchoCommand[];
+
+  return {
+    initialFunction,
+    initialEcho,
+  };
 }

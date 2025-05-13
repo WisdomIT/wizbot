@@ -14,9 +14,11 @@
     "@prisma/client": "^6.5.0",
     "@trpc/server": "^11.0.2",
     "@types/node": "^20",
+    "@types/nodemailer": "^6.4.17",
     "zod": "^3.24.2"
   },
   "dependencies": {
-    "chzzk": "^1.10.4"
+    "chzzk": "^1.10.4",
+    "nodemailer": "^6.10.1"
   }
 }

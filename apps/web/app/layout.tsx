@@ -3,6 +3,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 
+import { Toaster } from '@/components/ui/sonner';
+
 const suit = localFont({
   src: './SUIT-Variable.woff2',
 });
@@ -18,8 +20,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${suit.className} antialiased`}>{children}</body>
+    <html lang="ko">
+      <body className={`${suit.className} antialiased`}>
+        {children}
+        <Toaster position="top-center" richColors />
+      </body>
     </html>
   );
 }

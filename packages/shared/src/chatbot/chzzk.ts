@@ -2,7 +2,7 @@ import { ChzzkClient } from 'chzzk';
 
 import chzzk from '../chzzk';
 import { FunctionCommand } from '.';
-import { formatTime, splitContent } from './lib';
+import { formatDuration, splitContent } from './lib';
 
 const chzzkClient = new ChzzkClient();
 
@@ -20,7 +20,7 @@ export const functionChzzk = {
     const { defaultLiveTitle } = settingRequest.content;
     return {
       ok: true,
-      message: defaultLiveTitle,
+      message: `제목: ${defaultLiveTitle}`,
     };
   },
   getChzzkCategory: async (ctx, data) => {
@@ -36,16 +36,16 @@ export const functionChzzk = {
     const { category } = settingRequest.content;
     return {
       ok: true,
-      message: category.categoryValue,
+      message: `카테고리: ${category.categoryValue}`,
     };
   },
   updateChzzkTitle: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const title = splittedContent[0];
 
-    if (query === '') {
+    if (title === '') {
       return {
         ok: true,
         message: '변경할 제목을 입력해주세요.',
@@ -53,7 +53,7 @@ export const functionChzzk = {
     }
 
     const updateRequest = await chzzk.live.settingUpdate(accessToken, {
-      defaultLiveTitle: query,
+      defaultLiveTitle: title,
     });
     if (updateRequest.code !== 200) {
       return {
@@ -68,19 +68,19 @@ export const functionChzzk = {
     };
   },
   updateChzzkCategory: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const category = splittedContent[0];
 
-    if (query === '') {
+    if (category === '') {
       return {
         ok: true,
         message: '변경할 카테고리를 입력해주세요.',
       };
     }
 
-    const getCategory = await chzzk.category.search({ query });
+    const getCategory = await chzzk.category.search({ query: category });
     if (getCategory.code !== 200) {
       return {
         ok: true,
@@ -115,12 +115,12 @@ export const functionChzzk = {
     };
   },
   setChzzkNotice: async (ctx, data) => {
-    const { accessToken, content } = data;
+    const { accessToken, content, query } = data;
 
-    const splittedContent = splitContent(content, 1);
-    const query = splittedContent[1];
+    const splittedContent = splitContent(content, query.command, 1);
+    const notice = splittedContent[0];
 
-    if (query === '') {
+    if (notice === '') {
       return {
         ok: true,
         message: '공지사항 내용을 입력해주세요.',
@@ -128,7 +128,7 @@ export const functionChzzk = {
     }
 
     const updateRequest = await chzzk.chat.notice(accessToken, {
-      message: query,
+      message: notice,
     });
     if (updateRequest.code !== 200) {
       return {
@@ -175,14 +175,55 @@ export const functionChzzk = {
       };
     }
 
-    const { openDate } = liveDetail;
+    const { openDate, closeDate } = liveDetail;
 
-    const date = new Date(openDate);
-    const diff = new Date().getTime() - date.getTime();
+    if (closeDate) {
+      return {
+        ok: true,
+        message: `종료된 방송입니다.`,
+      };
+    }
+
+    const diff = new Date().getTime() - new Date(openDate).getTime();
 
     return {
       ok: true,
-      message: `업타임: ${formatTime(diff)}`,
+      message: `업타임: ${formatDuration(diff)}`,
+    };
+  },
+  getChzzkViewer: async (ctx, data) => {
+    const user = await ctx.prisma.user.findFirst({
+      where: {
+        id: data.userId,
+      },
+      select: {
+        channelId: true,
+      },
+    });
+
+    if (!user) {
+      return {
+        ok: false,
+        message: '사용자를 찾을 수 없습니다.',
+      };
+    }
+
+    const { channelId } = user;
+
+    const liveDetail = await chzzkClient.live.detail(channelId);
+
+    if (!liveDetail) {
+      return {
+        ok: true,
+        message: '채널 정보를 가져오는 데 실패했습니다.',
+      };
+    }
+
+    const { concurrentUserCount } = liveDetail;
+
+    return {
+      ok: true,
+      message: `현재 시청자 수: ${concurrentUserCount}명`,
     };
   },
   /*
