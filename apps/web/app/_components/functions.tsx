@@ -36,12 +36,12 @@ const functionsList: FunctionsProps[] = [
 
 export default function Functions() {
   return (
-    <section id="benefits" className="container py-24 sm:py-32 mx-auto">
+    <section id="benefits" className="container py-24 sm:py-32 mx-auto px-4 md:px-0">
       <div className="grid lg:grid-cols-2 place-items-center lg:gap-24">
         <div className="w-full">
-          <h2 className="text-lg text-blue-500 mb-2 tracking-wider font-black">Functions</h2>
+          <h2 className="md:text-lg text-blue-500 mb-2 tracking-wider font-black">Functions</h2>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">다양한 기능</h2>
-          <p className="text-xl text-muted-foreground mb-8">
+          <p className="md:text-xl text-muted-foreground mb-8">
             위즈봇은 단순 채팅봇을 넘어 다양한 기능을 제공합니다
           </p>
         </div>
