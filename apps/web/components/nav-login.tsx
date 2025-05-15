@@ -3,21 +3,14 @@
 import { LogIn } from 'lucide-react';
 import Link from 'next/link';
 
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 
 export function NavLogin() {
-  const { isMobile } = useSidebar();
-
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
-          <Link href="#">
+          <Link href="/login">
             <div className="border border-gray-100 bg-background text-sidebar-primary flex aspect-square size-8 items-center justify-center rounded-lg">
               <LogIn className="size-4" />
             </div>

@@ -101,6 +101,7 @@ export function AppSidebarUser({ children, ...props }: React.ComponentProps<type
                 title: channel.title,
                 description: channel.description,
                 avatar: channel.avatar,
+                href: `/${channel.title}`,
               }}
             />
           ) : (

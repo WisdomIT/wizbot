@@ -25,9 +25,9 @@ function LoginPage() {
       const currentUser = await getCurrentUser();
       if (currentUser) {
         if (currentUser.role === 'admin') {
-          window.location.href = '/admin';
+          window.location.replace('/admin');
         } else if (currentUser.role === 'streamer') {
-          window.location.href = '/streamer';
+          window.location.replace('/streamer');
         }
       }
     }

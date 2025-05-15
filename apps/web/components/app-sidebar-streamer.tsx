@@ -41,6 +41,7 @@ const title = {
   title: '위즈봇',
   description: '스트리머 콘솔',
   avatar: '/images/wisdomit.png',
+  href: '/streamer',
 };
 
 const data = {
