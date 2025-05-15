@@ -46,3 +46,27 @@ export async function getStreamers(): Promise<StreamerProps[]> {
 
   return streamers;
 }
+
+export async function getStreamerByChannelName(channelName: string): Promise<StreamerProps | null> {
+  const request = await trpc.user.getUserByChannelName.query({ channelName });
+
+  if (!request) {
+    return null;
+  }
+
+  const shortcuts = request.userShortcuts.map((shortcut) => {
+    return {
+      icon: shortcut.icon,
+      name: shortcut.name,
+      url: shortcut.url,
+      popup: true,
+    };
+  });
+
+  return {
+    channelName: request.channelName,
+    channelImageUrl: request.channelImageUrl ?? '',
+    channelId: request.channelId,
+    shortcuts,
+  };
+}

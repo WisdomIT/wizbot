@@ -47,6 +47,34 @@ export const userRouter = t.router({
 
     return users;
   }),
+  getUserByChannelName: t.procedure
+    .input(z.object({ channelName: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { channelName } = input;
+
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          channelName,
+        },
+        select: {
+          channelId: true,
+          channelName: true,
+          channelImageUrl: true,
+          userShortcuts: {
+            select: {
+              name: true,
+              url: true,
+              icon: true,
+            },
+            orderBy: {
+              order: 'asc',
+            },
+          },
+        },
+      });
+
+      return user;
+    }),
   getChzzkTokenInterlock: t.procedure
     .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {

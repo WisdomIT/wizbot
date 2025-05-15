@@ -1,6 +1,6 @@
 'use client';
 
-import { type LucideIcon } from 'lucide-react';
+import { JSX } from 'react';
 
 import {
   SidebarGroup,
@@ -8,7 +8,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from '@/components/ui/sidebar';
 
 export function NavMenu({
@@ -20,7 +19,7 @@ export function NavMenu({
   items: {
     name: string;
     url: string;
-    icon: LucideIcon;
+    icon: JSX.Element;
   }[];
   pathname: string;
 }) {
@@ -32,7 +31,7 @@ export function NavMenu({
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild isActive={pathname === item.url}>
               <a href={item.url}>
-                <item.icon />
+                {item.icon}
                 <span>{item.name}</span>
               </a>
             </SidebarMenuButton>

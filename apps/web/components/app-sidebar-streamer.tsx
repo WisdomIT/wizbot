@@ -48,58 +48,58 @@ const data = {
     {
       name: '명령어',
       url: '/streamer/bot/command',
-      icon: SquareChevronRight,
+      icon: <SquareChevronRight />,
     },
     {
       name: '반복',
       url: '/streamer/bot/repeat',
-      icon: BotMessageSquare,
+      icon: <BotMessageSquare />,
     },
   ],
   song: [
     {
       name: '뮤직플레이어',
       url: '/streamer/song/player',
-      icon: Play,
+      icon: <Play />,
     },
     {
       name: '플레이리스트',
       url: '/streamer/song/playlist',
-      icon: Headphones,
+      icon: <Headphones />,
     },
     {
       name: '즐겨찾기',
       url: '/streamer/song/favorite',
-      icon: ListPlus,
+      icon: <ListPlus />,
     },
     {
       name: '재생 기록',
       url: '/streamer/song/history',
-      icon: FileAudio2,
+      icon: <FileAudio2 />,
     },
   ],
   cafe: [
     {
       name: '치지직',
       url: '/streamer/cafe/chzzk',
-      icon: Radio,
+      icon: <Radio />,
     },
     {
       name: '유튜브',
       url: '/streamer/cafe/youtube',
-      icon: PlaySquare,
+      icon: <PlaySquare />,
     },
   ],
   setting: [
     {
       name: '계정 설정',
       url: '/streamer/user/setting',
-      icon: User,
+      icon: <User />,
     },
     {
       name: '링크 설정',
       url: '/streamer/user/link',
-      icon: Link,
+      icon: <Link />,
     },
   ],
 };
