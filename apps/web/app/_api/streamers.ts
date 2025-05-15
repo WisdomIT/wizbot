@@ -2,14 +2,14 @@
 
 import { trpc } from '@/src/utils/trpc';
 
-interface StreamerProps {
+export interface StreamerProps {
   channelName: string;
   channelImageUrl: string;
   channelId: string;
   shortcuts: ShortcutProps[];
 }
 
-interface ShortcutProps {
+export interface ShortcutProps {
   icon: string;
   name: string;
   url: string;

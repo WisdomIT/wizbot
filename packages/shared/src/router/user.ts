@@ -37,6 +37,7 @@ export const userRouter = t.router({
           orderBy: {
             order: 'asc',
           },
+          take: 6,
         },
       },
       where: {
