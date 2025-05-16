@@ -17,7 +17,7 @@
 ### Function
 
 - 특정한 명령에 따라 기능을 수행할 수 있습니다.
-- 예) `!방제수정 하이` 입력 시 현재 스트리밍 중인 방송 제목을 `하이`로 변경
+- 예) `!방제 수정 하이` 입력 시 현재 스트리밍 중인 방송 제목을 `하이`로 변경
 - 방송 내용을 확인하여 표시하거나, 방송 관련 설정을 수정할 수 있으며 이후 설명하는 노래 기능과의 연동도 가능합니다.
 
 ### 노래신청
@@ -65,10 +65,32 @@
 
 ## Getting Started
 
+1. `.env`를 작성해야 합니다.
+
+```dotenv
+# /apps/api/.env
+
+DATABASEURL=""            # 데이터베이스 URL (MySQL)
+
+CHZZK_ID=""               # 치지직 API ClientID
+CHZZK_SECRET=""           # 치지직 API Secret
+CHZZK_BOT_CHANNEL_ID=""   # 치지직 봇 ChannelID
+
+PUBLIC_SITE_URL=""        # 퍼블릭 URL
+```
+
+```dotenv
+# /apps/web/.env
+
+JWT_SECRET=""             # JWT Secret
+```
+
+2. 명령어를 통해 실행하세요
+
 ```bash
 pnpm -w install
 cd apps/api
-pnpm prisma db push #or pnpm prisma generate
+pnpm prisma db push       #or pnpm prisma generate
 pnpm -w dev
 ```
 

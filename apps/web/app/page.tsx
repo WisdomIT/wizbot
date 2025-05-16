@@ -1,9 +1,15 @@
+import Functions from './_components/functions';
+import Hero from './_components/hero';
+import Join from './_components/join';
+import Streamers from './_components/streamers';
+
 export default function Home() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        Something awesome is coming soon!
-      </main>
-    </div>
+    <main className="py-20">
+      <Hero />
+      <Functions />
+      <Streamers />
+      <Join />
+    </main>
   );
 }

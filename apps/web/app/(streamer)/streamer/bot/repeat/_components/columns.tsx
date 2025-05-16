@@ -3,6 +3,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import { ArrowUpDown, MoreHorizontal } from 'lucide-react';
 
+import { renderTextWithLink } from '@/app/_components/utils';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,8 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-
-import { renderTextWithLink } from '../../_components/utils';
 
 export interface Repeat {
   id: number;

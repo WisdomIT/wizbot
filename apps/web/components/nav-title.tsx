@@ -9,13 +9,14 @@ export function NavTitle({
     title: string;
     description: string;
     avatar: string;
+    href: string;
   };
 }) {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <SidebarMenuButton size="lg" asChild>
-          <Link href="/streamer">
+          <Link href={data.href}>
             <div className="border border-gray-100 bg-background text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
               <img src={data.avatar} alt={data.avatar} />
             </div>

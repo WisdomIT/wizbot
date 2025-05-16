@@ -6,13 +6,6 @@ import { getAccessToken } from '../lib/accessToken';
 import { t } from '../trpc';
 
 export const userRouter = t.router({
-  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-    return ctx.prisma.user.findFirst({
-      where: {
-        id: input.id,
-      },
-    });
-  }),
   getChzzkId: t.procedure.query(() => {
     return process.env.CHZZK_ID;
   }),
@@ -22,6 +15,67 @@ export const userRouter = t.router({
   getPublicSiteUrl: t.procedure.query(() => {
     return process.env.PUBLIC_SITE_URL;
   }),
+  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    return ctx.prisma.user.findFirst({
+      where: {
+        id: input.id,
+      },
+    });
+  }),
+  getUsersPublic: t.procedure.query(async ({ ctx }) => {
+    const users = await ctx.prisma.user.findMany({
+      select: {
+        channelId: true,
+        channelName: true,
+        channelImageUrl: true,
+        userShortcuts: {
+          select: {
+            name: true,
+            url: true,
+            icon: true,
+          },
+          orderBy: {
+            order: 'asc',
+          },
+          take: 6,
+        },
+      },
+      where: {
+        hidden: false,
+      },
+    });
+
+    return users;
+  }),
+  getUserByChannelName: t.procedure
+    .input(z.object({ channelName: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const { channelName } = input;
+
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          channelName,
+        },
+        select: {
+          id: true,
+          channelId: true,
+          channelName: true,
+          channelImageUrl: true,
+          userShortcuts: {
+            select: {
+              name: true,
+              url: true,
+              icon: true,
+            },
+            orderBy: {
+              order: 'asc',
+            },
+          },
+        },
+      });
+
+      return user;
+    }),
   getChzzkTokenInterlock: t.procedure
     .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {
