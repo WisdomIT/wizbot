@@ -21,6 +21,12 @@ import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavTitleSkeleton } from './nav-title-skeleton';
 
+const group = {
+  bot: '봇',
+  song: '노래',
+  navSecondary: '사이트',
+};
+
 interface AppSidebarUserProps extends React.ComponentProps<typeof Sidebar> {
   pathname: string;
   channel: {
@@ -65,12 +71,27 @@ export function AppSidebarUser({
     ],
     navSecondary: [
       {
-        title: '사이트 정보',
+        name: '사이트 정보',
         url: `/${channel.title}/info`,
         icon: <Info />,
       },
     ],
   };
+
+  const pathnameDecoded = decodeURIComponent(pathname);
+
+  // 경로에 해당하는 item과 group 찾기
+  let currentGroup: string | undefined = undefined;
+  let currentPage: string | undefined = undefined;
+
+  for (const [key, items] of Object.entries(data)) {
+    const found = items.find((item) => item.url === '/' + pathnameDecoded);
+    if (found) {
+      currentGroup = group[key as keyof typeof group];
+      currentPage = found.name;
+      break;
+    }
+  }
 
   return (
     <>
@@ -92,7 +113,7 @@ export function AppSidebarUser({
         <SidebarContent>
           <NavMenu title="봇" items={data.bot} pathname={pathname} />
           <NavMenu title="노래" items={data.song} pathname={pathname} />
-          {shortcuts.length > 0 && <NavMenu title="링크" items={shortcuts} pathname="" />}
+          {shortcuts.length > 0 && <NavMenu title="링크" items={shortcuts} pathname="" popup />}
           <NavSecondary items={data.navSecondary} className="mt-auto" />
         </SidebarContent>
         <SidebarFooter>
@@ -100,7 +121,7 @@ export function AppSidebarUser({
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <BodyBreadcrumb group={'봇'} page={'명령어'}>
+        <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
       </SidebarInset>
