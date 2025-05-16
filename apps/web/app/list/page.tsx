@@ -1,6 +1,8 @@
 import { getStreamers } from '../_api/streamers';
 import { DataTable } from './_components/data-table';
 
+export const dynamic = 'force-dynamic';
+
 export default async function Page() {
   const data = await getStreamers();
 

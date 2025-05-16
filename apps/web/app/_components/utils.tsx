@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-react';
 import { Fragment, JSX } from 'react';
 
 export function renderTextWithLink(text: string): JSX.Element {
@@ -21,7 +22,7 @@ export function renderTextWithLink(text: string): JSX.Element {
               rel="noopener noreferrer"
               className="inline text-green-600 hover:underline"
             >
-              {part}
+              {part}<ExternalLink className="inline h-3 w-3 ml-0.5" />
             </a>
           );
         } else {

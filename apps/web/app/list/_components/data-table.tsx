@@ -59,7 +59,7 @@ export function DataTable({ data }: DataTableProps) {
 
   return (
     <>
-      <div className="min-w-200">
+      <div className="w-full max-w-200">
         <div className="flex items-center justify-between py-4">
           <Input
             placeholder="스트리머 검색"
