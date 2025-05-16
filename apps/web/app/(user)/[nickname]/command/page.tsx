@@ -1,35 +1,23 @@
-'use client';
-
-import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { headers } from 'next/headers';
+import { notFound } from 'next/navigation';
 
 import { fetchCommandList } from './_api/command';
-import { Command } from './_components/columns';
 import { DataTable } from './_components/data-table';
 
-export default function Page() {
-  const pathname = usePathname();
-  const currentChannelName = decodeURIComponent(pathname.split('/')[1]);
+export default async function Page() {
+  const headerList = await headers();
+  const header_url = headerList.get('x-url') || '';
+  // uri 제외 후 pathname만 남기기
+  const pathname = header_url.split('/').slice(3).join('/');
+  const currentChannelName = pathname.split('/')[0];
+  const currentChannelNameDecoded = decodeURIComponent(currentChannelName);
 
-  const [data, setData] = useState<Command[] | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetchCommandList(currentChannelName);
-        setData(response);
-      } catch (error) {
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [currentChannelName]);
-
-  if (loading) return <div>Loading...</div>;
-  if (!data) return <div>데이터 없음</div>;
-
-  return <DataTable data={data} />;
+  try {
+    const data = await fetchCommandList(currentChannelNameDecoded);
+    return <DataTable data={data} />;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Error fetching command list:', error);
+    return notFound();
+  }
 }
