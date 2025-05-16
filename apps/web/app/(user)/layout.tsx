@@ -39,7 +39,7 @@ export default async function RootLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebarUser pathname={pathname} channel={channel} shortcuts={shortcuts}>
+      <AppSidebarUser channel={channel} shortcuts={shortcuts}>
         {children}
       </AppSidebarUser>
     </SidebarProvider>

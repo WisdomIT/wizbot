@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { JSX, useEffect, useState } from 'react';
 
-import { getStreamerByChannelName } from '@/app/_api/streamers';
 import { NavSecondary } from '@/components/nav-secondary';
 import {
   Sidebar,
@@ -28,7 +27,6 @@ const group = {
 };
 
 interface AppSidebarUserProps extends React.ComponentProps<typeof Sidebar> {
-  pathname: string;
   channel: {
     title: string;
     description: string;
@@ -42,13 +40,7 @@ interface AppSidebarUserProps extends React.ComponentProps<typeof Sidebar> {
   children: React.ReactNode;
 }
 
-export function AppSidebarUser({
-  pathname,
-  channel,
-  shortcuts,
-  children,
-  ...props
-}: AppSidebarUserProps) {
+export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSidebarUserProps) {
   const data = {
     bot: [
       {
@@ -78,20 +70,23 @@ export function AppSidebarUser({
     ],
   };
 
+  const pathname = usePathname();
   const pathnameDecoded = decodeURIComponent(pathname);
 
-  // 경로에 해당하는 item과 group 찾기
-  let currentGroup: string | undefined = undefined;
-  let currentPage: string | undefined = undefined;
+  const [currentPage, setCurrentPage] = useState<string | null>(null);
+  const [currentGroup, setCurrentGroup] = useState<string | null>(null);
 
-  for (const [key, items] of Object.entries(data)) {
-    const found = items.find((item) => item.url === '/' + pathnameDecoded);
-    if (found) {
-      currentGroup = group[key as keyof typeof group];
-      currentPage = found.name;
-      break;
+  useEffect(() => {
+    for (const [key, items] of Object.entries(data)) {
+      const found = items.find((item) => item.url === pathnameDecoded);
+      if (found) {
+        setCurrentGroup(group[key as keyof typeof group]);
+        setCurrentPage(found.name);
+        break;
+      }
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathnameDecoded]);
 
   return (
     <>
@@ -111,10 +106,10 @@ export function AppSidebarUser({
           )}
         </SidebarHeader>
         <SidebarContent>
-          <NavMenu title="봇" items={data.bot} pathname={pathname} />
-          <NavMenu title="노래" items={data.song} pathname={pathname} />
+          <NavMenu title="봇" items={data.bot} pathname={pathnameDecoded} />
+          <NavMenu title="노래" items={data.song} pathname={pathnameDecoded} />
           {shortcuts.length > 0 && <NavMenu title="링크" items={shortcuts} pathname="" popup />}
-          <NavSecondary items={data.navSecondary} className="mt-auto" />
+          <NavSecondary items={data.navSecondary} className="mt-auto" pathname={pathnameDecoded} />
         </SidebarContent>
         <SidebarFooter>
           <NavLogin />

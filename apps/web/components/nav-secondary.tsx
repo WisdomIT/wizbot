@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import * as React from 'react';
 import { JSX } from 'react';
 
@@ -11,6 +12,7 @@ import {
 
 export function NavSecondary({
   items,
+  pathname,
   ...props
 }: {
   items: {
@@ -18,6 +20,7 @@ export function NavSecondary({
     url: string;
     icon: JSX.Element;
   }[];
+  pathname: string;
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
   return (
     <SidebarGroup {...props}>
@@ -25,11 +28,11 @@ export function NavSecondary({
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.name}>
-              <SidebarMenuButton asChild size="sm">
-                <a href={item.url}>
+              <SidebarMenuButton asChild size="sm" isActive={pathname === item.url}>
+                <Link href={item.url}>
                   {item.icon}
                   <span>{item.name}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
