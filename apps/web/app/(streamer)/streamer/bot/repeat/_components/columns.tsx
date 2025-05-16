@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-import { renderTextWithLink } from '../../_components/utils';
+import { renderTextWithLink } from '../../../../../_components/utils';
 
 export interface Repeat {
   id: number;

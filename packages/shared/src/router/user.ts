@@ -57,6 +57,7 @@ export const userRouter = t.router({
           channelName,
         },
         select: {
+          id: true,
           channelId: true,
           channelName: true,
           channelImageUrl: true,
