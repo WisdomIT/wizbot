@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { JSX } from 'react';
 
 import {
@@ -32,14 +33,14 @@ export function NavMenu({
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild isActive={pathname === item.url}>
-              <a
+              <Link
                 href={item.url}
                 target={popup ? '_blank' : undefined}
                 rel={popup ? 'noopener noreferrer' : undefined}
               >
                 {item.icon}
                 <span>{item.name}</span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ))}
