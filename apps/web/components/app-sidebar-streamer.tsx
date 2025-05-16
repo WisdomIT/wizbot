@@ -146,7 +146,7 @@ export default function AppSidebarStreamer({ children, ...props }: AppSidebarStr
       });
     }
     fetchUser();
-  }, []);
+  }, [pathname]);
 
   return (
     <>

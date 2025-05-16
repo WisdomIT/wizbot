@@ -1,15 +1,35 @@
+'use client';
+
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+
 import { fetchCommandList } from './_api/command';
+import { Command } from './_components/columns';
 import { DataTable } from './_components/data-table';
 
-export default async function Page({ params }: { params: { nickname: string } }) {
-  const { nickname } = await params;
-  const decodedNickname = decodeURIComponent(nickname);
+export default function Page() {
+  const pathname = usePathname();
+  const currentChannelName = decodeURIComponent(pathname.split('/')[1]);
 
-  const data = await fetchCommandList(decodedNickname);
+  const [data, setData] = useState<Command[] | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  return (
-    <div>
-      <DataTable data={data} />
-    </div>
-  );
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetchCommandList(currentChannelName);
+        setData(response);
+      } catch (error) {
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [currentChannelName]);
+
+  if (loading) return <div>Loading...</div>;
+  if (!data) return <div>데이터 없음</div>;
+
+  return <DataTable data={data} />;
 }

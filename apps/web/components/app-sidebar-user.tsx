@@ -16,80 +16,61 @@ import {
 } from '@/components/ui/sidebar';
 
 import BodyBreadcrumb from './body-breadcrumb';
-import { DynamicIcon } from './custom/dynamic-icon';
 import { NavLogin } from './nav-login';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavTitleSkeleton } from './nav-title-skeleton';
 
-export function AppSidebarUser({ children, ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [channel, setChannel] = useState<{
+interface AppSidebarUserProps extends React.ComponentProps<typeof Sidebar> {
+  pathname: string;
+  channel: {
     title: string;
     description: string;
     avatar: string;
-  } | null>(null);
-  const [shortcuts, setShortcuts] = useState<
-    {
-      name: string;
-      url: string;
-      icon: JSX.Element;
-    }[]
-  >([]);
+  };
+  shortcuts: {
+    name: string;
+    url: string;
+    icon: JSX.Element;
+  }[];
+  children: React.ReactNode;
+}
 
-  const pathname = usePathname();
-  const currentChannelName = pathname.split('/')[1];
-  const currentChannelNameDecoded = decodeURIComponent(currentChannelName);
-
+export function AppSidebarUser({
+  pathname,
+  channel,
+  shortcuts,
+  children,
+  ...props
+}: AppSidebarUserProps) {
   const data = {
     bot: [
       {
         name: '명령어',
-        url: `/${currentChannelName}/command`,
+        url: `/${channel.title}/command`,
         icon: <SquareChevronRight />,
       },
     ],
     song: [
       {
         name: '플레이리스트',
-        url: `/${currentChannelName}/playlist`,
+        url: `/${channel.title}/playlist`,
         icon: <Headphones />,
       },
       {
         name: '재생 기록',
-        url: `/${currentChannelName}/history`,
+        url: `/${channel.title}/history`,
         icon: <FileAudio2 />,
       },
     ],
     navSecondary: [
       {
         title: '사이트 정보',
-        url: `/${currentChannelName}/info`,
+        url: `/${channel.title}/info`,
         icon: <Info />,
       },
     ],
   };
-
-  useEffect(() => {
-    const fetchChannel = async () => {
-      const channelData = await getStreamerByChannelName(currentChannelNameDecoded);
-      if (channelData) {
-        setChannel({
-          title: channelData.channelName,
-          description: '위즈봇',
-          avatar: channelData.channelImageUrl,
-        });
-        setShortcuts(
-          channelData.shortcuts.map((shortcut) => ({
-            name: shortcut.name,
-            url: shortcut.url,
-            icon: <DynamicIcon name={shortcut.icon} />,
-          })),
-        );
-      }
-    };
-
-    fetchChannel();
-  }, [currentChannelNameDecoded]);
 
   return (
     <>
