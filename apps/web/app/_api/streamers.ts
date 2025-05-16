@@ -29,7 +29,7 @@ export async function getStreamers(): Promise<StreamerProps[]> {
       };
     });
 
-    const commandShoutcut = {
+    const commandShortcut = {
       icon: 'BotMessageSquare',
       name: '명령어',
       url: `/${user.channelName}/command`,
@@ -40,7 +40,7 @@ export async function getStreamers(): Promise<StreamerProps[]> {
       channelName: user.channelName,
       channelImageUrl: user.channelImageUrl ?? '',
       channelId: user.channelId,
-      shortcuts: [commandShoutcut, ...shortcuts],
+      shortcuts: [commandShortcut, ...shortcuts],
     };
   });
 

@@ -21,12 +21,12 @@ export default function Streamers() {
           {streamerList.map((streamer, index) => (
             <Card
               className="bg-muted/60 dark:bg-card flex flex-col h-full overflow-hidden group/hoverimg py-0"
-              key={`streamer-${index}`}
+              key={streamer.channelId}
             >
               <CardHeader className="p-0 gap-0">
                 <div className="h-full overflow-hidden">
                   <img
-                    alt=""
+                    alt={`${streamer.channelName} profile`}
                     src={streamer.channelImageUrl}
                     className="bg-white w-full aspect-square object-cover transition-all duration-200 ease-linear size-full "
                   />
