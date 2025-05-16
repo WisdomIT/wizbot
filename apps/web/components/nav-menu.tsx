@@ -14,6 +14,7 @@ export function NavMenu({
   title,
   items,
   pathname,
+  popup = false,
 }: {
   title: string;
   items: {
@@ -22,6 +23,7 @@ export function NavMenu({
     icon: JSX.Element;
   }[];
   pathname: string;
+  popup?: boolean;
 }) {
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -30,7 +32,11 @@ export function NavMenu({
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild isActive={pathname === item.url}>
-              <a href={item.url}>
+              <a
+                href={item.url}
+                target={popup ? '_blank' : undefined}
+                rel={popup ? 'noopener noreferrer' : undefined}
+              >
                 {item.icon}
                 <span>{item.name}</span>
               </a>

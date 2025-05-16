@@ -14,7 +14,7 @@ export function NavSecondary({
   ...props
 }: {
   items: {
-    title: string;
+    name: string;
     url: string;
     icon: JSX.Element;
   }[];
@@ -24,11 +24,11 @@ export function NavSecondary({
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => (
-            <SidebarMenuItem key={item.title}>
+            <SidebarMenuItem key={item.name}>
               <SidebarMenuButton asChild size="sm">
                 <a href={item.url}>
                   {item.icon}
-                  <span>{item.title}</span>
+                  <span>{item.name}</span>
                 </a>
               </SidebarMenuButton>
             </SidebarMenuItem>
