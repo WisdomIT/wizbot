@@ -157,58 +157,61 @@ interface ChatbotDatabaseInitial {
   initialEcho: ChatbotEchoCommand[];
 }
 
-export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitial {
+export function getChatbotDatabaseInitial(
+  userId: number,
+  channelName: string,
+): ChatbotDatabaseInitial {
   const initialFunction = [
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '추가',
       function: 'createCommandEcho',
     },
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '삭제',
       function: 'deleteCommandEcho',
     },
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '수정',
       function: 'updateCommandEcho',
     },
     {
-      userId: userId,
+      userId,
       permission: 'VIEWER',
       command: '방제',
       function: 'getChzzkTitle',
     },
     {
-      userId: userId,
+      userId,
       permission: 'VIEWER',
       command: '카테고리',
       function: 'getChzzkCategory',
     },
     {
-      userId: userId,
+      userId,
       permission: 'VIEWER',
       command: '업타임',
       function: 'getChzzkUptime',
     },
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '방제 수정',
       function: 'updateChzzkTitle',
     },
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '카테고리 수정',
       function: 'updateChzzkCategory',
     },
     {
-      userId: userId,
+      userId,
       permission: 'MANAGER',
       command: '공지',
       function: 'setChzzkNotice',
@@ -219,6 +222,16 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       userId: userId,
       command: '테스트',
       response: '챗봇 명령어 테스트입니다',
+    },
+    {
+      userId,
+      command: '봇',
+      response: `${process.env.PUBLIC_SITE_URL}/${channelName}`,
+    },
+    {
+      userId,
+      command: '명령어',
+      response: `${process.env.PUBLIC_SITE_URL}/${channelName}/command`,
     },
   ] as ChatbotEchoCommand[];
 

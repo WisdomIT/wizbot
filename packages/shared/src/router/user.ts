@@ -165,7 +165,7 @@ export const userRouter = t.router({
         },
       });
 
-      const { initialFunction, initialEcho } = getChatbotDatabaseInitial(user.id);
+      const { initialFunction, initialEcho } = getChatbotDatabaseInitial(user.id, channelName);
 
       if (!findCommand) {
         await ctx.prisma.chatbotFunctionCommand.createMany({
