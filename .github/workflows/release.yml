@@ -1,0 +1,125 @@
+name: Release
+
+# 릴리즈 = dev → main 머지 후 main 커밋에 vX.Y.Z 태그 푸시.
+# 1) 태그가 main에 포함된 커밋인지 검증
+# 2) apps/*/Dockerfile 이 있는 앱만 이미지 빌드 → ghcr.io 푸시 (Dockerfile 추가 전에는 자동 스킵, #32)
+# 3) GitHub Release 생성
+# 4) PORTAINER_WEBHOOK_URL 시크릿이 있으면 Portainer 스택 재배포 webhook 호출
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 빌드할 ref (태그/브랜치). 비우면 현재 ref
+        required: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  verify:
+    name: verify tag is on main
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Ensure commit is on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::릴리즈 태그는 main에 머지된 커밋에만 붙일 수 있습니다."
+            exit 1
+          fi
+
+      - name: Discover apps with Dockerfile
+        id: discover
+        run: |
+          apps=$(for d in apps/*/; do [ -f "$d/Dockerfile" ] && basename "$d"; done | jq -R -s -c 'split("\n") | map(select(length>0))')
+          echo "apps=$apps" >> "$GITHUB_OUTPUT"
+          echo "Dockerfile 있는 앱: $apps"
+          if [ "$apps" = "[]" ]; then
+            echo "::warning::apps/*/Dockerfile 이 없어 이미지 빌드를 건너뜁니다 (#32)."
+          fi
+
+  build:
+    name: build & push ${{ matrix.app }}
+    needs: verify
+    if: needs.verify.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.verify.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.app }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  release:
+    name: github release
+    needs: [verify, build]
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.verify.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+  deploy:
+    name: portainer redeploy
+    needs: [build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Portainer stack webhook
+        env:
+          WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::PORTAINER_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 스택 > Webhook 에서 URL을 발급해 등록하세요."
+            exit 0
+          fi
+          curl -fsS -X POST "$WEBHOOK"
+          echo "Portainer 재배포 webhook 호출 완료"

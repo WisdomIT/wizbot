@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 빌드/타입체크에만 쓰이는 더미 값 (실제 접속 없음)
+  DATABASE_URL: mysql://ci:ci@localhost:3306/ci
+  JWT_SECRET: ci-only-secret
+
+jobs:
+  check:
+    name: typecheck · lint · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # 버전은 package.json의 packageManager 필드에서 읽음
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @wizbot/api exec prisma generate
+
+      - name: Typecheck
+        run: pnpm -r --if-present run typecheck
+
+      - name: Lint
+        run: pnpm -r --if-present run lint
+
+      # TODO(#34): vitest 도입 후 활성화
+      # - name: Test
+      #   run: pnpm -r --if-present run test
+
+      - name: Build web
+        run: pnpm --filter @wizbot/web build

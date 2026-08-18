@@ -1,0 +1,48 @@
+name: 🐛 버그 리포트
+description: 동작하지 않거나 잘못 동작하는 부분을 알려주세요.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      options:
+        - web (Next.js 프론트)
+        - api (tRPC 서버)
+        - chatbot (챗봇 워커)
+        - shared (공통 로직)
+        - infra (빌드/배포/CI)
+        - 기타
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 현상
+      description: 무엇이 어떻게 잘못 동작하나요? 에러 로그가 있으면 함께 적어주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+  - type: input
+    id: version
+    attributes:
+      label: 버전 / 커밋
+      placeholder: 예) v1.2.0, ae5dfb7
+  - type: textarea
+    id: extra
+    attributes:
+      label: 추가 정보
+      description: 스크린샷, 관련 이슈, 추정 원인 등
