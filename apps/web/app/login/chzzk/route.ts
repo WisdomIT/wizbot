@@ -19,7 +19,9 @@ export async function GET() {
   ]);
 
   if (!chzzkId || !redirectUri) {
-    return NextResponse.redirect(`${publicSiteUrl}/login?error=치지직 로그인 설정이 없습니다.`);
+    return NextResponse.redirect(
+      `${publicSiteUrl}/login?error=${encodeURIComponent('치지직 로그인 설정이 없습니다.')}`,
+    );
   }
 
   const state = crypto.randomUUID();

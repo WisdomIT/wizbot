@@ -13,25 +13,28 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const state = searchParams.get('state');
 
-  if (!code || !state) {
-    return NextResponse.json({ message: 'Missing code or state' }, { status: 400 });
-  }
-
   const publicSiteUrl = await getPublicSiteUrl();
-
-  // 로그인 시작(/login/chzzk) 시 발급한 state와 일치하는지 검증 (CSRF 방어)
-  const expectedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
 
   const clearStateCookie = `${OAUTH_STATE_COOKIE}=; HttpOnly; Path=${OAUTH_STATE_COOKIE_PATH}; Max-Age=0; SameSite=Lax${
     isProduction ? '; Secure' : ''
   }`;
 
+  const redirectToLoginWithError = (message: string) =>
+    NextResponse.redirect(`${publicSiteUrl}/login?error=${encodeURIComponent(message)}`, {
+      headers: { 'Set-Cookie': clearStateCookie },
+    });
+
+  // 콜백 URL 직접 접근 또는 provider 오류로 파라미터가 누락된 경우
+  if (!code || !state) {
+    return redirectToLoginWithError('로그인 정보가 올바르지 않습니다. 다시 시도해주세요.');
+  }
+
+  // 로그인 시작(/login/chzzk) 시 발급한 state와 일치하는지 검증 (CSRF 방어)
+  const expectedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
+
   if (!expectedState || expectedState !== state) {
-    return NextResponse.redirect(
-      `${publicSiteUrl}/login?error=${encodeURIComponent(
-        '로그인 요청이 만료되었거나 유효하지 않습니다. 다시 시도해주세요.',
-      )}`,
-      { headers: { 'Set-Cookie': clearStateCookie } },
+    return redirectToLoginWithError(
+      '로그인 요청이 만료되었거나 유효하지 않습니다. 다시 시도해주세요.',
     );
   }
 
@@ -55,9 +58,6 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line no-console
     console.error('Error during authentication:', error);
     const message = error instanceof Error ? error.message : 'Unknown error occurred';
-    return NextResponse.redirect(
-      `${publicSiteUrl}/login?error=${encodeURIComponent(message)}`,
-      { headers: { 'Set-Cookie': clearStateCookie } },
-    );
+    return redirectToLoginWithError(message);
   }
 }
