@@ -14,7 +14,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@trpc/client": "^11.0.2",
+    "@trpc/client": "^11.18.0",
     "@wizbot/shared": "workspace:^",
     "chalk": "^5.4.1",
     "socket.io-client": "^2.0.3",
