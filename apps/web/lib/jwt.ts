@@ -1,5 +1,5 @@
-'use server';
-
+// 서버 전용 유틸. 'use server'를 붙이면 signJwt/verifyJwt가 서버 액션 엔드포인트로 노출되므로 절대 추가하지 말 것 (#16).
+// (Edge 미들웨어에서도 import 하므로 'server-only' 패키지는 사용하지 않음)
 import { jwtVerify, SignJWT } from 'jose';
 
 export interface JwtPayload {
