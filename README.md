@@ -65,34 +65,33 @@
 
 ## Getting Started
 
-1. `.env`를 작성해야 합니다.
-
-```dotenv
-# /apps/api/.env
-
-DATABASEURL=""            # 데이터베이스 URL (MySQL)
-
-CHZZK_ID=""               # 치지직 API ClientID
-CHZZK_SECRET=""           # 치지직 API Secret
-CHZZK_BOT_CHANNEL_ID=""   # 치지직 봇 ChannelID
-
-PUBLIC_SITE_URL=""        # 퍼블릭 URL
-```
-
-```dotenv
-# /apps/web/.env
-
-JWT_SECRET=""             # JWT Secret
-```
-
-2. 명령어를 통해 실행하세요
+1. 각 앱의 `.env.example`을 복사해 `.env`를 작성합니다.
 
 ```bash
-pnpm -w install
-cd apps/api
-pnpm prisma db push       #or pnpm prisma generate
-pnpm -w dev
+cp apps/api/.env.example apps/api/.env   # DATABASE_URL, CHZZK_*, PUBLIC_SITE_URL, SMTP_*
+cp apps/web/.env.example apps/web/.env   # JWT_SECRET
 ```
+
+2. 의존성 설치 후 DB 스키마를 적용하고 실행합니다.
+
+```bash
+pnpm install
+pnpm prisma:generate      # Prisma Client 생성
+pnpm prisma:migrate       # 개발 DB에 마이그레이션 적용 (prisma migrate dev)
+pnpm dev
+```
+
+### 데이터베이스 마이그레이션
+
+스키마 변경 이력은 `apps/api/prisma/migrations`로 관리합니다. `prisma db push`는 사용하지 않습니다.
+
+| 상황 | 명령 |
+| --- | --- |
+| 스키마 변경 후 마이그레이션 생성 (개발) | `pnpm prisma:migrate` |
+| 운영 DB에 적용 (배포 시) | `pnpm prisma:deploy` |
+| 기존 운영 DB에 최초 도입 (baseline) | `pnpm --filter @wizbot/api exec prisma migrate resolve --applied 0_init` 후 `pnpm prisma:deploy` |
+
+`0_init`은 2026-08 기준 스키마 전체를 담은 baseline 마이그레이션입니다. 이미 `db push`로 만들어진 운영 DB에는 위 `migrate resolve --applied 0_init`으로 "적용됨" 표시만 해주면 됩니다.
 
 ## Copyright
 
