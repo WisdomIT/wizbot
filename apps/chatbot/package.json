@@ -6,7 +6,8 @@
   "scripts": {
     "build": "echo 'No build needed for Chatbot (ts-node runtime)'",
     "start": "ts-node src/index.ts",
-    "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts"
+    "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

@@ -6,7 +6,8 @@
     "target": "ES2020",
     "esModuleInterop": true,
     "strict": true,
-    "typeRoots": ["./types", "./node_modules/@types"]
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "skipLibCheck": true
   },
   "include": ["src"]
 }

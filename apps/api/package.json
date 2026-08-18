@@ -6,7 +6,8 @@
   "scripts": {
     "build": "echo 'No build needed for API (ts-node runtime)'",
     "start": "ts-node src/server.ts",
-    "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts"
+    "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
