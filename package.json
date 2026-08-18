@@ -27,7 +27,7 @@
   "devDependencies": {
     "@wizbot/eslint-config": "workspace:^",
     "dotenv-cli": "^8.0.0",
-    "prisma": "^6.5.0",
+    "prisma": "^7.9.1",
     "typescript": "^5.8.2"
   }
 }
