@@ -24,8 +24,8 @@ importers:
   apps/api:
     dependencies:
       '@prisma/client':
-        specifier: ^6.5.0
-        version: 6.5.0(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)
+        specifier: ^6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)
       '@trpc/client':
         specifier: ^11.18.0
         version: 11.18.0(@trpc/server@11.18.0(typescript@5.8.3))(typescript@5.8.3)
@@ -281,8 +281,8 @@ importers:
         version: 6.10.1
     devDependencies:
       '@prisma/client':
-        specifier: ^6.5.0
-        version: 6.5.0(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)
+        specifier: ^6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)
       '@trpc/server':
         specifier: ^11.18.0
         version: 11.18.0(typescript@5.8.3)
@@ -661,8 +661,8 @@ packages:
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
     engines: {node: ^14.18.0 || >=16.0.0}
 
-  '@prisma/client@6.5.0':
-    resolution: {integrity: sha512-M6w1Ql/BeiGoZmhMdAZUXHu5sz5HubyVcKukbLs3l0ELcQb8hTUJxtGEChhv4SVJ0QJlwtLnwOLgIRQhpsm9dw==}
+  '@prisma/client@6.19.3':
+    resolution: {integrity: sha512-mKq3jQFhjvko5LTJFHGilsuQs+W+T3Gm451NzuTDGQxwCzwXHYnIu2zGkRoW+Exq3Rob7yp2MfzSrdIiZVhrBg==}
     engines: {node: '>=18.18'}
     peerDependencies:
       prisma: '*'
@@ -4465,7 +4465,7 @@ snapshots:
 
   '@pkgr/core@0.3.6': {}
 
-  '@prisma/client@6.5.0(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)':
+  '@prisma/client@6.19.3(prisma@6.19.3(typescript@5.8.3))(typescript@5.8.3)':
     optionalDependencies:
       prisma: 6.19.3(typescript@5.8.3)
       typescript: 5.8.3
