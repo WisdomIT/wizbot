@@ -16,7 +16,7 @@
   "dependencies": {
     "@trpc/client": "^11.0.2",
     "@wizbot/shared": "workspace:^",
-    "chalk": "^5.4.1",
+    "chalk": "^6.0.0",
     "socket.io-client": "^2.0.3",
     "ts-node": "^10.9.2"
   },
