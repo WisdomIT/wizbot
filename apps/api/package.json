@@ -18,7 +18,7 @@
     "@trpc/client": "^11.0.2",
     "@trpc/server": "^11.0.2",
     "@wizbot/shared": "workspace:^",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "prisma": "^6.5.0",
     "ts-node": "^10.9.2",
