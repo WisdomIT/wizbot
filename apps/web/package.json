@@ -45,7 +45,7 @@
     "@types/react-dom": "^19",
     "@wizbot/eslint-config": "workspace:^",
     "eslint": "^9",
-    "eslint-config-next": "15.2.3",
+    "eslint-config-next": "16.3.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.15",
     "typescript": "^5"
