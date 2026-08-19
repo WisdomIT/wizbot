@@ -1,10 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   ChatbotFunctionDefinition,
   chatbotFunctionDefinitionMap,
   ChatbotFunctionKey,
 } from '@wizbot/shared/src/chatbot/definitions';
 import { Terminal } from 'lucide-react';
-import { Dispatch, SetStateAction, useEffect, useState } from 'react';
+import { Dispatch, SetStateAction } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
@@ -16,8 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-import { FunctionOptionInput, getFunctionOption } from '../_api/command';
+import { useTRPC } from '@/src/utils/trpc-react';
 
 export interface FunctionArgs {
   type: ChatbotFunctionDefinition['type'];
@@ -173,21 +173,31 @@ const InputsFunctionOption = ({
   setFunctionArgs: Dispatch<SetStateAction<FunctionArgs>>;
   selectedCommandKey: string;
 }) => {
-  const [optionInput, setOptionInput] = useState<FunctionOptionInput | null>(null);
+  const trpc = useTRPC();
+  const spec =
+    selectedCommandKey in chatbotFunctionDefinitionMap
+      ? chatbotFunctionDefinitionMap[selectedCommandKey as ChatbotFunctionKey].option
+      : undefined;
 
-  useEffect(() => {
-    async function fetchOptionInput() {
-      const request = await getFunctionOption(selectedCommandKey);
+  // echoCommandSelect: 스트리머의 echo 명령어 목록으로 선택지를 채운다 (목록 쿼리 캐시 공유)
+  const { data: commandList } = useQuery(
+    trpc.command.getCommandList.queryOptions(undefined, {
+      enabled: spec?.input === 'echoCommandSelect',
+    }),
+  );
 
-      if (request) {
-        setOptionInput(request);
-      } else {
-        setOptionInput(null);
-      }
-    }
-
-    void fetchOptionInput();
-  }, [selectedCommandKey]);
+  const optionInput =
+    spec?.input === 'text'
+      ? ({ type: 'text' } as const)
+      : spec?.input === 'echoCommandSelect'
+        ? ({
+            type: 'select',
+            options: (commandList?.echo ?? []).map((command) => ({
+              label: command.command,
+              value: command.id.toString(),
+            })),
+          } as const)
+        : null;
 
   if (optionInput?.type === 'text') {
     return (

@@ -1,5 +1,6 @@
 'use client';
 
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,8 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useTRPC } from '@/src/utils/trpc-react';
 
-import { deleteCommand } from '../_api/command';
 import { Command } from './columns';
 
 export default function DeleteCommand({
@@ -25,18 +26,21 @@ export default function DeleteCommand({
   command: Command | null;
   setDeleteTarget: (command: Command | null) => void;
 }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const deleteCommand = useMutation(trpc.command.deleteCommand.mutationOptions());
+
   async function handleDeleteCommand(command: Command | null) {
     if (!command) return;
     const { id, type } = command;
 
-    toast.promise(deleteCommand(id, type), {
+    toast.promise(deleteCommand.mutateAsync({ id, type }), {
       loading: '명령어 삭제 중...',
       success: () => {
-        setTimeout(() => {
-          location.reload();
-        }, 1000);
+        void queryClient.invalidateQueries(trpc.command.getCommandList.queryFilter());
         return '명령어가 삭제되었습니다.';
       },
+      error: (error) => `명령어 삭제에 실패했습니다. ${error}`,
     });
   }
   return (

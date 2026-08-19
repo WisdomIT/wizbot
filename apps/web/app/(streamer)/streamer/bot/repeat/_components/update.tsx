@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -13,8 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useTRPC } from '@/src/utils/trpc-react';
 
-import { updateRepeat } from '../_api/repeat';
 import { Repeat } from './columns';
 
 export default function UpdateCommand({
@@ -24,6 +25,10 @@ export default function UpdateCommand({
   repeat: Repeat | null;
   setUpdateTarget: (repeat: Repeat | null) => void;
 }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const updateRepeat = useMutation(trpc.command.updateRepeat.mutationOptions());
+
   const [data, setData] = useState<Repeat | null>(null);
 
   useEffect(() => {
@@ -39,15 +44,13 @@ export default function UpdateCommand({
     event.preventDefault();
     if (!data || !repeat) return;
 
-    toast.promise(updateRepeat({ ...data, id: repeat.id }), {
+    toast.promise(updateRepeat.mutateAsync({ ...data, id: repeat.id }), {
       loading: '반복 메시지를 수정하는 중입니다...',
       success: () => {
         setUpdateTarget(null);
         setData(null);
 
-        setTimeout(() => {
-          location.reload();
-        }, 500);
+        void queryClient.invalidateQueries(trpc.command.getRepeatList.queryFilter());
 
         return '반복 메시지가 수정되었습니다.';
       },
