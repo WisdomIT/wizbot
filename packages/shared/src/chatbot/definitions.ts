@@ -161,3 +161,36 @@ export function usageTokensToString(tokens: UsageToken[]): string {
 export function getUsageString(key: ChatbotFunctionKey, command: string): string {
   return usageTokensToString(chatbotFunctionDefinitions[key].usageTokens(command));
 }
+
+/** 명령어 목록/테이블 표시용 파생값 */
+export interface CommandDisplay {
+  usageTokens: UsageToken[];
+  usageString: string;
+  descriptionShort: string;
+}
+
+const UNKNOWN_FUNCTION_DISPLAY: CommandDisplay = {
+  usageTokens: [{ text: '사용법을 찾을 수 없습니다.' }],
+  usageString: '사용법을 찾을 수 없습니다.',
+  descriptionShort: '설명을 찾을 수 없습니다.',
+};
+
+/** function 명령어의 표시값 — DB 의 function 키가 정의에 없으면(구버전 잔재 등) 폴백 */
+export function getFunctionCommandDisplay(functionKey: string, command: string): CommandDisplay {
+  if (!isChatbotFunctionKey(functionKey)) return UNKNOWN_FUNCTION_DISPLAY;
+  const tokens = chatbotFunctionDefinitions[functionKey].usageTokens(command);
+  return {
+    usageTokens: tokens,
+    usageString: usageTokensToString(tokens),
+    descriptionShort: chatbotFunctionDefinitions[functionKey].descriptionShort,
+  };
+}
+
+/** echo 명령어의 표시값 */
+export function getEchoCommandDisplay(command: string, response: string): CommandDisplay {
+  return {
+    usageTokens: [{ text: `!${command}` }],
+    usageString: `!${command}`,
+    descriptionShort: `응답: ${response}`,
+  };
+}

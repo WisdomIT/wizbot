@@ -2,16 +2,15 @@
 
 import {
   chatbotFunctionDefinitionMap,
-  getUsageString,
+  getEchoCommandDisplay,
+  getFunctionCommandDisplay,
   isChatbotFunctionKey,
-  UsageToken,
 } from '@wizbot/shared/src/chatbot/definitions';
 
 import { trpc } from '@/src/utils/trpc';
 
 import { getCurrentUser } from '../../../../../login/_apis/user';
 import { Command } from '../_components/columns';
-
 async function assertStreamer() {
   const currentUser = await getCurrentUser();
   if (currentUser.role !== 'streamer') {
@@ -20,45 +19,36 @@ async function assertStreamer() {
   return currentUser;
 }
 
-function toUsage(functionKey: string, command: string): { tokens: UsageToken[]; text: string } {
-  if (!isChatbotFunctionKey(functionKey)) {
-    return { tokens: [{ text: '사용법을 찾을 수 없습니다.' }], text: '사용법을 찾을 수 없습니다.' };
-  }
-  return {
-    tokens: chatbotFunctionDefinitionMap[functionKey].usageTokens(command),
-    text: getUsageString(functionKey, command),
-  };
-}
-
 export async function fetchCommandList(): Promise<Command[]> {
   await assertStreamer();
 
   const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query();
 
   const functionList: Command[] = functionFind.map((item) => {
-    const usage = toUsage(item.function, item.command);
+    const display = getFunctionCommandDisplay(item.function, item.command);
     return {
       id: item.id,
       command: item.command,
       type: 'function',
-      usageTokens: usage.tokens,
-      usageString: usage.text,
-      description: isChatbotFunctionKey(item.function)
-        ? chatbotFunctionDefinitionMap[item.function].descriptionShort
-        : '설명을 찾을 수 없습니다.',
+      usageTokens: display.usageTokens,
+      usageString: display.usageString,
+      description: display.descriptionShort,
       permission: item.permission,
     };
   });
 
-  const echoList: Command[] = echoFind.map((item) => ({
-    id: item.id,
-    command: item.command,
-    type: 'echo',
-    usageTokens: [{ text: `!${item.command}` }],
-    usageString: `!${item.command}`,
-    description: `응답: ${item.response}`,
-    permission: 'VIEWER',
-  }));
+  const echoList: Command[] = echoFind.map((item) => {
+    const display = getEchoCommandDisplay(item.command, item.response);
+    return {
+      id: item.id,
+      command: item.command,
+      type: 'echo',
+      usageTokens: display.usageTokens,
+      usageString: display.usageString,
+      description: display.descriptionShort,
+      permission: 'VIEWER',
+    };
+  });
 
   return [...functionList, ...echoList];
 }
