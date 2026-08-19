@@ -2,6 +2,8 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import { createServer } from 'node:http';
+
 import { ChannelInfo, ChannelSession } from './channelSession';
 import { trpc } from './trpc';
 
@@ -80,13 +82,21 @@ async function syncRepeats(): Promise<void> {
   }
 }
 
+// 재진입 가드 — 채널 연결(connectedTimeoutMs 최대 10s×채널 수)로 한 번의 폴링이 주기(60s)를
+// 넘길 수 있다. 겹쳐 실행되면 같은 반복 id 의 타이머가 이중 생성·누수된다 (PR #61 리뷰).
+let polling = false;
+
 async function poll(): Promise<void> {
+  if (polling) return;
+  polling = true;
   try {
     await syncChannels();
     await syncRepeats();
     lastPollAt = new Date();
   } catch (error) {
     console.error('❌ 폴링 실패:', error);
+  } finally {
+    polling = false;
   }
 }
 
@@ -94,8 +104,6 @@ void poll();
 setInterval(() => void poll(), POLL_INTERVAL_MS);
 
 // 헬스체크 — 컨테이너 healthcheck 용. 마지막 폴링이 3주기 이상 밀리면 unhealthy
-import { createServer } from 'node:http';
-
 const HEALTH_PORT = Number(process.env.HEALTH_PORT ?? 3003);
 createServer((req, res) => {
   const stale = !lastPollAt || Date.now() - lastPollAt.getTime() > POLL_INTERVAL_MS * 3;
