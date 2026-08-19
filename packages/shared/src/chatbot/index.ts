@@ -34,7 +34,7 @@ export const functions = {
   ...functionChzzk,
 };
 
-function findExactCommandMatch<T extends { command: string }>(
+export function findExactCommandMatch<T extends { command: string }>(
   content: string,
   commands: T[],
 ): { matched: T; args: string } | null {
