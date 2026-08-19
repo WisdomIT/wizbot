@@ -1,5 +1,5 @@
 import { commandService, isServiceError, repeatService, userSettingService } from '../services';
-import { ChabotReturn, FunctionCommand } from '.';
+import { ChabotReturn, ChatbotFunctionHandler } from '.';
 import { splitContent } from './lib';
 
 /**
@@ -158,4 +158,4 @@ export const functionCommand = {
       const repeat = await repeatService.deleteRepeat(ctx.prisma, userId, Number(target));
       return { ok: true, message: `${repeat.response} 반복 메시지가 삭제되었습니다.` };
     }),
-} as FunctionCommand;
+} satisfies Partial<Record<string, ChatbotFunctionHandler>>;

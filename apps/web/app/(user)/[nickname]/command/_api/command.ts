@@ -1,50 +1,54 @@
 'use server';
 
-import { createElement } from 'react';
+import {
+  chatbotFunctionDefinitionMap,
+  getUsageString,
+  isChatbotFunctionKey,
+  UsageToken,
+} from '@wizbot/shared/src/chatbot/definitions';
 
-import chatbotData from '@/src/chatbot';
 import { trpc } from '@/src/utils/trpc';
 
 import { Command } from '../_components/columns';
 
-export async function fetchCommandList(channelName: string) {
+function toUsage(functionKey: string, command: string): { tokens: UsageToken[]; text: string } {
+  if (!isChatbotFunctionKey(functionKey)) {
+    return { tokens: [{ text: '사용법을 찾을 수 없습니다.' }], text: '사용법을 찾을 수 없습니다.' };
+  }
+  return {
+    tokens: chatbotFunctionDefinitionMap[functionKey].usageTokens(command),
+    text: getUsageString(functionKey, command),
+  };
+}
+
+export async function fetchCommandList(channelName: string): Promise<Command[]> {
   const { function: functionFind, echo: echoFind } =
     await trpc.command.getCommandListByChannelName.query({ channelName });
 
-  const functionList = functionFind.map((item) => {
-    const findCommand = chatbotData[item.function as keyof typeof chatbotData];
-    if (!findCommand) {
-      return {
-        id: item.id,
-        command: item.command,
-        type: 'function',
-        usage: createElement('span', { className: 'text-sm' }, '사용법을 찾을 수 없습니다.'),
-        usageString: '사용법을 찾을 수 없습니다.',
-        description: '설명을 찾을 수 없습니다.',
-        permission: item.permission,
-      };
-    }
-
+  const functionList: Command[] = functionFind.map((item) => {
+    const usage = toUsage(item.function, item.command);
     return {
       id: item.id,
       command: item.command,
       type: 'function',
-      usage: findCommand.usage(item.command, item.option ?? undefined),
-      usageString: findCommand.usageString(item.command, item.option ?? undefined),
-      description: findCommand.descriptionShort,
+      usageTokens: usage.tokens,
+      usageString: usage.text,
+      description: isChatbotFunctionKey(item.function)
+        ? chatbotFunctionDefinitionMap[item.function].descriptionShort
+        : '설명을 찾을 수 없습니다.',
       permission: item.permission,
     };
-  }) as Command[];
+  });
 
-  const echoList = echoFind.map((item) => ({
+  const echoList: Command[] = echoFind.map((item) => ({
     id: item.id,
     command: item.command,
     type: 'echo',
-    usage: createElement('span', { className: 'text-sm' }, `!${item.command}`),
+    usageTokens: [{ text: `!${item.command}` }],
     usageString: `!${item.command}`,
     description: `응답: ${item.response}`,
     permission: 'VIEWER',
-  })) as Command[];
+  }));
 
   return [...functionList, ...echoList];
 }

@@ -11,7 +11,10 @@ const commands = [
 
 describe('findExactCommandMatch', () => {
   it('완전 일치하면 인수 없이 매칭한다', () => {
-    expect(findExactCommandMatch('방제', commands)).toEqual({ matched: { command: '방제' }, args: '' });
+    expect(findExactCommandMatch('방제', commands)).toEqual({
+      matched: { command: '방제' },
+      args: '',
+    });
   });
 
   it('공백으로 구분된 인수를 함께 반환한다', () => {

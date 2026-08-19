@@ -1,131 +1,142 @@
 'use server';
 
-import { createElement } from 'react';
+import {
+  chatbotFunctionDefinitionMap,
+  getUsageString,
+  isChatbotFunctionKey,
+  UsageToken,
+} from '@wizbot/shared/src/chatbot/definitions';
 
-import chatbotData from '@/src/chatbot';
 import { trpc } from '@/src/utils/trpc';
 
 import { getCurrentUser } from '../../../../../login/_apis/user';
 import { Command } from '../_components/columns';
 
-export async function fetchCommandList() {
+async function assertStreamer() {
   const currentUser = await getCurrentUser();
-
   if (currentUser.role !== 'streamer') {
     throw new Error('Unauthorized');
   }
+  return currentUser;
+}
+
+function toUsage(functionKey: string, command: string): { tokens: UsageToken[]; text: string } {
+  if (!isChatbotFunctionKey(functionKey)) {
+    return { tokens: [{ text: '사용법을 찾을 수 없습니다.' }], text: '사용법을 찾을 수 없습니다.' };
+  }
+  return {
+    tokens: chatbotFunctionDefinitionMap[functionKey].usageTokens(command),
+    text: getUsageString(functionKey, command),
+  };
+}
+
+export async function fetchCommandList(): Promise<Command[]> {
+  await assertStreamer();
 
   const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query();
 
-  const functionList = functionFind.map((item) => {
-    const findCommand = chatbotData[item.function as keyof typeof chatbotData];
-    if (!findCommand) {
-      return {
-        id: item.id,
-        command: item.command,
-        type: 'function',
-        usage: createElement('span', { className: 'text-sm' }, '사용법을 찾을 수 없습니다.'),
-        usageString: '사용법을 찾을 수 없습니다.',
-        description: '설명을 찾을 수 없습니다.',
-        permission: item.permission,
-      };
-    }
-
+  const functionList: Command[] = functionFind.map((item) => {
+    const usage = toUsage(item.function, item.command);
     return {
       id: item.id,
       command: item.command,
       type: 'function',
-      usage: findCommand.usage(item.command, item.option ?? undefined),
-      usageString: findCommand.usageString(item.command, item.option ?? undefined),
-      description: findCommand.descriptionShort,
+      usageTokens: usage.tokens,
+      usageString: usage.text,
+      description: isChatbotFunctionKey(item.function)
+        ? chatbotFunctionDefinitionMap[item.function].descriptionShort
+        : '설명을 찾을 수 없습니다.',
       permission: item.permission,
     };
-  }) as Command[];
+  });
 
-  const echoList = echoFind.map((item) => ({
+  const echoList: Command[] = echoFind.map((item) => ({
     id: item.id,
     command: item.command,
     type: 'echo',
-    usage: createElement('span', { className: 'text-sm' }, `!${item.command}`),
+    usageTokens: [{ text: `!${item.command}` }],
     usageString: `!${item.command}`,
     description: `응답: ${item.response}`,
     permission: 'VIEWER',
-  })) as Command[];
+  }));
 
   return [...functionList, ...echoList];
 }
 
 export async function fetchCommandById(id: number, type: 'echo' | 'function') {
-  const currentUser = await getCurrentUser();
+  await assertStreamer();
 
-  if (currentUser.role !== 'streamer') {
-    throw new Error('Unauthorized');
-  }
+  const findCommand = await trpc.command.getCommandById.query({ id, type });
 
-  const findCommand = await trpc.command.getCommandById.query({
-    id,
-    type,
-  });
-
-  if (!findCommand) {
-    throw new Error('Command not found');
-  }
-
-  if (type === 'echo' && findCommand.type === 'echo') {
+  if (findCommand.type === 'echo') {
     return {
       id: findCommand.id,
       command: findCommand.command,
       type: 'echo',
       response: findCommand.response,
-    } as CreateCommandEcho;
+    } as CreateCommandEcho & { id: number };
   }
 
-  if (type === 'function' && findCommand.type === 'function') {
-    return {
-      id: findCommand.id,
-      command: findCommand.command,
-      type: 'function',
-      function: findCommand.function,
-      permission: findCommand.permission,
-      option: findCommand.option,
-    } as CreateCommandFunction;
-  }
-
-  throw new Error('Command not found');
+  return {
+    id: findCommand.id,
+    command: findCommand.command,
+    type: 'function',
+    function: findCommand.function,
+    permission: findCommand.permission,
+    option: findCommand.option ?? undefined,
+  } as CreateCommandFunction & { id: number };
 }
 
-export async function getFunctionOption(selectedCommandKey: string) {
-  const currentUser = await getCurrentUser();
+export type FunctionOptionInput =
+  | { type: 'text' }
+  | { type: 'select'; options: { label: string; value: string }[] };
 
-  if (currentUser.role !== 'streamer') {
-    throw new Error('Unauthorized');
-  }
+/** 함수의 옵션 입력 UI 스펙 조회 — echoCommandSelect 는 스트리머의 echo 명령어 목록으로 채운다 */
+export async function getFunctionOption(
+  selectedCommandKey: string,
+): Promise<FunctionOptionInput | null> {
+  await assertStreamer();
 
-  const findCommand = chatbotData[selectedCommandKey as keyof typeof chatbotData];
-  if (!findCommand) {
+  if (!isChatbotFunctionKey(selectedCommandKey)) {
     throw new Error('Command not found');
   }
 
-  const option = findCommand.optionInput;
-  if (!option) {
-    return null;
+  const option = chatbotFunctionDefinitionMap[selectedCommandKey].option;
+  if (!option) return null;
+
+  if (option.input === 'text') {
+    return { type: 'text' };
   }
 
-  const optionData = await option(trpc);
+  // echoCommandSelect — 저장 값은 echo 명령어 id (definitions.ts 참고)
+  const { echo } = await trpc.command.getCommandList.query();
+  return {
+    type: 'select',
+    options: echo.map((command) => ({ label: command.command, value: command.id.toString() })),
+  };
+}
 
-  if (optionData.type === 'text') {
-    return {
-      type: 'text' as const,
-    };
+/** 옵션 값 검증 — select 류는 유효한 항목인지 확인하고 저장 값(value)을 반환 */
+async function resolveOption(functionKey: string, option?: string): Promise<string | undefined> {
+  if (!isChatbotFunctionKey(functionKey)) {
+    throw new Error('Command not found');
   }
-  if (optionData.type === 'select') {
-    return {
-      type: 'select' as const,
-      options: optionData.options,
-    };
+  const spec = chatbotFunctionDefinitionMap[functionKey].option;
+  if (!spec) return undefined;
+
+  if (spec.input === 'text') {
+    return option ?? '';
   }
 
-  throw new Error('Invalid option type');
+  const optionInput = await getFunctionOption(functionKey);
+  if (optionInput?.type === 'select') {
+    const selected = optionInput.options.find((item) => item.value === option);
+    if (!selected) {
+      throw new Error(`${spec.label}을(를) 선택해주세요.`);
+    }
+    return selected.value;
+  }
+  return option;
 }
 
 interface CreateCommandEcho {
@@ -145,11 +156,7 @@ interface CreateCommandFunction {
 export type CreateCommand = CreateCommandEcho | CreateCommandFunction;
 
 export async function createCommand(data: CreateCommand) {
-  const currentUser = await getCurrentUser();
-
-  if (currentUser.role !== 'streamer') {
-    throw new Error('Unauthorized');
-  }
+  await assertStreamer();
 
   if (data.type === 'echo') {
     await trpc.command.createCommandEcho.mutate({
@@ -157,52 +164,23 @@ export async function createCommand(data: CreateCommand) {
       response: data.response,
     });
   } else {
-    const findCommand = chatbotData[data.function as keyof typeof chatbotData];
-    if (!findCommand) {
-      throw new Error('Command not found');
-    }
-    const option = findCommand.optionInput;
-    if (option) {
-      const optionData = await option(trpc);
-      if (optionData.type === 'text') {
-        data.option = data.option ?? '';
-      } else if (optionData.type === 'select') {
-        const selectedOption = optionData.options.find((item) => item.value === data.option);
-        if (!selectedOption) {
-          throw new Error(`${findCommand.optionLabel}을(를) 선택해주세요.`);
-        }
-        data.option = selectedOption.key;
-      }
-    }
-
+    const option = await resolveOption(data.function, data.option);
     await trpc.command.createCommandFunction.mutate({
       command: data.command,
       permission: data.permission,
       function: data.function,
-      option: data.option,
+      option,
     });
   }
 }
 
 export async function deleteCommand(id: number, type: 'echo' | 'function') {
-  const currentUser = await getCurrentUser();
-
-  if (currentUser.role !== 'streamer') {
-    throw new Error('Unauthorized');
-  }
-
-  await trpc.command.deleteCommand.mutate({
-    id,
-    type,
-  });
+  await assertStreamer();
+  await trpc.command.deleteCommand.mutate({ id, type });
 }
 
 export async function updateCommand(data: CreateCommand & { id: number }) {
-  const currentUser = await getCurrentUser();
-
-  if (currentUser.role !== 'streamer') {
-    throw new Error('Unauthorized');
-  }
+  await assertStreamer();
 
   if (data.type === 'echo') {
     await trpc.command.updateCommand.mutate({
@@ -212,31 +190,14 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
       response: data.response,
     });
   } else {
-    const findCommand = chatbotData[data.function as keyof typeof chatbotData];
-    if (!findCommand) {
-      throw new Error('Command not found');
-    }
-    const option = findCommand.optionInput;
-    if (option) {
-      const optionData = await option(trpc);
-      if (optionData.type === 'text') {
-        data.option = data.option ?? '';
-      } else if (optionData.type === 'select') {
-        const selectedOption = optionData.options.find((item) => item.value === data.option);
-        if (!selectedOption) {
-          throw new Error(`${findCommand.optionLabel}을(를) 선택해주세요.`);
-        }
-        data.option = selectedOption.key;
-      }
-    }
-
+    const option = await resolveOption(data.function, data.option);
     await trpc.command.updateCommand.mutate({
       type: 'function',
       id: data.id,
       command: data.command,
       permission: data.permission,
       function: data.function,
-      option: data.option,
+      option,
     });
   }
 }

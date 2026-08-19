@@ -1,9 +1,10 @@
 'use client';
 
 import { type ColumnDef } from '@tanstack/react-table';
+import type { UsageToken } from '@wizbot/shared/src/chatbot/definitions';
 import { ArrowUpDown, MoreHorizontal } from 'lucide-react';
-import { JSX } from 'react';
 
+import { UsageTokens } from '@/components/custom/usage-tokens';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -20,7 +21,7 @@ export interface Command {
   id: number;
   command: string;
   type: 'echo' | 'function';
-  usage: JSX.Element;
+  usageTokens: UsageToken[];
   usageString: string;
   description: string;
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
@@ -71,10 +72,10 @@ export function createColumns({
       },
     },
     {
-      accessorKey: 'usage',
+      accessorKey: 'usageTokens',
       header: '사용법',
       cell: ({ getValue }) => {
-        return <span className="text-sm">{getValue<Command['usage']>()}</span>;
+        return <UsageTokens tokens={getValue<Command['usageTokens']>()} />;
       },
     },
     {

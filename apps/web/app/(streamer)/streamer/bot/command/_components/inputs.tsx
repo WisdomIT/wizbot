@@ -1,3 +1,8 @@
+import {
+  ChatbotFunctionDefinition,
+  chatbotFunctionDefinitionMap,
+  ChatbotFunctionKey,
+} from '@wizbot/shared/src/chatbot/definitions';
 import { Terminal } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 
@@ -11,13 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChatbotFunction } from '@/src/chatbot';
-import chatbotData from '@/src/chatbot';
 
-import { getFunctionOption } from '../_api/command';
+import { FunctionOptionInput, getFunctionOption } from '../_api/command';
 
 export interface FunctionArgs {
-  type: ChatbotFunction['type'];
+  type: ChatbotFunctionDefinition['type'];
   func: string;
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
   option?: string;
@@ -54,15 +57,18 @@ export function InputsFunction({
   functionArgs: FunctionArgs;
   setFunctionArgs: Dispatch<SetStateAction<FunctionArgs>>;
 }) {
-  //chatbotData에서 type2와 일치하는 type의 function만 리스트화함
-  const functionList = Object.entries(chatbotData).reduce((acc, [key, value]) => {
-    if (value.type === functionArgs.type) {
-      acc.push({ key, value });
-    }
-    return acc;
-  }, [] as { key: string; value: ChatbotFunction }[]);
+  // 정의에서 선택된 타입의 function만 리스트화
+  const functionList = (
+    Object.entries(chatbotFunctionDefinitionMap) as [
+      ChatbotFunctionKey,
+      ChatbotFunctionDefinition,
+    ][]
+  ).filter(([, value]) => value.type === functionArgs.type);
 
-  const selectedCommand = chatbotData[functionArgs.func];
+  const selectedCommand =
+    functionArgs.func in chatbotFunctionDefinitionMap
+      ? chatbotFunctionDefinitionMap[functionArgs.func as ChatbotFunctionKey]
+      : undefined;
 
   return (
     <>
@@ -107,9 +113,9 @@ export function InputsFunction({
             <SelectValue placeholder="기능을 선택하세요" />
           </SelectTrigger>
           <SelectContent>
-            {functionList.map((item) => (
-              <SelectItem key={item.key} value={item.key}>
-                {item.value.name}
+            {functionList.map(([key, value]) => (
+              <SelectItem key={key} value={key}>
+                {value.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -118,11 +124,13 @@ export function InputsFunction({
       {functionArgs.func !== '' && selectedCommand ? (
         <Alert>
           <Terminal className="h-4 w-4" />
-          <AlertTitle>{chatbotData[functionArgs.func].name}</AlertTitle>
-          <AlertDescription>{chatbotData[functionArgs.func].description}</AlertDescription>
+          <AlertTitle>{selectedCommand.name}</AlertTitle>
+          <AlertDescription className="whitespace-pre-line">
+            {selectedCommand.description}
+          </AlertDescription>
         </Alert>
       ) : null}
-      {selectedCommand?.optionInput ? (
+      {selectedCommand?.option ? (
         <InputsFunctionOption
           functionArgs={functionArgs}
           setFunctionArgs={setFunctionArgs}
@@ -165,9 +173,7 @@ const InputsFunctionOption = ({
   setFunctionArgs: Dispatch<SetStateAction<FunctionArgs>>;
   selectedCommandKey: string;
 }) => {
-  const [optionInput, setOptionInput] = useState<
-    { type: 'text' } | { type: 'select'; options: { key: string; value: string }[] } | null
-  >(null);
+  const [optionInput, setOptionInput] = useState<FunctionOptionInput | null>(null);
 
   useEffect(() => {
     async function fetchOptionInput() {
@@ -223,8 +229,8 @@ const InputsFunctionOption = ({
           </SelectTrigger>
           <SelectContent>
             {optionInput.options.map((item) => (
-              <SelectItem key={item.key} value={item.value}>
-                {item.key}
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             ))}
           </SelectContent>

@@ -1,3 +1,3 @@
-import { FunctionCommand } from '.';
+import { ChatbotFunctionHandler } from '.';
 
-export const functionSong = {} as FunctionCommand;
+export const functionSong = {} satisfies Partial<Record<string, ChatbotFunctionHandler>>;

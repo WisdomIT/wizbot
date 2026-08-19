@@ -11,9 +11,30 @@ const echoCommands = [
 ];
 
 const functionCommands = [
-  { id: 10, userId: USER_ID, command: '방제 수정', function: 'updateChzzkTitle', permission: 'MANAGER', option: null },
-  { id: 11, userId: USER_ID, command: '추가', function: 'createCommandEcho', permission: 'MANAGER', option: null },
-  { id: 12, userId: USER_ID, command: '고장', function: 'doesNotExist', permission: 'VIEWER', option: null },
+  {
+    id: 10,
+    userId: USER_ID,
+    command: '방제 수정',
+    function: 'updateChzzkTitle',
+    permission: 'MANAGER',
+    option: null,
+  },
+  {
+    id: 11,
+    userId: USER_ID,
+    command: '추가',
+    function: 'createCommandEcho',
+    permission: 'MANAGER',
+    option: null,
+  },
+  {
+    id: 12,
+    userId: USER_ID,
+    command: '고장',
+    function: 'doesNotExist',
+    permission: 'VIEWER',
+    option: null,
+  },
 ];
 
 function createCtx() {
