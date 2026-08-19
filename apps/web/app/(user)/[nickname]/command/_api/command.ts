@@ -8,14 +8,8 @@ import { trpc } from '@/src/utils/trpc';
 import { Command } from '../_components/columns';
 
 export async function fetchCommandList(channelName: string) {
-  const streamer = await trpc.user.getUserByChannelName.query({ channelName });
-  if (!streamer) {
-    throw new Error('잘못된 요청입니다.');
-  }
-
-  const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query({
-    userId: streamer.id,
-  });
+  const { function: functionFind, echo: echoFind } =
+    await trpc.command.getCommandListByChannelName.query({ channelName });
 
   const functionList = functionFind.map((item) => {
     const findCommand = chatbotData[item.function as keyof typeof chatbotData];

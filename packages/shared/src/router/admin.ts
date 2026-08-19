@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 import { sendMail } from '../lib/nodemailer';
-import { t } from '../trpc';
+import { publicProcedure, t } from '../trpc';
 
 export const adminRouter = t.router({
-  login: t.procedure.input(z.object({ email: z.string() })).query(async ({ ctx, input }) => {
+  login: publicProcedure.input(z.object({ email: z.string() })).query(async ({ ctx, input }) => {
     const { email } = input;
 
     const adminFind = await ctx.prisma.admin.findFirst({
@@ -57,7 +57,7 @@ export const adminRouter = t.router({
       ok: true,
     };
   }),
-  loginCheck: t.procedure
+  loginCheck: publicProcedure
     .input(z.object({ email: z.string(), code: z.string() }))
     .query(async ({ ctx, input }) => {
       const { email, code } = input;

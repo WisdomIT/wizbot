@@ -17,6 +17,7 @@
     "@trpc/client": "^11.18.0",
     "@wizbot/shared": "workspace:^",
     "chalk": "^5.4.1",
+    "dotenv": "^17.4.2",
     "socket.io-client": "^2.0.3",
     "ts-node": "^10.9.2"
   },

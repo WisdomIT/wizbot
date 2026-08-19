@@ -1,4 +1,4 @@
-import { t } from '../trpc';
+import { publicProcedure, t } from '../trpc';
 import { adminRouter } from './admin';
 import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
@@ -12,7 +12,7 @@ export const appRouter = t.router({
   song: songRouter,
   user: userRouter,
 
-  ping: t.procedure.query(() => {
+  ping: publicProcedure.query(() => {
     return 'pong';
   }),
 });

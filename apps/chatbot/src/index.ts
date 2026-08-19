@@ -1,9 +1,17 @@
 /* eslint-disable no-console */
+import dotenv from 'dotenv';
+dotenv.config();
+
 import chzzk from '@wizbot/shared/src/chzzk';
 
 import { ChatStatus } from './index.d';
 import connectSocket, { updateRepeats } from './socket';
 import { trpc } from './trpc';
+
+if (!process.env.INTERNAL_API_TOKEN) {
+  console.error('❌ INTERNAL_API_TOKEN 환경변수가 없습니다. apps/chatbot/.env 를 확인하세요.');
+  process.exit(1);
+}
 
 console.log('🚀 Chatbot 서버가 실행되었습니다!');
 

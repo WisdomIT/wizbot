@@ -31,7 +31,7 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   const payload = await verifyJwt(token);
 
   if (payload.role === 'streamer') {
-    const streamerRequest = await trpc.user.getUser.query({ id: payload.id });
+    const streamerRequest = await trpc.user.me.query();
 
     if (!streamerRequest) {
       throw new Error('Unauthorized');

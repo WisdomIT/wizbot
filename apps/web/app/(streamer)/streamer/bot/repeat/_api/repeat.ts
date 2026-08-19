@@ -12,9 +12,7 @@ export async function fetchRepeatList() {
     throw new Error('Unauthorized');
   }
 
-  const repeatList = await trpc.command.getRepeatList.query({
-    userId: currentUser.id,
-  });
+  const repeatList = await trpc.command.getRepeatList.query();
 
   const functionList = repeatList.map((item) => ({
     id: item.id,
@@ -32,9 +30,7 @@ export async function fetchUserDefaultInterval() {
     throw new Error('Unauthorized');
   }
 
-  const findSetting = await trpc.user.getUserSetting.query({
-    userId: currentUser.id,
-  });
+  const findSetting = await trpc.user.getUserSetting.query();
 
   if (!findSetting) {
     throw new Error('Command not found');
@@ -51,7 +47,6 @@ export async function fetchRepeatById(id: number) {
   }
 
   const findRepeat = await trpc.command.getRepeatById.query({
-    userId: currentUser.id,
     id,
   });
 
@@ -75,7 +70,6 @@ export async function createRepeat({ response, interval }: { response: string; i
 
   try {
     await trpc.command.createRepeat.mutate({
-      userId: currentUser.id,
       response,
       interval,
     });
@@ -95,7 +89,6 @@ export async function deleteRepeat(id: number) {
 
   try {
     await trpc.command.deleteRepeat.mutate({
-      userId: currentUser.id,
       id,
     });
   } catch (error) {
@@ -122,7 +115,6 @@ export async function updateRepeat({
 
   try {
     await trpc.command.updateRepeat.mutate({
-      userId: currentUser.id,
       id,
       response,
       interval,
@@ -143,7 +135,6 @@ export async function updateInterval(interval: number) {
 
   try {
     await trpc.user.updateUserSetting.mutate({
-      userId: currentUser.id,
       setting: {
         chatbotDefaultRepeat: interval,
       },

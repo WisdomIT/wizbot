@@ -1,6 +1,5 @@
 import { Badge } from '@/components/ui/badge';
 
-import { trpc } from '../utils/trpc';
 import type { ChatbotData } from '.';
 
 export const command = {
@@ -68,10 +67,8 @@ export const command = {
     ),
     usageString: (command: string) => `!${command} <응답>`,
     optionLabel: 'echo 명령어',
-    optionInput: async (userId: number) => {
-      const response = await trpc.command.getCommandList.query({
-        userId,
-      });
+    optionInput: async (api) => {
+      const response = await api.command.getCommandList.query();
 
       const echoCommands = response.echo;
 
@@ -83,10 +80,8 @@ export const command = {
         })),
       };
     },
-    optionVerify: async (userId: number, option: string) => {
-      const response = await trpc.command.getCommandList.query({
-        userId,
-      });
+    optionVerify: async (api, option: string) => {
+      const response = await api.command.getCommandList.query();
 
       const echoCommands = response.echo;
 
