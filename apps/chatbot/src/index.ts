@@ -2,115 +2,126 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import chzzk from '@wizbot/shared/src/chzzk';
+import { createServer } from 'node:http';
 
-import { ChatStatus } from './index.d';
-import connectSocket, { updateRepeats } from './socket';
+import { ChannelInfo, ChannelSession } from './channelSession';
 import { trpc } from './trpc';
 
-if (!process.env.INTERNAL_API_TOKEN) {
-  console.error('❌ INTERNAL_API_TOKEN 환경변수가 없습니다. apps/chatbot/.env 를 확인하세요.');
-  process.exit(1);
+for (const key of ['INTERNAL_API_TOKEN', 'CHZZK_ID', 'CHZZK_SECRET'] as const) {
+  if (!process.env[key]) {
+    console.error(`❌ ${key} 환경변수가 없습니다. apps/chatbot/.env 를 확인하세요.`);
+    process.exit(1);
+  }
 }
 
-console.log('🚀 Chatbot 서버가 실행되었습니다!');
+// 마지막 방어선 — 개별 핸들러가 놓친 예외로 프로세스가 죽지 않게 한다 (#27)
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ [unhandledRejection]', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('❌ [uncaughtException]', error);
+});
 
-const status: ChatStatus[] = [];
+console.log('🚀 Chatbot 워커가 실행되었습니다!');
 
-async function getStatusInterval() {
-  let statusRequest;
-  let botChannelId;
+const POLL_INTERVAL_MS = 60 * 1000;
 
-  try {
-    statusRequest = await trpc.chatbot.getChannels.query();
-    botChannelId = await trpc.chatbot.getChatbotChannelId.query();
-  } catch (error) {
-    console.error('❌ statusRequest를 가져오는 데 실패했습니다:', error);
+/** userId → 세션. 채널별 연결/타이머의 단일 소유자 (#29) */
+const sessions = new Map<number, ChannelSession>();
+let botChannelId: string | null = null;
+let lastPollAt: Date | null = null;
+
+/** DB 채널 목록과 세션을 diff 동기화한다 — 추가는 연결, 삭제는 정리 */
+async function syncChannels(): Promise<void> {
+  botChannelId ??= (await trpc.chatbot.getChatbotChannelId.query()) ?? null;
+  if (!botChannelId) {
+    console.error('❌ CHZZK_BOT_CHANNEL_ID 가 API 에 설정되지 않았습니다. 연결을 건너뜁니다.');
     return;
   }
 
-  if (!statusRequest || !botChannelId) {
-    console.error('❌ statusRequest 또는 botChannelId를 가져오는 데 실패했습니다.');
-    return;
+  const rows = await trpc.chatbot.getChannels.query();
+  const channels: ChannelInfo[] = rows.map((row) => ({
+    userId: row.id,
+    channelId: row.channelId,
+    channelName: row.channelName,
+  }));
+  const wanted = new Set(channels.map((channel) => channel.userId));
+
+  // DB 에서 사라진 채널 정리
+  for (const [userId, session] of sessions) {
+    if (!wanted.has(userId)) {
+      session.dispose();
+      sessions.delete(userId);
+    }
   }
 
-  for (const channel of statusRequest) {
-    let thisStatus = status.find((s) => s.channelId === channel.channelId);
-    let token;
+  // 새 채널 연결 (실패해도 다른 채널에 영향 없음 — 다음 폴링에서 재시도)
+  for (const channel of channels) {
+    if (sessions.has(channel.userId)) continue;
+
+    const session = new ChannelSession(channel, botChannelId);
+    sessions.set(channel.userId, session);
     try {
-      token = await trpc.user.ensureAccessToken.mutate({ userId: channel.id });
+      await session.start();
     } catch (error) {
-      console.error('❌ 토큰을 가져오는 데 실패했습니다:', channel.channelName);
-    }
-
-    // sessionURL이 null이거나 thisStatus가 없으면 세션 URL을 가져옴
-    if (!thisStatus?.sessionURL && token) {
-      try {
-        const sessionURL = await chzzk.session.auth(token.accessToken);
-
-        if (sessionURL.code !== 200) {
-          console.error('❌ 세션 URL을 가져오는 데 실패했습니다:', sessionURL.message);
-          continue;
-        }
-
-        // thisStatus가 없으면 status에 추가
-        // thisStatus가 있으면 sessionURL을 업데이트
-        if (!thisStatus) {
-          const tempStatus: ChatStatus = {
-            userId: channel.id,
-            channelId: channel.channelId,
-            channelName: channel.channelName,
-            sessionURL: sessionURL.content.url,
-            botChannelId,
-          };
-
-          status.push(tempStatus);
-
-          thisStatus = status.find((s) => s.channelId === channel.channelId);
-          if (!thisStatus) {
-            console.error('❌ thisStatus를 찾을 수 없습니다:', channel.channelId);
-            continue;
-          }
-        } else {
-          thisStatus.sessionURL = sessionURL.content.url;
-        }
-
-        // 소켓 연결
-        connectSocket(thisStatus, () => {
-          if (!thisStatus) {
-            console.error('❌ thisStatus를 찾을 수 없습니다 (연결해제):', channel.channelId);
-            return;
-          }
-          thisStatus.sessionURL = null; // 연결 실패 혹은 해제 시 sessionURL을 null로 설정
-        });
-      } catch (error) {
-        console.error(`❌ 에러가 발생했습니다: ${channel.channelName}`, error);
-        continue;
-      }
+      console.error('❌ 채널 연결 실패:', channel.channelName, error);
+      session.dispose();
+      sessions.delete(channel.userId);
     }
   }
 }
 
-setInterval(() => {
-  void getStatusInterval();
-}, 1000 * 60);
-
-setTimeout(() => {
-  void getStatusInterval();
-}, 1000);
-
-function updateRepeatsInterval() {
-  for (const s of status) {
-    if (s.sessionURL) {
-      void updateRepeats(s.userId);
+/** 반복 메시지 동기화 — 연결된 채널만 */
+async function syncRepeats(): Promise<void> {
+  for (const session of sessions.values()) {
+    try {
+      await session.syncRepeats();
+    } catch (error) {
+      console.error('❌ 반복 동기화 실패:', session.info.channelName, error);
     }
   }
 }
 
-setInterval(() => {
-  void updateRepeatsInterval();
-}, 60 * 1000);
+// 재진입 가드 — 채널 연결(connectedTimeoutMs 최대 10s×채널 수)로 한 번의 폴링이 주기(60s)를
+// 넘길 수 있다. 겹쳐 실행되면 같은 반복 id 의 타이머가 이중 생성·누수된다 (PR #61 리뷰).
+let polling = false;
 
-setTimeout(() => {
-  void updateRepeatsInterval();
-}, 5000);
+async function poll(): Promise<void> {
+  if (polling) return;
+  polling = true;
+  try {
+    await syncChannels();
+    await syncRepeats();
+    lastPollAt = new Date();
+  } catch (error) {
+    console.error('❌ 폴링 실패:', error);
+  } finally {
+    polling = false;
+  }
+}
+
+void poll();
+setInterval(() => void poll(), POLL_INTERVAL_MS);
+
+// 헬스체크 — 컨테이너 healthcheck 용. 마지막 폴링이 3주기 이상 밀리면 unhealthy
+const HEALTH_PORT = Number(process.env.HEALTH_PORT ?? 3003);
+createServer((req, res) => {
+  const stale = !lastPollAt || Date.now() - lastPollAt.getTime() > POLL_INTERVAL_MS * 3;
+  res.writeHead(stale ? 503 : 200, { 'content-type': 'application/json' });
+  res.end(
+    JSON.stringify({
+      ok: !stale,
+      channels: sessions.size,
+      lastPollAt: lastPollAt?.toISOString() ?? null,
+    }),
+  );
+}).listen(HEALTH_PORT, () => console.log(`🩺 헬스체크: http://localhost:${HEALTH_PORT}/`));
+
+// 정상 종료 — 소켓/타이머 정리
+function shutdown() {
+  console.log('👋 종료 중...');
+  for (const session of sessions.values()) session.dispose();
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
+import { ChzzkError } from 'chzzk-open-sdk';
+
 import chatbot from '../chatbot';
-import { repeatService } from '../services';
+import { getChzzkClientForUser, repeatService } from '../services';
 import { internalProcedure, publicProcedure, t } from '../trpc';
 
 export const chatbotRouter = t.router({
@@ -33,9 +35,37 @@ export const chatbotRouter = t.router({
         throw new Error('Invalid input.');
       }
 
-      return await chatbot(ctx, { userId, senderNickname, senderRole, content });
+      const result = await chatbot(ctx, { userId, senderNickname, senderRole, content });
+
+      // 응답 전송도 API 가 수행한다 — 워커는 유저 토큰을 만지지 않는다 (#30 토큰 소유 원칙)
+      if (result.ok) {
+        try {
+          await getChzzkClientForUser(ctx.prisma, userId).chats.send(result.message);
+        } catch (error) {
+          if (error instanceof ChzzkError) {
+            return { ok: false, message: `채팅 전송 실패: ${error.message}` };
+          }
+          throw error;
+        }
+      }
+
+      return result;
     }),
   repeat: internalProcedure
     .input(z.object({ userId: z.number() }))
     .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId)),
+  /** 반복 메시지 등 워커발 채팅 전송 — 전송 주체는 항상 API (#30) */
+  send: internalProcedure
+    .input(z.object({ userId: z.number(), message: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await getChzzkClientForUser(ctx.prisma, input.userId).chats.send(input.message);
+        return { ok: true as const };
+      } catch (error) {
+        if (error instanceof ChzzkError) {
+          return { ok: false as const, message: error.message };
+        }
+        throw error;
+      }
+    }),
 });

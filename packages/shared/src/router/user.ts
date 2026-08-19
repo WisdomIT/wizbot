@@ -179,7 +179,16 @@ export const userRouter = t.router({
         ctx.prisma,
         input.userId,
       ).auth.getAccessToken();
-      return { accessToken };
+
+      // 워커의 read-only TokenStore 용으로 남은 유효시간(초)도 알려준다 (여기 도달 시점엔 항상 존재·신선)
+      const credential = await ctx.prisma.oAuthCredential.findUnique({
+        where: { userId: input.userId },
+      });
+      const expiresIn = credential
+        ? Math.max(0, Math.floor((credential.expiresIn.getTime() - Date.now()) / 1000))
+        : 0;
+
+      return { accessToken, expiresIn };
     }),
   getUserSetting: streamerProcedure.query(({ ctx }) =>
     userSettingService.getUserSetting(ctx.prisma, ctx.user.id),
