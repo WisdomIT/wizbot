@@ -54,7 +54,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
           console.log('🔌 연결됨:', channelId);
 
           const sessionKey = parsedData.data.sessionKey;
-          const token = await trpc.user.getAccessToken.mutate({ userId });
+          const token = await trpc.user.ensureAccessToken.mutate({ userId });
           setTimeout(async () => {
             const chat = await chzzk.session.eventsSubscribeChat(token.accessToken, { sessionKey });
             const donation = await chzzk.session.eventsSubscribeDonation(token.accessToken, {
@@ -113,7 +113,7 @@ export default function connectSocket(data: ChatStatus, onDisconnect: () => void
       console.log('ㅤ🤖', chalk.blue(`[${channelName}]`), apiRequest.message);
 
       // 메시지 전송
-      const token = await trpc.user.getAccessToken.mutate({ userId });
+      const token = await trpc.user.ensureAccessToken.mutate({ userId });
       await chzzk.chat.send(token.accessToken, {
         message: apiRequest.message,
       });
@@ -174,7 +174,7 @@ const repeatMap: Map<number, Map<RepeatKey, TrackedRepeat>> = new Map(); // user
 
 export async function updateRepeats(userId: number) {
   const result = await trpc.chatbot.repeat.query({ userId });
-  const token = await trpc.user.getAccessToken.mutate({ userId });
+  const token = await trpc.user.ensureAccessToken.mutate({ userId });
   const user = await trpc.user.getUser.query({ id: userId });
 
   if (!token || !user) {

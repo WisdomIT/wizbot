@@ -192,8 +192,8 @@ export const userRouter = t.router({
         channelImageUrl,
       };
     }),
-  /** 내부(챗봇 워커)용 — 만료 시 refresh token 갱신(DB 쓰기)이 일어나므로 mutation (#19) */
-  getAccessToken: internalProcedure
+  /** 내부(챗봇 워커)용 — 만료 시 refresh token 갱신(DB 쓰기)이 일어나므로 mutation. get* 이름은 오해 소지가 있어 ensure* 로 (#19) */
+  ensureAccessToken: internalProcedure
     .input(z.object({ userId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = input;
