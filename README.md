@@ -97,6 +97,29 @@ pnpm dev
 
 `0_init`은 2026-08 기준 스키마 전체를 담은 baseline 마이그레이션입니다. 이미 `db push`로 만들어진 운영 DB에는 위 `migrate resolve --applied 0_init`으로 "적용됨" 표시만 해주면 됩니다.
 
+## Docker
+
+루트 `Dockerfile` 하나에 타깃 3개(`web` / `api` / `chatbot`)가 있습니다.
+
+```bash
+docker build --target web     -t wizbot/web     .
+docker build --target api     -t wizbot/api     .
+docker build --target chatbot -t wizbot/chatbot .
+```
+
+로컬에서 전체 스택(MySQL 포함)을 올려 보려면:
+
+```bash
+cp .env.docker.example .env.docker && $EDITOR .env.docker
+docker compose --env-file .env.docker up -d --build
+# http://localhost:3001
+```
+
+- `dev` 브랜치에 푸시되면 CI가 `ghcr.io/wisdomit/wizbot/{web,api,chatbot}:dev` 이미지를 올립니다 (시험/스테이징 스택용).
+- 정식 릴리즈는 `main`에 `vX.Y.Z` 태그를 푸시하면 `release.yml`이 버전 태그 이미지를 올립니다.
+- 운영 배포(Portainer 스택)는 [homelab-wisdomserver](https://github.com/WisdomIT/homelab-wisdomserver)의 `optional/wizbot`을 사용합니다.
+- `chatbot`은 채널별 소켓/타이머를 메모리에 갖는 stateful 싱글턴이므로 replica를 늘리면 안 됩니다. `web`/`api`는 stateless라 늘려도 됩니다.
+
 ## Copyright
 
 © [WisdomIT](https://discord.com/users/901304044767834123)
