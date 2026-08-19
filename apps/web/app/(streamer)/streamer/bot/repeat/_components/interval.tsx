@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -13,24 +14,25 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-import { updateInterval } from '../_api/repeat';
+import { useTRPC } from '@/src/utils/trpc-react';
 export default function UpdateInterval({ interval: intervalInitial }: { interval: number }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const updateSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
+
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(intervalInitial);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    toast.promise(updateInterval(data), {
+    toast.promise(updateSetting.mutateAsync({ setting: { chatbotDefaultRepeat: data } }), {
       loading: '기본 반복 주기를 변경하는 중입니다...',
       success: () => {
         setOpen(false);
         setData(intervalInitial);
 
-        setTimeout(() => {
-          location.reload();
-        }, 500);
+        void queryClient.invalidateQueries(trpc.user.getUserSetting.queryFilter());
 
         return '기본 반복 주기가 변경되었습니다.';
       },

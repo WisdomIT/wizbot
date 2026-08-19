@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -13,9 +14,12 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
-import { createRepeat } from '../_api/repeat';
+import { useTRPC } from '@/src/utils/trpc-react';
 export default function NewRepeat({ interval: intervalInitial }: { interval: number }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const createRepeat = useMutation(trpc.command.createRepeat.mutationOptions());
+
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({
     response: '',
@@ -25,7 +29,7 @@ export default function NewRepeat({ interval: intervalInitial }: { interval: num
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    toast.promise(createRepeat(data), {
+    toast.promise(createRepeat.mutateAsync(data), {
       loading: '반복 메시지를 추가하는 중입니다...',
       success: () => {
         setOpen(false);
@@ -34,9 +38,7 @@ export default function NewRepeat({ interval: intervalInitial }: { interval: num
           interval: intervalInitial,
         });
 
-        setTimeout(() => {
-          location.reload();
-        }, 500);
+        void queryClient.invalidateQueries(trpc.command.getRepeatList.queryFilter());
 
         return '반복 메시지가 추가되었습니다.';
       },

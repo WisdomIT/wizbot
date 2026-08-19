@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import { isChatbotFunctionKey } from '../chatbot/definitions';
+import type { PrismaClient } from '@prisma/client';
+
+import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '../chatbot/definitions';
 import { commandService, repeatService, ServiceError } from '../services';
 import { publicProcedure, streamerProcedure, t } from '../trpc';
 
@@ -11,6 +13,27 @@ function assertKnownFunction(func: string) {
   if (!isChatbotFunctionKey(func)) {
     throw new ServiceError('INVALID_INPUT', `"${func}"은(는) functions에 존재하지 않습니다.`);
   }
+}
+
+/**
+ * 함수의 option 스펙 검증 (#22 — 클라이언트가 API 를 직접 호출하므로 서버에서 확정한다)
+ * echoCommandSelect: 본인 소유 echo 명령어의 id 여야 한다
+ */
+async function assertValidOption(
+  prisma: PrismaClient,
+  userId: number,
+  func: string,
+  option: string | undefined,
+) {
+  if (!isChatbotFunctionKey(func)) return;
+  const spec = chatbotFunctionDefinitionMap[func].option;
+  if (!spec || spec.input !== 'echoCommandSelect') return;
+
+  const id = Number(option);
+  if (!option || !Number.isInteger(id)) {
+    throw new ServiceError('INVALID_INPUT', `${spec.label}을(를) 선택해주세요.`);
+  }
+  await commandService.getEchoCommand(prisma, userId, id); // 없으면 NOT_FOUND
 }
 
 export const commandRouter = t.router({
@@ -63,6 +86,7 @@ export const commandRouter = t.router({
     )
     .mutation(async ({ ctx, input }) => {
       assertKnownFunction(input.function);
+      await assertValidOption(ctx.prisma, ctx.user.id, input.function, input.option);
       const data = await commandService.createFunctionCommand(ctx.prisma, {
         userId: ctx.user.id,
         ...input,
@@ -106,6 +130,7 @@ export const commandRouter = t.router({
           throw new ServiceError('INVALID_INPUT', '권한과 기능을 입력해주세요.');
         }
         assertKnownFunction(input.function);
+        await assertValidOption(ctx.prisma, userId, input.function, input.option);
         await commandService.updateFunctionCommand(ctx.prisma, {
           userId,
           id,

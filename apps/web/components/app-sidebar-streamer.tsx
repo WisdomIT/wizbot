@@ -14,9 +14,7 @@ import {
 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
-import { useEffect, useState } from 'react';
 
-import { getCurrentUser } from '@/app/login/_apis/user';
 import {
   Sidebar,
   SidebarContent,
@@ -107,15 +105,11 @@ const data = {
 
 interface AppSidebarStreamerProps extends React.ComponentProps<typeof Sidebar> {
   children: React.ReactNode;
+  /** 레이아웃(RSC)에서 조회해 내려주는 로그인 스트리머 정보 (#22) */
+  user: { nickname: string; id: string; avatar: string };
 }
 
-export default function AppSidebarStreamer({ children, ...props }: AppSidebarStreamerProps) {
-  const [user, setUser] = useState({
-    nickname: '',
-    id: '',
-    avatar: '',
-  });
-
+export default function AppSidebarStreamer({ children, user, ...props }: AppSidebarStreamerProps) {
   const pathname = usePathname();
 
   // 경로에 해당하는 item과 group 찾기
@@ -130,23 +124,6 @@ export default function AppSidebarStreamer({ children, ...props }: AppSidebarStr
       break;
     }
   }
-
-  useEffect(() => {
-    async function fetchUser() {
-      const getUserData = await getCurrentUser();
-
-      if (getUserData?.role !== 'streamer') {
-        throw new Error('Unauthorized');
-      }
-
-      setUser({
-        nickname: getUserData.channelName,
-        id: getUserData.channelId,
-        avatar: getUserData.channelImageUrl ?? '',
-      });
-    }
-    fetchUser();
-  }, [pathname]);
 
   return (
     <>

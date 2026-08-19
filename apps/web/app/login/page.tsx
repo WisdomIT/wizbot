@@ -1,39 +1,30 @@
-'use client';
-
 import { Bot } from 'lucide-react';
+import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect } from 'react';
-import { toast } from 'sonner';
+import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 
-import { getCurrentUser } from './_apis/user';
+import { verifyJwt } from '@/lib/jwt';
+
+import { LoginErrorToast } from './_components/loginErrorToast';
 import { LoginForm } from './_components/loginForm';
 
-function LoginPage() {
-  const searchParams = useSearchParams();
+/** 이미 로그인된 세션이면 콘솔로 (기존: 클라이언트에서 서버 액션 호출 + 비로그인 시 throw 로그) */
+async function getSessionRole(): Promise<'admin' | 'streamer' | null> {
+  const token = (await cookies()).get('session-token')?.value;
+  if (!token) return null;
+  try {
+    const payload = await verifyJwt(token);
+    return payload.role;
+  } catch {
+    return null;
+  }
+}
 
-  useEffect(() => {
-    const error = searchParams.get('error');
-
-    if (error) {
-      toast.error(`오류가 발생했습니다: ${error}`);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    async function getUser() {
-      const currentUser = await getCurrentUser();
-      if (currentUser) {
-        if (currentUser.role === 'admin') {
-          window.location.replace('/admin');
-        } else if (currentUser.role === 'streamer') {
-          window.location.replace('/streamer');
-        }
-      }
-    }
-
-    void getUser();
-  }, []);
+export default async function LoginPage() {
+  const role = await getSessionRole();
+  if (role === 'admin') redirect('/admin');
+  if (role === 'streamer') redirect('/streamer');
 
   return (
     <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
@@ -46,14 +37,9 @@ function LoginPage() {
         </Link>
         <LoginForm />
       </div>
+      <Suspense>
+        <LoginErrorToast />
+      </Suspense>
     </div>
-  );
-}
-
-export default function SuspensePage() {
-  return (
-    <Suspense>
-      <LoginPage />
-    </Suspense>
   );
 }
