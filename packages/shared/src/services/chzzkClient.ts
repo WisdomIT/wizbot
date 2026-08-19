@@ -25,7 +25,7 @@ function getCredentials() {
  * get() 은 남은 시간 기준으로 변환한다 — 남은 시간이 expirySkewSeconds(기본 60초) 미만이면
  * SDK 가 만료 임박으로 판단해 선제 갱신한다.
  */
-class PrismaTokenStore implements TokenStore {
+export class PrismaTokenStore implements TokenStore {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly userId: number,
