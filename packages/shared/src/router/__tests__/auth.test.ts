@@ -1,10 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../lib/accessToken', () => ({
-  getAccessToken: vi.fn().mockResolvedValue('test-access-token'),
-}));
-
 import { appRouter } from '..';
 import type { Context } from '../../trpc';
 

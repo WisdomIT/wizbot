@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
-import chzzk from '../chzzk';
-import { getAccessToken } from '../lib/accessToken';
-import { userSettingService } from '../services';
+import {
+  createChzzkLoginClient,
+  getChzzkAppClient,
+  getChzzkClientForUser,
+  userSettingService,
+} from '../services';
 import { internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
 export const userRouter = t.router({
@@ -90,22 +93,11 @@ export const userRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
 
-      const accessTokenRequest = await chzzk.authorization.accessToken({
-        code,
-        state,
-      });
-      if (accessTokenRequest.code !== 200) {
-        throw new Error('Invalid response from Chzzk on access token request');
-      }
+      // userId 를 알기 전이므로 메모리 스토어의 일회성 클라이언트로 교환한다 (#30)
+      const loginClient = createChzzkLoginClient();
+      const tokenSet = await loginClient.auth.login({ code, state });
 
-      const { accessToken, refreshToken, tokenType, expiresIn } = accessTokenRequest.content;
-
-      const meRequest = await chzzk.user.me(accessToken);
-      if (meRequest.code !== 200) {
-        throw new Error('Invalid response from Chzzk on me request');
-      }
-
-      const { channelId } = meRequest.content;
+      const { channelId } = await loginClient.users.me();
 
       const findMe = await ctx.prisma.whitelist.findFirst({
         where: {
@@ -118,11 +110,11 @@ export const userRouter = t.router({
         );
       }
 
-      const channelsRequest = await chzzk.channel.channels({ channelIds: [channelId] });
-      if (channelsRequest.code !== 200) {
-        throw new Error('Invalid response from Chzzk on channels request');
+      const channels = await getChzzkAppClient().channels.get([channelId]);
+      if (channels.length === 0) {
+        throw new Error('치지직 채널 정보를 가져오지 못했습니다.');
       }
-      const { channelName, channelImageUrl } = channelsRequest.content.data[0];
+      const { channelName, channelImageUrl } = channels[0];
 
       const user = await ctx.prisma.user.upsert({
         where: { channelId },
@@ -150,22 +142,8 @@ export const userRouter = t.router({
         });
       }
 
-      await ctx.prisma.oAuthCredential.upsert({
-        where: { userId: user.id },
-        update: {
-          accessToken,
-          refreshToken,
-          tokenType,
-          expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
-        },
-        create: {
-          userId: user.id,
-          accessToken,
-          refreshToken,
-          tokenType,
-          expiresIn: new Date(new Date().getTime() + Number(expiresIn) * 1000),
-        },
-      });
+      // 발급받은 토큰을 해당 유저의 DB TokenStore 로 영속화
+      await getChzzkClientForUser(ctx.prisma, user.id).auth.setTokens(tokenSet);
 
       //functionCommand에 데이터가 하나도 없다면 기본값 세팅 (첫 로그인 시)
       const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
@@ -196,18 +174,12 @@ export const userRouter = t.router({
   ensureAccessToken: internalProcedure
     .input(z.object({ userId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const { userId } = input;
-
-      try {
-        const accessToken = await getAccessToken(ctx, userId);
-
-        // Return new access token
-        return {
-          accessToken: accessToken,
-        };
-      } catch (error) {
-        throw new Error('Access token not found');
-      }
+      // SDK 가 만료 임박 시 선제 갱신하고 새 토큰 묶음을 DB TokenStore 에 저장한다 (#30)
+      const accessToken = await getChzzkClientForUser(
+        ctx.prisma,
+        input.userId,
+      ).auth.getAccessToken();
+      return { accessToken };
     }),
   getUserSetting: streamerProcedure.query(({ ctx }) =>
     userSettingService.getUserSetting(ctx.prisma, ctx.user.id),

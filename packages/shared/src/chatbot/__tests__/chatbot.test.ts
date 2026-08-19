@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// 치지직 토큰 조회는 외부 API를 타므로 mock
-vi.mock('../../lib/accessToken', () => ({
-  getAccessToken: vi.fn().mockResolvedValue('test-access-token'),
-}));
-
 import type { Context } from '../../trpc';
 import chatbot, { getChatbotDatabaseInitial } from '..';
 
