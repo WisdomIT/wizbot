@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { functions } from '../chatbot';
 import { commandService, repeatService, ServiceError } from '../services';
-import { t } from '../trpc';
+import { publicProcedure, streamerProcedure, t } from '../trpc';
 
 const permissionSchema = z.enum(['STREAMER', 'MANAGER', 'VIEWER']);
 const commandTypeSchema = z.enum(['echo', 'function']);
@@ -14,33 +14,47 @@ function assertKnownFunction(func: string) {
 }
 
 export const commandRouter = t.router({
-  getCommandList: t.procedure
-    .input(z.object({ userId: z.number() }))
-    .query(({ ctx, input }) => commandService.listCommands(ctx.prisma, input.userId)),
-
-  getCommandById: t.procedure
-    .input(z.object({ userId: z.number(), id: z.number(), type: commandTypeSchema }))
+  /** 시청자용 공개 명령어 목록 (채널명 기준) */
+  getCommandListByChannelName: publicProcedure
+    .input(z.object({ channelName: z.string() }))
     .query(async ({ ctx, input }) => {
-      const { userId, id, type } = input;
+      const user = await ctx.prisma.user.findFirst({
+        where: { channelName: input.channelName, hidden: false },
+        select: { id: true },
+      });
+      if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 채널입니다.');
+      return commandService.listCommands(ctx.prisma, user.id);
+    }),
+
+  getCommandList: streamerProcedure.query(({ ctx }) =>
+    commandService.listCommands(ctx.prisma, ctx.user.id),
+  ),
+
+  getCommandById: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema }))
+    .query(async ({ ctx, input }) => {
+      const { id, type } = input;
       if (type === 'echo') {
-        const found = await commandService.getEchoCommand(ctx.prisma, userId, id);
+        const found = await commandService.getEchoCommand(ctx.prisma, ctx.user.id, id);
         return { type: 'echo' as const, ...found };
       }
-      const found = await commandService.getFunctionCommand(ctx.prisma, userId, id);
+      const found = await commandService.getFunctionCommand(ctx.prisma, ctx.user.id, id);
       return { type: 'function' as const, ...found };
     }),
 
-  createCommandEcho: t.procedure
-    .input(z.object({ userId: z.number(), command: z.string(), response: z.string() }))
+  createCommandEcho: streamerProcedure
+    .input(z.object({ command: z.string(), response: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const data = await commandService.createEchoCommand(ctx.prisma, input);
+      const data = await commandService.createEchoCommand(ctx.prisma, {
+        userId: ctx.user.id,
+        ...input,
+      });
       return { ok: true, data };
     }),
 
-  createCommandFunction: t.procedure
+  createCommandFunction: streamerProcedure
     .input(
       z.object({
-        userId: z.number(),
         command: z.string(),
         permission: permissionSchema,
         function: z.string(),
@@ -49,21 +63,23 @@ export const commandRouter = t.router({
     )
     .mutation(async ({ ctx, input }) => {
       assertKnownFunction(input.function);
-      const data = await commandService.createFunctionCommand(ctx.prisma, input);
+      const data = await commandService.createFunctionCommand(ctx.prisma, {
+        userId: ctx.user.id,
+        ...input,
+      });
       return { ok: true, data };
     }),
 
-  deleteCommand: t.procedure
-    .input(z.object({ userId: z.number(), id: z.number(), type: commandTypeSchema }))
+  deleteCommand: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema }))
     .mutation(async ({ ctx, input }) => {
-      await commandService.deleteCommand(ctx.prisma, input.userId, input.id, input.type);
+      await commandService.deleteCommand(ctx.prisma, ctx.user.id, input.id, input.type);
       return { ok: true };
     }),
 
-  updateCommand: t.procedure
+  updateCommand: streamerProcedure
     .input(
       z.object({
-        userId: z.number(),
         id: z.number(),
         type: commandTypeSchema,
         command: z.string(),
@@ -74,7 +90,8 @@ export const commandRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, id, type, command } = input;
+      const userId = ctx.user.id;
+      const { id, type, command } = input;
 
       if (type === 'echo') {
         if (!input.response) throw new ServiceError('INVALID_INPUT', '응답을 입력해주세요.');
@@ -102,34 +119,32 @@ export const commandRouter = t.router({
       return { ok: true };
     }),
 
-  getRepeatList: t.procedure
-    .input(z.object({ userId: z.number() }))
-    .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId)),
+  getRepeatList: streamerProcedure.query(({ ctx }) =>
+    repeatService.listRepeats(ctx.prisma, ctx.user.id),
+  ),
 
-  getRepeatById: t.procedure
-    .input(z.object({ userId: z.number(), id: z.number() }))
-    .query(({ ctx, input }) => repeatService.getRepeat(ctx.prisma, input.userId, input.id)),
+  getRepeatById: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ ctx, input }) => repeatService.getRepeat(ctx.prisma, ctx.user.id, input.id)),
 
-  createRepeat: t.procedure
-    .input(z.object({ userId: z.number(), response: z.string(), interval: z.number() }))
+  createRepeat: streamerProcedure
+    .input(z.object({ response: z.string(), interval: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const data = await repeatService.createRepeat(ctx.prisma, input);
+      const data = await repeatService.createRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
       return { ok: true, data };
     }),
 
-  deleteRepeat: t.procedure
-    .input(z.object({ userId: z.number(), id: z.number() }))
+  deleteRepeat: streamerProcedure
+    .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await repeatService.deleteRepeat(ctx.prisma, input.userId, input.id);
+      await repeatService.deleteRepeat(ctx.prisma, ctx.user.id, input.id);
       return { ok: true };
     }),
 
-  updateRepeat: t.procedure
-    .input(
-      z.object({ userId: z.number(), id: z.number(), response: z.string(), interval: z.number() }),
-    )
+  updateRepeat: streamerProcedure
+    .input(z.object({ id: z.number(), response: z.string(), interval: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await repeatService.updateRepeat(ctx.prisma, input);
+      await repeatService.updateRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
       return { ok: true };
     }),
 });

@@ -68,9 +68,13 @@
 1. 각 앱의 `.env.example`을 복사해 `.env`를 작성합니다.
 
 ```bash
-cp apps/api/.env.example apps/api/.env   # DATABASE_URL, CHZZK_*, PUBLIC_SITE_URL, SMTP_*
-cp apps/web/.env.example apps/web/.env   # JWT_SECRET
+cp apps/api/.env.example apps/api/.env         # DATABASE_URL, CHZZK_*, PUBLIC_SITE_URL, SMTP_*, JWT_SECRET, INTERNAL_API_TOKEN
+cp apps/web/.env.example apps/web/.env         # JWT_SECRET, API_URL
+cp apps/chatbot/.env.example apps/chatbot/.env # API_URL, INTERNAL_API_TOKEN
 ```
+
+- `JWT_SECRET`은 web(세션 발급)과 api(세션 검증)에 **같은 값**을, `INTERNAL_API_TOKEN`은 api와 chatbot에 **같은 값**을 넣어야 합니다.
+- API 인증 구조: 웹 사용자 요청은 `session-token`(JWT)을 `Authorization: Bearer`로 전달 → `streamerProcedure`, 챗봇 워커는 `x-internal-token` 헤더 → `internalProcedure`. 공개 조회는 `publicProcedure`.
 
 2. 의존성 설치 후 DB 스키마를 적용하고 실행합니다.
 

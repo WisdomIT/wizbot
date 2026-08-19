@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 import chatbot from '../chatbot';
 import { repeatService } from '../services';
-import { t } from '../trpc';
+import { internalProcedure, publicProcedure, t } from '../trpc';
 
 export const chatbotRouter = t.router({
-  getChatbotChannelId: t.procedure.query(() => {
+  getChatbotChannelId: publicProcedure.query(() => {
     return process.env.CHZZK_BOT_CHANNEL_ID;
   }),
-  getChannels: t.procedure.query(async ({ ctx }) => {
+  getChannels: internalProcedure.query(async ({ ctx }) => {
     return ctx.prisma.user.findMany({
       select: {
         id: true,
@@ -17,7 +17,7 @@ export const chatbotRouter = t.router({
       },
     });
   }),
-  message: t.procedure
+  message: internalProcedure
     .input(
       z.object({
         userId: z.number(),
@@ -34,7 +34,7 @@ export const chatbotRouter = t.router({
 
       return await chatbot(ctx, { userId, senderNickname, senderRole, content });
     }),
-  repeat: t.procedure
+  repeat: internalProcedure
     .input(z.object({ userId: z.number() }))
     .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId)),
 });

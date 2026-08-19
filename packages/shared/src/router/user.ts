@@ -4,26 +4,34 @@ import { getChatbotDatabaseInitial } from '../chatbot';
 import chzzk from '../chzzk';
 import { getAccessToken } from '../lib/accessToken';
 import { userSettingService } from '../services';
-import { t } from '../trpc';
+import { internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
 export const userRouter = t.router({
-  getChzzkId: t.procedure.query(() => {
+  getChzzkId: publicProcedure.query(() => {
     return process.env.CHZZK_ID;
   }),
-  getChzzkRedirectUrl: t.procedure.query(() => {
+  getChzzkRedirectUrl: publicProcedure.query(() => {
     return process.env.PUBLIC_SITE_URL + '/login/auth';
   }),
-  getPublicSiteUrl: t.procedure.query(() => {
+  getPublicSiteUrl: publicProcedure.query(() => {
     return process.env.PUBLIC_SITE_URL;
   }),
-  getUser: t.procedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+  /** 내부(챗봇 워커)용 — 임의 사용자 조회 */
+  getUser: internalProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     return ctx.prisma.user.findFirst({
       where: {
         id: input.id,
       },
     });
   }),
-  getUsersPublic: t.procedure.query(async ({ ctx }) => {
+  /** 로그인한 스트리머 본인 정보 */
+  me: streamerProcedure.query(async ({ ctx }) => {
+    return ctx.prisma.user.findFirst({
+      where: { id: ctx.user.id },
+      select: { id: true, channelId: true, channelName: true, channelImageUrl: true },
+    });
+  }),
+  getUsersPublic: publicProcedure.query(async ({ ctx }) => {
     const users = await ctx.prisma.user.findMany({
       select: {
         channelId: true,
@@ -48,7 +56,7 @@ export const userRouter = t.router({
 
     return users;
   }),
-  getUserByChannelName: t.procedure
+  getUserByChannelName: publicProcedure
     .input(z.object({ channelName: z.string() }))
     .query(async ({ ctx, input }) => {
       const { channelName } = input;
@@ -58,7 +66,6 @@ export const userRouter = t.router({
           channelName,
         },
         select: {
-          id: true,
           channelId: true,
           channelName: true,
           channelImageUrl: true,
@@ -77,7 +84,7 @@ export const userRouter = t.router({
 
       return user;
     }),
-  getChzzkTokenInterlock: t.procedure
+  getChzzkTokenInterlock: publicProcedure
     .input(z.object({ code: z.string(), state: z.string() }))
     .query(async ({ ctx, input }) => {
       const { code, state } = input;
@@ -184,7 +191,8 @@ export const userRouter = t.router({
         channelImageUrl,
       };
     }),
-  getAccessToken: t.procedure
+  /** 내부(챗봇 워커)용 */
+  getAccessToken: internalProcedure
     .input(z.object({ userId: z.number() }))
     .query(async ({ ctx, input }) => {
       const { userId } = input;
@@ -200,13 +208,12 @@ export const userRouter = t.router({
         throw new Error('Access token not found');
       }
     }),
-  getUserSetting: t.procedure
-    .input(z.object({ userId: z.number() }))
-    .query(({ ctx, input }) => userSettingService.getUserSetting(ctx.prisma, input.userId)),
-  updateUserSetting: t.procedure
+  getUserSetting: streamerProcedure.query(({ ctx }) =>
+    userSettingService.getUserSetting(ctx.prisma, ctx.user.id),
+  ),
+  updateUserSetting: streamerProcedure
     .input(
       z.object({
-        userId: z.number(),
         setting: z.object({
           songFavoriteAuto: z.number().nullable().optional(),
           songKeyboardShortcut: z.boolean().optional(),
@@ -216,6 +223,6 @@ export const userRouter = t.router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await userSettingService.updateUserSetting(ctx.prisma, input.userId, input.setting);
+      await userSettingService.updateUserSetting(ctx.prisma, ctx.user.id, input.setting);
     }),
 });

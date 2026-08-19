@@ -15,9 +15,7 @@ export async function fetchCommandList() {
     throw new Error('Unauthorized');
   }
 
-  const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query({
-    userId: currentUser.id,
-  });
+  const { function: functionFind, echo: echoFind } = await trpc.command.getCommandList.query();
 
   const functionList = functionFind.map((item) => {
     const findCommand = chatbotData[item.function as keyof typeof chatbotData];
@@ -65,7 +63,6 @@ export async function fetchCommandById(id: number, type: 'echo' | 'function') {
   }
 
   const findCommand = await trpc.command.getCommandById.query({
-    userId: currentUser.id,
     id,
     type,
   });
@@ -114,7 +111,7 @@ export async function getFunctionOption(selectedCommandKey: string) {
     return null;
   }
 
-  const optionData = await option(currentUser.id);
+  const optionData = await option(trpc);
 
   if (optionData.type === 'text') {
     return {
@@ -156,7 +153,6 @@ export async function createCommand(data: CreateCommand) {
 
   if (data.type === 'echo') {
     await trpc.command.createCommandEcho.mutate({
-      userId: currentUser.id,
       command: data.command,
       response: data.response,
     });
@@ -167,7 +163,7 @@ export async function createCommand(data: CreateCommand) {
     }
     const option = findCommand.optionInput;
     if (option) {
-      const optionData = await option(currentUser.id);
+      const optionData = await option(trpc);
       if (optionData.type === 'text') {
         data.option = data.option ?? '';
       } else if (optionData.type === 'select') {
@@ -180,7 +176,6 @@ export async function createCommand(data: CreateCommand) {
     }
 
     await trpc.command.createCommandFunction.mutate({
-      userId: currentUser.id,
       command: data.command,
       permission: data.permission,
       function: data.function,
@@ -197,7 +192,6 @@ export async function deleteCommand(id: number, type: 'echo' | 'function') {
   }
 
   await trpc.command.deleteCommand.mutate({
-    userId: currentUser.id,
     id,
     type,
   });
@@ -213,7 +207,6 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
   if (data.type === 'echo') {
     await trpc.command.updateCommand.mutate({
       type: 'echo',
-      userId: currentUser.id,
       id: data.id,
       command: data.command,
       response: data.response,
@@ -225,7 +218,7 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
     }
     const option = findCommand.optionInput;
     if (option) {
-      const optionData = await option(currentUser.id);
+      const optionData = await option(trpc);
       if (optionData.type === 'text') {
         data.option = data.option ?? '';
       } else if (optionData.type === 'select') {
@@ -239,7 +232,6 @@ export async function updateCommand(data: CreateCommand & { id: number }) {
 
     await trpc.command.updateCommand.mutate({
       type: 'function',
-      userId: currentUser.id,
       id: data.id,
       command: data.command,
       permission: data.permission,
