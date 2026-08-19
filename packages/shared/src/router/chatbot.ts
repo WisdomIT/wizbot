@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import chatbot from '../chatbot';
+import { repeatService } from '../services';
 import { t } from '../trpc';
 
 export const chatbotRouter = t.router({
@@ -34,23 +35,6 @@ export const chatbotRouter = t.router({
       return await chatbot(ctx, { userId, senderNickname, senderRole, content });
     }),
   repeat: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const { userId } = input;
-      if (!userId) {
-        throw new Error('Invalid input.');
-      }
-
-      const findRepeat = await ctx.prisma.chatbotRepeat.findMany({
-        where: {
-          userId,
-        },
-      });
-
-      return findRepeat;
-    }),
+    .input(z.object({ userId: z.number() }))
+    .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId)),
 });

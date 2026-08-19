@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getChatbotDatabaseInitial } from '../chatbot';
 import chzzk from '../chzzk';
 import { getAccessToken } from '../lib/accessToken';
+import { userSettingService } from '../services';
 import { t } from '../trpc';
 
 export const userRouter = t.router({
@@ -201,21 +202,7 @@ export const userRouter = t.router({
     }),
   getUserSetting: t.procedure
     .input(z.object({ userId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      const { userId } = input;
-
-      const findSetting = await ctx.prisma.userSetting.findFirst({
-        where: {
-          userId,
-        },
-      });
-
-      if (!findSetting) {
-        throw new Error('User setting not found');
-      }
-
-      return findSetting;
-    }),
+    .query(({ ctx, input }) => userSettingService.getUserSetting(ctx.prisma, input.userId)),
   updateUserSetting: t.procedure
     .input(
       z.object({
@@ -224,31 +211,11 @@ export const userRouter = t.router({
           songFavoriteAuto: z.number().nullable().optional(),
           songKeyboardShortcut: z.boolean().optional(),
           songActive: z.boolean().optional(),
-          chatbotNoticeRepeat: z.number().nullable().optional(),
           chatbotDefaultRepeat: z.number().optional(),
         }),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, setting } = input;
-
-      const findSetting = await ctx.prisma.userSetting.findFirst({
-        where: {
-          userId,
-        },
-      });
-
-      if (!findSetting) {
-        throw new Error('User setting not found');
-      }
-
-      await ctx.prisma.userSetting.update({
-        where: {
-          id: findSetting.id,
-        },
-        data: {
-          ...setting,
-        },
-      });
+      await userSettingService.updateUserSetting(ctx.prisma, input.userId, input.setting);
     }),
 });

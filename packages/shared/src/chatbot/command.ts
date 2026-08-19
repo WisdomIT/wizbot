@@ -1,331 +1,161 @@
-import chzzk from '../chzzk';
-import { FunctionCommand } from '.';
+import { commandService, isServiceError, repeatService, userSettingService } from '../services';
+import { ChabotReturn, FunctionCommand } from '.';
 import { splitContent } from './lib';
 
+/**
+ * 서비스 계층의 정책 오류(ServiceError)는 채팅 응답 메시지로 변환하고,
+ * 그 외 예외는 그대로 던져 디스패처의 공통 처리('Function execution failed')로 넘긴다.
+ */
+async function withServiceMessages(fn: () => Promise<ChabotReturn>): Promise<ChabotReturn> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (isServiceError(error)) return { ok: true, message: error.message };
+    throw error;
+  }
+}
+
+/** "!명령 <이름> <응답>" 형태의 인수 파싱. 이름 앞의 '!'는 허용 */
+function parseNameAndResponse(content: string, command: string) {
+  const [rawName, response] = splitContent(content, command, 2);
+  const name = commandService.normalizeCommandName(rawName ?? '');
+  return { name, response };
+}
+
 export const functionCommand = {
-  createCommandEcho: async (ctx, data) => {
-    const { content, query } = data;
+  createCommandEcho: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const { name, response } = parseNameAndResponse(content, query.command);
 
-    const splittedContent = splitContent(content, query.command, 2);
-    let commandName = splittedContent[0];
-    if (commandName.startsWith('!')) {
-      commandName = commandName.slice(1);
-    }
-    const commandResponse = splittedContent[1];
+      if (!name) {
+        return {
+          ok: true,
+          message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
+        };
+      }
+      if (!response) {
+        return {
+          ok: true,
+          message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${name} <응답>`,
+        };
+      }
 
-    if (!commandName) {
-      return {
-        ok: true,
-        message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
-      };
-    }
+      await commandService.createEchoCommand(ctx.prisma, { userId, command: name, response });
+      return { ok: true, message: `${name} 명령어가 생성되었습니다.` };
+    }),
 
-    if (!commandResponse) {
-      return {
-        ok: true,
-        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${commandName} <응답>`,
-      };
-    }
+  deleteCommandEcho: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const name = commandService.normalizeCommandName(splitContent(content, query.command, 1)[0]);
 
-    if (!commandName || !commandResponse) {
-      return {
-        ok: false,
-        message: '비정상적인 메시지입니다.',
-      };
-    }
+      if (await commandService.findFunctionCommandByName(ctx.prisma, userId, name)) {
+        return {
+          ok: true,
+          message: 'function 명령어는 삭제할 수 없습니다. 사이트를 통해 삭제해주세요.',
+        };
+      }
 
-    const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
+      const echo = await commandService.findEchoCommandByName(ctx.prisma, userId, name);
+      if (!echo) return { ok: true, message: '존재하지 않는 명령어입니다.' };
 
-    if (findCommand) {
-      return {
-        ok: true,
-        message: '이미 존재하는 명령어입니다.',
-      };
-    }
+      await commandService.deleteEchoCommand(ctx.prisma, userId, echo.id);
+      return { ok: true, message: `${name} 명령어가 삭제되었습니다.` };
+    }),
 
-    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
-    if (findCommand2) {
-      return {
-        ok: true,
-        message: '이미 존재하는 명령어입니다.',
-      };
-    }
+  updateCommandEcho: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const { name, response } = parseNameAndResponse(content, query.command);
 
-    await ctx.prisma.chatbotEchoCommand.create({
-      data: {
-        userId: data.userId,
-        command: commandName,
-        response: commandResponse,
-      },
-    });
+      if (!name) {
+        return {
+          ok: true,
+          message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
+        };
+      }
+      if (!response) {
+        return {
+          ok: true,
+          message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${name} <응답>`,
+        };
+      }
 
-    return {
-      ok: true,
-      message: `${commandName} 명령어가 생성되었습니다.`,
-    };
-  },
-  deleteCommandEcho: async (ctx, data) => {
-    const { content, query } = data;
+      if (await commandService.findFunctionCommandByName(ctx.prisma, userId, name)) {
+        return {
+          ok: true,
+          message: 'function 명령어는 수정할 수 없습니다. 사이트를 통해 수정해주세요.',
+        };
+      }
 
-    const splittedContent = splitContent(content, query.command, 1);
-    let commandName = splittedContent[0];
-    if (commandName.startsWith('!')) {
-      commandName = commandName.slice(1);
-    }
+      const echo = await commandService.findEchoCommandByName(ctx.prisma, userId, name);
+      if (!echo) return { ok: true, message: '존재하지 않는 명령어입니다.' };
 
-    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
-    if (findCommand2) {
-      return {
-        ok: true,
-        message: 'function 명령어는 삭제할 수 없습니다. 사이트를 통해 삭제해주세요.',
-      };
-    }
+      await commandService.updateEchoCommand(ctx.prisma, { userId, id: echo.id, response });
+      return { ok: true, message: `${name} 명령어가 수정되었습니다.` };
+    }),
 
-    const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
+  updateSpecificCommandEcho: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const [response] = splitContent(content, query.command, 1);
 
-    if (!findCommand) {
-      return {
-        ok: true,
-        message: '존재하지 않는 명령어입니다.',
-      };
-    }
+      if (!response) {
+        return {
+          ok: true,
+          message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
+        };
+      }
 
-    await ctx.prisma.chatbotEchoCommand.delete({
-      where: {
-        id: findCommand.id,
-      },
-    });
+      const echo = await commandService.getEchoCommand(ctx.prisma, userId, Number(query.option));
+      await commandService.updateEchoCommand(ctx.prisma, { userId, id: echo.id, response });
+      return { ok: true, message: `${echo.command} 명령어가 수정되었습니다.` };
+    }),
 
-    return {
-      ok: true,
-      message: `${commandName} 명령어가 삭제되었습니다.`,
-    };
-  },
-  updateCommandEcho: async (ctx, data) => {
-    const { content, query } = data;
+  createChatbotRepeat: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const [response] = splitContent(content, query.command, 1);
 
-    const splittedContent = splitContent(content, query.command, 2);
-    let commandName = splittedContent[0];
-    if (commandName.startsWith('!')) {
-      commandName = commandName.slice(1);
-    }
-    const commandResponse = splittedContent[1];
+      if (!response) {
+        return {
+          ok: true,
+          message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
+        };
+      }
 
-    if (!commandName) {
-      return {
-        ok: true,
-        message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
-      };
-    }
-
-    if (!commandResponse) {
-      return {
-        ok: true,
-        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${commandName} <응답>`,
-      };
-    }
-
-    if (!commandName || !commandResponse) {
-      return {
-        ok: false,
-        message: '비정상적인 메시지입니다.',
-      };
-    }
-
-    const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
-    if (findCommand2) {
-      return {
-        ok: true,
-        message: 'function 명령어는 수정할 수 없습니다. 사이트를 통해 수정해주세요.',
-      };
-    }
-
-    const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-      where: {
-        userId: data.userId,
-        command: commandName,
-      },
-    });
-
-    if (!findCommand) {
-      return {
-        ok: true,
-        message: '존재하지 않는 명령어입니다.',
-      };
-    }
-
-    await ctx.prisma.chatbotEchoCommand.update({
-      where: {
-        id: findCommand.id,
-      },
-      data: {
-        response: commandResponse,
-      },
-    });
-
-    return {
-      ok: true,
-      message: `${commandName} 명령어가 수정되었습니다.`,
-    };
-  },
-  updateSpecificCommandEcho: async (ctx, data) => {
-    const { content, query } = data;
-
-    const splittedContent = splitContent(content, query.command, 1);
-    const response = splittedContent[0];
-
-    if (!response) {
-      return {
-        ok: true,
-        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
-      };
-    }
-
-    const commandId = Number(query.option);
-
-    const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-      where: {
-        userId: data.userId,
-        id: commandId,
-      },
-    });
-
-    if (!findCommand) {
-      return {
-        ok: true,
-        message: '존재하지 않는 명령어입니다.',
-      };
-    }
-
-    await ctx.prisma.chatbotEchoCommand.update({
-      where: {
-        id: findCommand.id,
-      },
-      data: {
+      const setting = await userSettingService.getUserSetting(ctx.prisma, userId);
+      const repeat = await repeatService.createRepeat(ctx.prisma, {
+        userId,
         response,
-      },
-    });
-
-    return {
-      ok: true,
-      message: `${findCommand.command} 명령어가 수정되었습니다.`,
-    };
-  },
-  createChatbotRepeat: async (ctx, data) => {
-    const { content, query } = data;
-
-    const splittedContent = splitContent(content, query.command, 1);
-    const commandResponse = splittedContent[0];
-
-    if (!commandResponse) {
-      return {
-        ok: true,
-        message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
-      };
-    }
-
-    const findSetting = await ctx.prisma.userSetting.findFirst({
-      where: {
-        userId: data.userId,
-      },
-    });
-
-    if (!findSetting) {
-      return {
-        ok: true,
-        message: '설정이 존재하지 않습니다.',
-      };
-    }
-
-    const createRepeat = await ctx.prisma.chatbotRepeat.create({
-      data: {
-        userId: data.userId,
-        response: commandResponse,
-        interval: findSetting.chatbotDefaultRepeat,
-      },
-    });
-
-    return {
-      ok: true,
-      message: `반복 출력 메시지가 생성되었습니다. 반복:${findSetting.chatbotDefaultRepeat}초 id: ${createRepeat.id}`,
-    };
-  },
-  deleteChatbotRepeat: async (ctx, data) => {
-    const { content, query } = data;
-
-    const splittedContent = splitContent(content, query.command, 1);
-    const repeatId = splittedContent[0];
-
-    if (!repeatId) {
-      return {
-        ok: true,
-        message: `삭제할 반복 메시지의 id를 입력하거나, all 옵션을 입력해주세요. 예) !${query.command} <id> or all`,
-      };
-    }
-
-    if (repeatId === 'all') {
-      await ctx.prisma.chatbotRepeat.deleteMany({
-        where: {
-          userId: data.userId,
-        },
+        interval: setting.chatbotDefaultRepeat,
       });
 
       return {
         ok: true,
-        message: `유저의 모든 반복 메시지가 삭제되었습니다.`,
+        message: `반복 출력 메시지가 생성되었습니다. 반복:${setting.chatbotDefaultRepeat}초 id: ${repeat.id}`,
       };
-    }
+    }),
 
-    const repeatIdNum = Number(repeatId);
+  deleteChatbotRepeat: async (ctx, data) =>
+    withServiceMessages(async () => {
+      const { content, query, userId } = data;
+      const [target] = splitContent(content, query.command, 1);
 
-    const findRepeat = await ctx.prisma.chatbotRepeat.findFirst({
-      where: {
-        userId: data.userId,
-        id: repeatIdNum,
-      },
-    });
+      if (!target) {
+        return {
+          ok: true,
+          message: `삭제할 반복 메시지의 id를 입력하거나, all 옵션을 입력해주세요. 예) !${query.command} <id> or all`,
+        };
+      }
 
-    if (!findRepeat) {
-      return {
-        ok: true,
-        message: '존재하지 않는 반복 메시지입니다.',
-      };
-    }
+      if (target === 'all') {
+        await repeatService.deleteAllRepeats(ctx.prisma, userId);
+        return { ok: true, message: '유저의 모든 반복 메시지가 삭제되었습니다.' };
+      }
 
-    await ctx.prisma.chatbotRepeat.delete({
-      where: {
-        id: findRepeat.id,
-      },
-    });
-
-    return {
-      ok: true,
-      message: `${findRepeat.response} 반복 메시지가 삭제되었습니다.`,
-    };
-  },
+      const repeat = await repeatService.deleteRepeat(ctx.prisma, userId, Number(target));
+      return { ok: true, message: `${repeat.response} 반복 메시지가 삭제되었습니다.` };
+    }),
 } as FunctionCommand;
