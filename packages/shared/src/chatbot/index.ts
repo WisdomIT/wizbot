@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
 import { ChatbotEchoCommand, ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
+import type { ChzzkOpenClient } from 'chzzk-open-sdk';
 
-import { getAccessToken } from '../lib/accessToken';
-import { commandService } from '../services';
+import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
@@ -17,7 +17,8 @@ export interface ChatbotData {
 
 export interface ChatbotDataFunction extends ChatbotData {
   query: ChatbotFunctionCommand;
-  accessToken: string;
+  /** 해당 스트리머의 유저 토큰으로 동작하는 SDK 클라이언트 (토큰 조달은 호출 시점에 lazy) */
+  chzzk: ChzzkOpenClient;
 }
 
 export interface ChabotReturn {
@@ -118,20 +119,13 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const accessToken = await getAccessToken(ctx, userId);
-
-  if (!accessToken) {
-    return {
-      ok: false,
-      message: 'Access token not found',
-    };
-  }
-
   try {
+    // 토큰을 미리 조회하지 않는다 — 필요한 함수가 SDK 를 통해 lazy 하게 조달하고,
+    // 조달 실패도 아래 catch 로 떨어져 채팅 응답으로 정규화된다 (#27)
     const functionAction = await thisFunction(ctx, {
       ...data,
       query: matchedFunction.matched,
-      accessToken: accessToken,
+      chzzk: getChzzkClientForUser(ctx.prisma, userId),
     });
 
     if (!functionAction.ok) {
