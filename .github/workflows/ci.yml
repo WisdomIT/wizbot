@@ -67,6 +67,9 @@ jobs:
         app: [web, api, chatbot]
     steps:
       - uses: actions/checkout@v4
+      # ghcr 이미지 이름은 소문자만 허용 — github.repository(WisdomIT/wizbot)를 그대로 쓰면 실패한다
+      - id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -79,7 +82,7 @@ jobs:
           target: ${{ matrix.app }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/${{ matrix.app }}:dev
-            ghcr.io/${{ github.repository }}/${{ matrix.app }}:dev-${{ github.sha }}
+            ${{ steps.image.outputs.name }}:dev
+            ${{ steps.image.outputs.name }}:dev-${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
