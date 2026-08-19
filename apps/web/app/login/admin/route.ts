@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
   const publicSiteUrl = await getPublicSiteUrl();
   try {
-    const check = await trpc.admin.loginCheck.query({
+    const check = await trpc.admin.loginCheck.mutate({
       email,
       code,
     });

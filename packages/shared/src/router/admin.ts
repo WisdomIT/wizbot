@@ -4,7 +4,8 @@ import { sendMail } from '../lib/nodemailer';
 import { publicProcedure, t } from '../trpc';
 
 export const adminRouter = t.router({
-  login: publicProcedure.input(z.object({ email: z.string() })).query(async ({ ctx, input }) => {
+  /** 패스코드 생성 + 메일 발송 — mutation (#19) */
+  login: publicProcedure.input(z.object({ email: z.string() })).mutation(async ({ ctx, input }) => {
     const { email } = input;
 
     const adminFind = await ctx.prisma.admin.findFirst({
@@ -57,9 +58,10 @@ export const adminRouter = t.router({
       ok: true,
     };
   }),
+  /** 패스코드 검증 + 소모(삭제) — mutation (#19) */
   loginCheck: publicProcedure
     .input(z.object({ email: z.string(), code: z.string() }))
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { email, code } = input;
 
       const adminFind = await ctx.prisma.admin.findFirst({

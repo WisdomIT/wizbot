@@ -38,7 +38,7 @@ async function getStatusInterval() {
     let thisStatus = status.find((s) => s.channelId === channel.channelId);
     let token;
     try {
-      token = await trpc.user.getAccessToken.query({ userId: channel.id });
+      token = await trpc.user.getAccessToken.mutate({ userId: channel.id });
     } catch (error) {
       console.error('❌ 토큰을 가져오는 데 실패했습니다:', channel.channelName);
     }

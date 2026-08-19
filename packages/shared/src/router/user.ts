@@ -84,9 +84,10 @@ export const userRouter = t.router({
 
       return user;
     }),
+  /** 인가 코드 교환 + 사용자/토큰 upsert — 부수효과가 있으므로 mutation (#19) */
   getChzzkTokenInterlock: publicProcedure
     .input(z.object({ code: z.string(), state: z.string() }))
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { code, state } = input;
 
       const accessTokenRequest = await chzzk.authorization.accessToken({
@@ -191,10 +192,10 @@ export const userRouter = t.router({
         channelImageUrl,
       };
     }),
-  /** 내부(챗봇 워커)용 */
+  /** 내부(챗봇 워커)용 — 만료 시 refresh token 갱신(DB 쓰기)이 일어나므로 mutation (#19) */
   getAccessToken: internalProcedure
     .input(z.object({ userId: z.number() }))
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { userId } = input;
 
       try {
