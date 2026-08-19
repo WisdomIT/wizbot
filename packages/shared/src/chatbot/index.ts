@@ -6,6 +6,7 @@ import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
+import { ChatbotFunctionKey } from './definitions';
 import { functionSong } from './song';
 
 export interface ChatbotData {
@@ -26,15 +27,25 @@ export interface ChabotReturn {
   message: string;
 }
 
-export interface FunctionCommand {
-  [key: string]: (ctx: Context, data: ChatbotDataFunction) => Promise<ChabotReturn>;
-}
+export type ChatbotFunctionHandler = (
+  ctx: Context,
+  data: ChatbotDataFunction,
+) => Promise<ChabotReturn>;
 
+/**
+ * key → 실행 핸들러. definitions.ts 의 정의와 키가 1:1 이어야 하며,
+ * satisfies 가 누락(정의만 있고 핸들러 없음)과 잉여(핸들러만 있고 정의 없음)를
+ * 모두 컴파일 타임에 잡는다 (#26 26-b).
+ */
 export const functions = {
   ...functionCommand,
   ...functionSong,
   ...functionChzzk,
-};
+} satisfies Record<ChatbotFunctionKey, ChatbotFunctionHandler>;
+
+export function getChatbotFunction(name: string): ChatbotFunctionHandler | undefined {
+  return (functions as Record<string, ChatbotFunctionHandler | undefined>)[name];
+}
 
 export function findExactCommandMatch<T extends { command: string }>(
   content: string,
@@ -110,7 +121,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const thisFunction = functions[matchedFunction.matched.function];
+  const thisFunction = getChatbotFunction(matchedFunction.matched.function);
 
   if (!thisFunction) {
     return {
@@ -151,6 +162,13 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
 interface ChatbotDatabaseInitial {
   initialFunction: ChatbotFunctionCommand[];
   initialEcho: ChatbotEchoCommand[];
+}
+
+interface InitialFunctionSeed {
+  userId: number;
+  permission: ChatbotPermission;
+  command: string;
+  function: ChatbotFunctionKey; // 존재하지 않는 함수 키는 컴파일 에러
 }
 
 export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitial {
@@ -209,7 +227,7 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       command: '공지',
       function: 'setChzzkNotice',
     },
-  ] as ChatbotFunctionCommand[];
+  ] satisfies InitialFunctionSeed[] as unknown as ChatbotFunctionCommand[];
   const initialEcho = [
     {
       userId: userId,

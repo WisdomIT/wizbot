@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { functions } from '../chatbot';
+import { isChatbotFunctionKey } from '../chatbot/definitions';
 import { commandService, repeatService, ServiceError } from '../services';
 import { publicProcedure, streamerProcedure, t } from '../trpc';
 
@@ -8,7 +8,7 @@ const permissionSchema = z.enum(['STREAMER', 'MANAGER', 'VIEWER']);
 const commandTypeSchema = z.enum(['echo', 'function']);
 
 function assertKnownFunction(func: string) {
-  if (!(func in functions)) {
+  if (!isChatbotFunctionKey(func)) {
     throw new ServiceError('INVALID_INPUT', `"${func}"은(는) functions에 존재하지 않습니다.`);
   }
 }

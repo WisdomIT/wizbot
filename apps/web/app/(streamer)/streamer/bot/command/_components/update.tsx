@@ -1,3 +1,7 @@
+import {
+  chatbotFunctionDefinitionMap,
+  isChatbotFunctionKey,
+} from '@wizbot/shared/src/chatbot/definitions';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -20,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import chatbotData from '@/src/chatbot';
 
 import { CreateCommand, fetchCommandById, updateCommand } from '../_api/command';
 import { Command } from './columns';
@@ -52,13 +55,12 @@ export default function UpdateCommand({
       setEcho(getCommand.type === 'echo' ? getCommand.response : '');
 
       if (getCommand.type === 'function') {
-        const thisFunction = chatbotData[getCommand.function];
-        if (!thisFunction) {
+        if (!isChatbotFunctionKey(getCommand.function)) {
           throw new Error('Function not found');
         }
 
         setFunctionArgs({
-          type: thisFunction.type,
+          type: chatbotFunctionDefinitionMap[getCommand.function].type,
           func: getCommand.function,
           permission: getCommand.permission,
           option: getCommand.option,

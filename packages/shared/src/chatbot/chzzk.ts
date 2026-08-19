@@ -2,7 +2,7 @@ import { ChzzkClient } from 'chzzk';
 import { ChzzkApiError, ChzzkTokenRefreshError } from 'chzzk-open-sdk';
 
 import { getChzzkAppClient } from '../services';
-import { ChabotReturn, FunctionCommand } from '.';
+import { ChabotReturn, ChatbotFunctionHandler } from '.';
 import { formatDuration, splitContent } from './lib';
 
 const chzzkUnofficialClient = new ChzzkClient();
@@ -135,4 +135,4 @@ export const functionChzzk = {
 
     return { ok: true, message: `현재 시청자 수: ${liveDetail.concurrentUserCount}명` };
   },
-} as FunctionCommand;
+} satisfies Partial<Record<string, ChatbotFunctionHandler>>;
