@@ -17,6 +17,7 @@ export const chatbotRouter = t.router({
       },
     });
   }),
+  /** 채팅 1건 처리 — 명령어 생성/삭제·방송 설정 변경 등 부수효과 + 긴 본문이 URL(GET)에 실리면 안 되므로 mutation (#19) */
   message: internalProcedure
     .input(
       z.object({
@@ -26,7 +27,7 @@ export const chatbotRouter = t.router({
         content: z.string(),
       }),
     )
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { userId, senderNickname, senderRole, content } = input;
       if (!userId || !senderNickname || !senderRole || !content) {
         throw new Error('Invalid input.');

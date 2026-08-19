@@ -11,7 +11,7 @@ export async function getChzzkRedirectUrl() {
 }
 
 export async function getChzzkTokenInterlock(input: { code: string; state: string }) {
-  return await trpc.user.getChzzkTokenInterlock.query(input);
+  return await trpc.user.getChzzkTokenInterlock.mutate(input);
 }
 
 export async function getPublicSiteUrl() {

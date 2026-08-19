@@ -62,7 +62,7 @@ describe('internalProcedure', () => {
   it('내부 토큰 없이는 UNAUTHORIZED (로그인 사용자여도)', async () => {
     const { caller } = createCaller({ user: { id: 1, role: 'streamer' } });
     await expectTrpcCode(caller.chatbot.getChannels(), 'UNAUTHORIZED');
-    await expectTrpcCode(caller.user.getAccessToken({ userId: 1 }), 'UNAUTHORIZED');
+    await expectTrpcCode(caller.user.ensureAccessToken({ userId: 1 }), 'UNAUTHORIZED');
   });
 
   it('내부 요청이면 호출 가능', async () => {
