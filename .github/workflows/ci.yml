@@ -44,9 +44,8 @@ jobs:
       - name: Lint
         run: pnpm -r --if-present run lint
 
-      # TODO(#34): vitest 도입 후 활성화
-      # - name: Test
-      #   run: pnpm -r --if-present run test
+      - name: Test
+        run: pnpm test
 
       - name: Build web
         run: pnpm --filter @wizbot/web build
