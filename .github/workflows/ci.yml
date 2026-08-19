@@ -52,9 +52,13 @@ jobs:
 
   # dev 브랜치 푸시마다 컨테이너 이미지를 ghcr.io 에 :dev 태그로 올린다 (Portainer 시험/스테이징 스택용).
   # 정식 릴리즈 태그(vX.Y.Z)는 release.yml 이 담당한다.
+  #
+  # check 를 기다리지 않고 병렬로 돌린다 — dev 에 오는 커밋은 PR CI 를 이미 통과한 트리라
+  # 직렬화는 이미지 준비 시간만 ~90초 늘렸다 (4.5분 → ~2.7분).
+  # ⚠ 전제: dev 직접 push 금지(브랜치 보호, #14). 직접 push 하면 check 실패 커밋의 이미지가
+  #   :dev 로 올라갈 수 있다.
   docker-dev:
     name: image:dev ${{ matrix.app }}
-    needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 30
