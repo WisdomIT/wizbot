@@ -2,6 +2,7 @@
 import { ChatbotEchoCommand, ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
 
 import { getAccessToken } from '../lib/accessToken';
+import { commandService } from '../services';
 import { Context } from '../trpc';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
@@ -60,10 +61,11 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
 
   const contentWithoutPrefix = content.slice(1).trim();
 
-  const echoCommands = await ctx.prisma.chatbotEchoCommand.findMany({ where: { userId } });
+  const { echo: echoCommands, function: functionCommands } = await commandService.listCommands(
+    ctx.prisma,
+    userId,
+  );
   const matchedEcho = findExactCommandMatch(contentWithoutPrefix, echoCommands);
-
-  const functionCommands = await ctx.prisma.chatbotFunctionCommand.findMany({ where: { userId } });
   const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);
 
   if (!matchedEcho && !matchedFunction) {
