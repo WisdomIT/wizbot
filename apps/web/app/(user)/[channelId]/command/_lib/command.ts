@@ -10,11 +10,11 @@ import { trpc } from '@/src/utils/trpc';
 
 import { Command } from '../_components/columns';
 
-/** 시청자 공개 명령어 목록 — 60초 캐시 (#23) */
+/** 시청자 공개 명령어 목록 — 60초 캐시 (#23), channelId 기준 (#72) */
 export const fetchCommandList = unstable_cache(
-  async (channelName: string): Promise<Command[]> => {
+  async (channelId: string): Promise<Command[]> => {
     const { function: functionFind, echo: echoFind } =
-      await trpc.command.getCommandListByChannelName.query({ channelName });
+      await trpc.command.getCommandListByChannelId.query({ channelId });
 
     const functionList: Command[] = functionFind.map((item) => {
       const display = getFunctionCommandDisplay(item.function, item.command);

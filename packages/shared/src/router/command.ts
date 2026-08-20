@@ -37,12 +37,12 @@ async function assertValidOption(
 }
 
 export const commandRouter = t.router({
-  /** 시청자용 공개 명령어 목록 (채널명 기준) */
-  getCommandListByChannelName: publicProcedure
-    .input(z.object({ channelName: z.string() }))
+  /** 시청자용 공개 명령어 목록 — 경로 식별자는 불변인 channelId (#72) */
+  getCommandListByChannelId: publicProcedure
+    .input(z.object({ channelId: z.string() }))
     .query(async ({ ctx, input }) => {
       const user = await ctx.prisma.user.findFirst({
-        where: { channelName: input.channelName, hidden: false },
+        where: { channelId: input.channelId, hidden: false },
         select: { id: true },
       });
       if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 채널입니다.');
