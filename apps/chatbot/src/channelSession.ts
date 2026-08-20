@@ -88,6 +88,7 @@ export class ChannelSession {
       const result = await trpc.chatbot.message.mutate({
         userId: this.info.userId,
         senderNickname,
+        senderChannelId,
         senderRole,
         content,
       });

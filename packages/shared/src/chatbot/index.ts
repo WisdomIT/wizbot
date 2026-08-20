@@ -12,6 +12,8 @@ import { functionSong } from './song';
 export interface ChatbotData {
   userId: number;
   senderNickname: string;
+  /** 신청자 식별용 — 닉네임은 변경 가능하므로 판별은 채널 ID 로 (#5 #6) */
+  senderChannelId?: string;
   senderRole: ChatbotPermission;
   content: string;
 }
@@ -196,6 +198,30 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       permission: 'VIEWER',
       command: '명령어',
       function: 'getCommandListUrl',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래신청',
+      function: 'requestSong',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래삭제',
+      function: 'removeSong',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래목록',
+      function: 'listSongs',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래',
+      function: 'currentSong',
     },
     {
       userId: userId,

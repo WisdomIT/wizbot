@@ -25,6 +25,14 @@ enum SongStatus {
   STOPPED
 }
 
+/// 신청된 곡의 최종 상태 (#5/#6 — 재생 여부와 무관하게 전부 기록)
+enum SongHistoryStatus {
+  PLAYED    // 끝까지 재생됨
+  SKIPPED   // 재생 중 중단됨
+  CANCELED  // 재생 전 삭제됨
+  FAILED    // 재생 시도했으나 실패
+}
+
 model Whitelist {
   id         Int    @id @default(autoincrement())
   nickname   String @db.VarChar(50)
@@ -63,6 +71,7 @@ model User {
   functionCommands  ChatbotFunctionCommand[]
   repeatCommands    ChatbotRepeat[]
   songs             Song[]
+  songHistories     SongHistory[]
   songPlayback      SongPlayback?
   playlists         SongFavorite[]
   cafeChzzks        CafeChzzk[]
@@ -77,6 +86,11 @@ model UserSetting {
   songFavoriteAuto      Int?    @db.Int                     // 자동 재생될 Favorite ID
   songKeyboardShortcut  Boolean @db.TinyInt @default(true)  // 노래 단축키 사용 여부
   chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
+  songOneRequestPerUser Boolean @db.TinyInt @default(false) // 1인당 대기열 1곡 제한
+  songAutoPlayFromDefault Boolean @db.TinyInt @default(false) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생
+  songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
+  songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
+  songMaxQueueLength    Int     @db.Int @default(30)        // 대기열 최대 곡 수
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -133,15 +147,51 @@ model ChatbotRepeat {
 }
 
 model Song {
-  id            Int    @id @default(autoincrement())
-  userId        Int
-  youtubeId     String @db.VarChar(11) // 유튜브 영상 ID
-  title         String @db.VarChar(150) // 영상 제목
-  videoUploader String @db.VarChar(150) // 영상 게시자
-  requester     String @db.VarChar(40) // 신청자
-  order         Int    @db.Int // 순서
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  youtubeId          String   @db.VarChar(11) // 유튜브 영상 ID
+  title              String   @db.VarChar(150) // 영상 제목
+  videoUploader      String   @db.VarChar(150) // 영상 게시자
+  requester          String   @db.VarChar(40) // 신청자 닉네임 (표시용, 신청 시점 스냅샷)
+  requesterChannelId String?  @db.VarChar(32) // 신청자 식별 (닉네임은 변경 가능하므로 판별은 이 값으로)
+  durationSeconds    Int      @default(0) @db.Int // 영상 길이(초) — 길이 제한·진행률 표시
+  thumbnailUrl       String?  @db.Text
+  order              Int      @db.Int // 대기열 순서
+  createdAt          DateTime @default(now())
 
-  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, order])
+}
+
+/// 신청 이력 — 큐에서 사라져도 남는다 (분탕 방지·기록용)
+model SongHistory {
+  id                 Int               @id @default(autoincrement())
+  userId             Int
+  youtubeId          String            @db.VarChar(11)
+  title              String            @db.VarChar(150)
+  videoUploader      String            @db.VarChar(150)
+  requester          String            @db.VarChar(40) // 표시용 닉네임
+  requesterChannelId String?           @db.VarChar(32)
+  durationSeconds    Int               @default(0) @db.Int
+  status             SongHistoryStatus
+  /// 삭제/스킵을 실행한 사람 (닉네임). 본인 취소면 신청자와 같다
+  resolvedBy         String?           @db.VarChar(40)
+  /// 스트리머가 이 항목만 시청자에게 숨김
+  hiddenFromViewers  Boolean           @default(false) @db.TinyInt
+  requestedAt        DateTime          @default(now())
+  resolvedAt         DateTime?
+
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, requestedAt])
+}
+
+/// 사이트 전역 설정 (어드민에서 변경) — 예: 신규 가입 시 대표 즐겨찾기로 import 할 유튜브 재생목록 ID
+model SiteSetting {
+  key       String   @id @db.VarChar(50)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
 }
 
 model SongPlayback {
@@ -157,9 +207,11 @@ model SongPlayback {
 }
 
 model SongFavorite {
-  id       Int    @id @default(autoincrement())
-  userId   Int
-  name     String @db.VarChar(50)
+  id        Int     @id @default(autoincrement())
+  userId    Int
+  name      String  @db.VarChar(50)
+  /// 대표 즐겨찾기 — 유저당 정확히 1개 (자동 재생의 출처)
+  isDefault Boolean @default(false) @db.TinyInt
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items    SongFavoriteItem[]
