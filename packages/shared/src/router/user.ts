@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
 import {
+  accountService,
+  adminUsersService,
   createChzzkLoginClient,
   getChzzkAppClient,
   getChzzkClientForUser,
@@ -59,11 +61,10 @@ export const userRouter = t.router({
     .query(async ({ ctx, input }) => {
       const { channelId } = input;
 
-      // 숨김 처리된 채널은 공개 조회에서 제외 — getCommandListByChannelId 와 같은 기준
-      const user = await ctx.prisma.user.findFirst({
+      // hidden 은 '목록 노출' 여부일 뿐, 직접 링크로 오는 시청자 페이지는 항상 열어둔다 (#7)
+      const user = await ctx.prisma.user.findUnique({
         where: {
           channelId,
-          hidden: false,
         },
         select: {
           channelId: true,
@@ -187,6 +188,26 @@ export const userRouter = t.router({
 
       return { accessToken, expiresIn };
     }),
+  /* ── 계정 설정 (#7) ── */
+  getAccount: streamerProcedure.query(({ ctx }) =>
+    accountService.getAccount(ctx.prisma, ctx.user.id),
+  ),
+  refreshChannelInfo: streamerProcedure.mutation(({ ctx }) =>
+    accountService.refreshChannelInfo(ctx.prisma, ctx.user.id),
+  ),
+  setListed: streamerProcedure
+    .input(z.object({ listed: z.boolean() }))
+    .mutation(({ ctx, input }) => accountService.setListed(ctx.prisma, ctx.user.id, input.listed)),
+  setChatbotActive: streamerProcedure
+    .input(z.object({ active: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      accountService.setChatbotActive(ctx.prisma, ctx.user.id, input.active),
+    ),
+  /** 본인 탈퇴 — 어드민의 탈퇴 처리와 같은 서비스(연관 데이터 cascade 삭제) */
+  deleteSelf: streamerProcedure.mutation(({ ctx }) =>
+    adminUsersService.deleteStreamer(ctx.prisma, ctx.user.id),
+  ),
+
   getUserSetting: streamerProcedure.query(({ ctx }) =>
     userSettingService.getUserSetting(ctx.prisma, ctx.user.id),
   ),

@@ -41,8 +41,9 @@ export const commandRouter = t.router({
   getCommandListByChannelId: publicProcedure
     .input(z.object({ channelId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const user = await ctx.prisma.user.findFirst({
-        where: { channelId: input.channelId, hidden: false },
+      // hidden 은 목록 노출 여부 — 직접 링크는 항상 접근 가능 (#7)
+      const user = await ctx.prisma.user.findUnique({
+        where: { channelId: input.channelId },
         select: { id: true },
       });
       if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 채널입니다.');
