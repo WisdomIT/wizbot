@@ -4,7 +4,7 @@ import { Suspense, use } from 'react';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { Card, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
-import { getStreamers } from '../_api/streamers';
+import { getStreamers } from '../_lib/streamers';
 
 export default function Streamers() {
   const streamerList = use(getStreamers());

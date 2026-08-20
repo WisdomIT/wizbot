@@ -13,12 +13,6 @@ export const userRouter = t.router({
   getChzzkId: publicProcedure.query(() => {
     return process.env.CHZZK_ID;
   }),
-  getChzzkRedirectUrl: publicProcedure.query(() => {
-    return process.env.PUBLIC_SITE_URL + '/login/auth';
-  }),
-  getPublicSiteUrl: publicProcedure.query(() => {
-    return process.env.PUBLIC_SITE_URL;
-  }),
   /** 내부(챗봇 워커)용 — 임의 사용자 조회 */
   getUser: internalProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
     return ctx.prisma.user.findFirst({

@@ -3,7 +3,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
 
-import { ShortcutProps, StreamerProps } from '@/app/_api/streamers';
+import { ShortcutProps, StreamerProps } from '@/app/_lib/streamers';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { Button } from '@/components/ui/button';
 

@@ -14,7 +14,7 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { StreamerProps } from '@/app/_api/streamers';
+import { StreamerProps } from '@/app/_lib/streamers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
