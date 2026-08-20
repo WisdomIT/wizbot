@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 
 import { sendMail } from '../lib/nodemailer';
-import { ServiceError, whitelistService } from '../services';
+import { adminUsersService, ServiceError, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
 
 /** 패스코드 유효시간 — 넘으면 소모 전이라도 무효 (#20) */
@@ -102,6 +102,26 @@ export const adminRouter = t.router({
   removeFromWhitelist: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => whitelistService.removeFromWhitelist(ctx.prisma, input.id)),
+
+  /* ── 스트리머 관리 (#10 PR B) ── */
+  listStreamers: adminProcedure.query(({ ctx }) => adminUsersService.listStreamers(ctx.prisma)),
+  setStreamerHidden: adminProcedure
+    .input(z.object({ userId: z.number(), hidden: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      adminUsersService.setStreamerHidden(ctx.prisma, input.userId, input.hidden),
+    ),
+  deleteStreamer: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(({ ctx, input }) => adminUsersService.deleteStreamer(ctx.prisma, input.userId)),
+
+  /* ── 관리자 계정 관리 (#10 PR B) ── */
+  listAdmins: adminProcedure.query(({ ctx }) => adminUsersService.listAdmins(ctx.prisma)),
+  addAdmin: adminProcedure
+    .input(z.object({ email: z.string().email('올바른 이메일 주소를 입력해주세요.') }))
+    .mutation(({ ctx, input }) => adminUsersService.addAdmin(ctx.prisma, input.email)),
+  removeAdmin: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) => adminUsersService.removeAdmin(ctx.prisma, input.id, ctx.user.id)),
 
   /** 로그인한 관리자 본인 정보 */
   me: adminProcedure.query(async ({ ctx }) => {
