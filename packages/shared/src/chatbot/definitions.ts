@@ -115,6 +115,15 @@ export const chatbotFunctionDefinitions = {
     usageTokens: (c) => [cmd(c)],
   },
 
+  getCommandListUrl: {
+    name: '명령어 목록 링크',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '명령어 목록 페이지 링크를 응답합니다.',
+    description:
+      '이 채널의 명령어 목록 페이지 링크를 응답합니다.\n\n시청자가 사용 가능한 명령어를 웹에서 확인할 수 있습니다.',
+    usageTokens: (c) => [cmd(c)],
+  },
+
   /* ── 치지직 설정 ── */
   updateChzzkTitle: {
     name: '방송 제목 수정',

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Context } from '../../trpc';
 import chatbot, { getChatbotDatabaseInitial } from '..';
@@ -138,6 +138,60 @@ describe('chatbot 디스패처', () => {
   });
 });
 
+describe('getCommandListUrl (#73)', () => {
+  const OLD_SITE_URL = process.env.PUBLIC_SITE_URL;
+  afterEach(() => {
+    process.env.PUBLIC_SITE_URL = OLD_SITE_URL;
+  });
+
+  function ctxWithChannel(channelId: string | null) {
+    return {
+      prisma: {
+        chatbotEchoCommand: { findMany: vi.fn().mockResolvedValue([]) },
+        chatbotFunctionCommand: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 20,
+              userId: USER_ID,
+              command: '명령어',
+              function: 'getCommandListUrl',
+              permission: 'VIEWER',
+              option: null,
+            },
+          ]),
+        },
+        user: {
+          findUnique: vi.fn().mockResolvedValue(channelId ? { channelId } : null),
+        },
+      },
+    } as unknown as Context;
+  }
+
+  it('channelId 경로로 명령어 목록 링크를 응답한다 (#72)', async () => {
+    process.env.PUBLIC_SITE_URL = 'https://bot.wisdomit.co.kr';
+    const result = await chatbot(
+      ctxWithChannel('d9c571e0ecae37fec31711735f95c8f4'),
+      message('!명령어'),
+    );
+    expect(result).toEqual({
+      ok: true,
+      message: '명령어 목록: https://bot.wisdomit.co.kr/d9c571e0ecae37fec31711735f95c8f4/command',
+    });
+  });
+
+  it('PUBLIC_SITE_URL 끝의 슬래시는 제거한다', async () => {
+    process.env.PUBLIC_SITE_URL = 'https://bot.wisdomit.co.kr/';
+    const result = await chatbot(ctxWithChannel('abc'), message('!명령어'));
+    expect(result.message).toBe('명령어 목록: https://bot.wisdomit.co.kr/abc/command');
+  });
+
+  it('PUBLIC_SITE_URL 미설정이면 깨진 링크 대신 실패 응답', async () => {
+    delete process.env.PUBLIC_SITE_URL;
+    const result = await chatbot(ctxWithChannel('abc'), message('!명령어'));
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe('getChatbotDatabaseInitial', () => {
   it('기본 function/echo 명령어를 해당 userId로 생성한다', () => {
     const { initialFunction, initialEcho } = getChatbotDatabaseInitial(42);
@@ -146,6 +200,13 @@ describe('getChatbotDatabaseInitial', () => {
     expect(initialEcho.length).toBeGreaterThan(0);
     expect(initialFunction.every((c) => c.userId === 42)).toBe(true);
     expect(initialEcho.every((c) => c.userId === 42)).toBe(true);
+  });
+
+  it("기본 function 명령어에 '명령어'(목록 링크)가 포함된다 (#73)", () => {
+    const { initialFunction } = getChatbotDatabaseInitial(1);
+    expect(initialFunction).toContainEqual(
+      expect.objectContaining({ command: '명령어', function: 'getCommandListUrl' }),
+    );
   });
 
   it('기본 명령어 이름은 서로 중복되지 않는다', () => {
