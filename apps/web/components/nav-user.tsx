@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgeCheck, Bell, ChevronsUpDown, CreditCard, LogOut, Sparkles } from 'lucide-react';
+import { ChevronsUpDown, ExternalLink, LogOut } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -21,12 +21,15 @@ import {
 
 export function NavUser({
   user,
+  viewerUrl,
 }: {
   user: {
     nickname: string;
     id: string;
     avatar: string;
   };
+  /** 있으면 드롭다운에 '내 시청자 페이지' 항목을 노출한다 (#7) */
+  viewerUrl?: string;
 }) {
   const { isMobile } = useSidebar();
 
@@ -56,13 +59,23 @@ export function NavUser({
             align="end"
             sideOffset={4}
           >
+            {viewerUrl && (
+              <>
+                <DropdownMenuItem asChild>
+                  <a href={viewerUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink />내 시청자 페이지
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem
               onClick={() => {
                 location.href = '/login/logout';
               }}
             >
               <LogOut />
-              Log out
+              로그아웃
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

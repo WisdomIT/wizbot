@@ -12,6 +12,8 @@ export const chatbotRouter = t.router({
   }),
   getChannels: internalProcedure.query(async ({ ctx }) => {
     return ctx.prisma.user.findMany({
+      // 챗봇을 끈 채널은 목록에서 빠진다 → 워커의 diff 동기화가 연결을 정리한다 (#7)
+      where: { userSetting: { is: { chatbotActive: true } } },
       select: {
         id: true,
         channelId: true,

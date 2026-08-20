@@ -138,7 +138,7 @@ export default function AppSidebarStreamer({ children, user, ...props }: AppSide
           <NavMenu title="설정" items={data.setting} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
-          <NavUser user={user} />
+          <NavUser user={user} viewerUrl={`/${user.id}/command`} />
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
