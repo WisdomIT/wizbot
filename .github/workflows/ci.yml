@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         # 버전은 package.json의 packageManager 필드에서 읽음
 
       - uses: actions/setup-node@v7
@@ -75,20 +75,20 @@ jobs:
       matrix:
         app: [web, api, chatbot]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # ghcr 이미지 이름은 소문자만 허용 — github.repository(WisdomIT/wizbot)를 그대로 쓰면 실패한다
       - id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
       # driver: docker = 호스트 데몬 직접 사용 → 로컬 레이어 캐시 (docker-container 빌더 불필요)
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         with:
           driver: docker
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.app }}
