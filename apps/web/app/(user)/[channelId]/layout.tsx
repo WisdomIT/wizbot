@@ -21,6 +21,7 @@ export default async function RootLayout({
   }
 
   const channel = {
+    channelId: channelData.channelId,
     title: channelData.channelName,
     description: '위즈봇',
     avatar: channelData.channelImageUrl,
