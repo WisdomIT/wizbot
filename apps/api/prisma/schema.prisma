@@ -27,7 +27,7 @@ enum SongStatus {
 
 model Whitelist {
   id         Int    @id @default(autoincrement())
-  nickname   String @db.VarChar(10)
+  nickname   String @db.VarChar(50)
   channelId  String @unique @db.VarChar(32)
 }
 
