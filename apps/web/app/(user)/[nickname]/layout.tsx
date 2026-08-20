@@ -1,25 +1,20 @@
-import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
+import { getStreamerByChannelName } from '@/app/_lib/streamers';
 import { AppSidebarUser } from '@/components/app-sidebar-user';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { SidebarProvider } from '@/components/ui/sidebar';
 
-import { getStreamerByChannelName } from '../_api/streamers';
-
 export default async function RootLayout({
   children,
+  params,
 }: Readonly<{
   children: React.ReactNode;
+  params: Promise<{ nickname: string }>;
 }>) {
-  const headerList = await headers();
-  const header_url = headerList.get('x-url') || '';
-  // uri 제외 후 pathname만 남기기
-  const pathname = header_url.split('/').slice(3).join('/');
-  const currentChannelName = pathname.split('/')[0];
-  const currentChannelNameDecoded = decodeURIComponent(currentChannelName);
-
-  const channelData = await getStreamerByChannelName(currentChannelNameDecoded);
+  // 미들웨어의 x-url 헤더 파싱 대신 라우트 params 사용 (#23)
+  const { nickname } = await params;
+  const channelData = await getStreamerByChannelName(decodeURIComponent(nickname));
 
   if (!channelData) {
     return notFound();

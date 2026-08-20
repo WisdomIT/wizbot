@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
 import { signJwt } from '@/lib/jwt';
 import { OAUTH_STATE_COOKIE, OAUTH_STATE_COOKIE_PATH } from '@/lib/oauth-state';
+import { redirectTo } from '@/lib/request-url';
 
-import { getChzzkTokenInterlock, getPublicSiteUrl } from '../_apis/chzzk';
+import { getChzzkTokenInterlock } from '../_apis/chzzk';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -13,16 +14,12 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const state = searchParams.get('state');
 
-  const publicSiteUrl = await getPublicSiteUrl();
-
   const clearStateCookie = `${OAUTH_STATE_COOKIE}=; HttpOnly; Path=${OAUTH_STATE_COOKIE_PATH}; Max-Age=0; SameSite=Lax${
     isProduction ? '; Secure' : ''
   }`;
 
   const redirectToLoginWithError = (message: string) =>
-    NextResponse.redirect(`${publicSiteUrl}/login?error=${encodeURIComponent(message)}`, {
-      headers: { 'Set-Cookie': clearStateCookie },
-    });
+    redirectTo(`/login?error=${encodeURIComponent(message)}`, { 'Set-Cookie': clearStateCookie });
 
   // 콜백 URL 직접 접근 또는 provider 오류로 파라미터가 누락된 경우
   if (!code || !state) {
@@ -45,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     const token = await signJwt({ id: userId, role: 'streamer' });
 
-    const response = NextResponse.redirect(`${publicSiteUrl}/login/redirect?to=/streamer`);
+    const response = redirectTo('/login/redirect?to=/streamer');
     response.headers.append(
       'Set-Cookie',
       `session-token=${token}; HttpOnly; Path=/; Max-Age=604800; SameSite=Strict${

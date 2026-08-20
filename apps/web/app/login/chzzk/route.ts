@@ -1,8 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-import { OAUTH_STATE_COOKIE, OAUTH_STATE_COOKIE_PATH, OAUTH_STATE_MAX_AGE } from '@/lib/oauth-state';
+import {
+  OAUTH_STATE_COOKIE,
+  OAUTH_STATE_COOKIE_PATH,
+  OAUTH_STATE_MAX_AGE,
+} from '@/lib/oauth-state';
+import { getRequestOrigin, redirectTo } from '@/lib/request-url';
 
-import { getChzzkId, getChzzkRedirectUrl, getPublicSiteUrl } from '../_apis/chzzk';
+import { getChzzkId } from '../_apis/chzzk';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -11,17 +16,14 @@ const isProduction = process.env.NODE_ENV === 'production';
  * 요청마다 랜덤 state를 생성해 httpOnly 쿠키에 저장하고, 인가 페이지로 리다이렉트한다.
  * 콜백(/login/auth)에서 쿠키의 state와 쿼리의 state를 비교해 로그인 CSRF를 방어한다.
  */
-export async function GET() {
-  const [chzzkId, redirectUri, publicSiteUrl] = await Promise.all([
-    getChzzkId(),
-    getChzzkRedirectUrl(),
-    getPublicSiteUrl(),
-  ]);
+export async function GET(request: NextRequest) {
+  const chzzkId = await getChzzkId();
+  // 콜백 URI 는 요청의 외부 origin 에서 유도 (request.url 은 바인드 주소라 프록시 뒤에서 부정확, #24)
+  // 치지직 개발자센터에 등록된 redirect URI 와 일치해야 한다
+  const redirectUri = `${getRequestOrigin(request.headers)}/login/auth`;
 
-  if (!chzzkId || !redirectUri) {
-    return NextResponse.redirect(
-      `${publicSiteUrl}/login?error=${encodeURIComponent('치지직 로그인 설정이 없습니다.')}`,
-    );
+  if (!chzzkId) {
+    return redirectTo(`/login?error=${encodeURIComponent('치지직 로그인 설정이 없습니다.')}`);
   }
 
   const state = crypto.randomUUID();
