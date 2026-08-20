@@ -1,4 +1,5 @@
 import { isServiceError, songService, userSettingService } from '../services';
+import { Context } from '../trpc';
 import { ChabotReturn, ChatbotFunctionHandler } from '.';
 import { splitContent } from './lib';
 
@@ -16,6 +17,23 @@ async function withServiceMessages(fn: () => Promise<ChabotReturn>): Promise<Cha
 
 function requesterOf(data: { senderNickname: string; senderChannelId?: string }) {
   return { nickname: data.senderNickname, channelId: data.senderChannelId ?? null };
+}
+
+/**
+ * 시청자 플레이리스트 링크 (` | https://…/<channelId>/playlist`).
+ * 실행 시점에 조립해 경로 규칙(#72)·도메인 변경에 자동으로 따라간다. 미설정 시 빈 문자열.
+ */
+async function playlistLinkSuffix(ctx: Context, userId: number): Promise<string> {
+  const siteUrl = process.env.PUBLIC_SITE_URL?.replace(/\/$/, '');
+  if (!siteUrl) return '';
+
+  const user = await ctx.prisma.user.findUnique({
+    where: { id: userId },
+    select: { channelId: true },
+  });
+  if (!user) return '';
+
+  return ` | ${siteUrl}/${user.channelId}/playlist`;
 }
 
 export const functionSong = {
@@ -72,32 +90,29 @@ export const functionSong = {
 
   listSongs: async (ctx, data) =>
     withServiceMessages(async () => {
-      const queue = await songService.listQueue(ctx.prisma, data.userId);
+      const [queue, link] = await Promise.all([
+        songService.listQueue(ctx.prisma, data.userId),
+        playlistLinkSuffix(ctx, data.userId),
+      ]);
 
       if (queue.length === 0) {
-        return { ok: true, message: '대기열이 비어 있습니다.' };
+        return { ok: true, message: `대기열이 비어 있습니다.${link}` };
       }
 
       const next = queue[0];
       return {
         ok: true,
-        message: `대기 ${queue.length}곡 | 다음 곡: ${next.title} (신청: ${next.requester})`,
+        message: `대기 ${queue.length}곡 | 다음 곡: ${next.title} (신청: ${next.requester})${link}`,
       };
     }),
 
   currentSong: async (ctx, data) =>
     withServiceMessages(async () => {
-      const [playback, user, setting] = await Promise.all([
+      const [playback, link, setting] = await Promise.all([
         ctx.prisma.songPlayback.findUnique({ where: { userId: data.userId } }),
-        ctx.prisma.user.findUnique({
-          where: { id: data.userId },
-          select: { channelId: true },
-        }),
+        playlistLinkSuffix(ctx, data.userId),
         userSettingService.getUserSetting(ctx.prisma, data.userId),
       ]);
-
-      const siteUrl = process.env.PUBLIC_SITE_URL?.replace(/\/$/, '');
-      const link = siteUrl && user ? ` | ${siteUrl}/${user.channelId}/playlist` : '';
 
       if (!setting.songActive) {
         return { ok: true, message: `현재 노래 신청을 받지 않습니다.${link}` };

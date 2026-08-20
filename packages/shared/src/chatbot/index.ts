@@ -202,19 +202,19 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
     {
       userId: userId,
       permission: 'VIEWER',
-      command: '노래신청',
+      command: '노래 신청',
       function: 'requestSong',
     },
     {
       userId: userId,
       permission: 'VIEWER',
-      command: '노래삭제',
+      command: '노래 삭제',
       function: 'removeSong',
     },
     {
       userId: userId,
       permission: 'VIEWER',
-      command: '노래목록',
+      command: '노래 목록',
       function: 'listSongs',
     },
     {
