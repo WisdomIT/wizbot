@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertCommandNameAvailable,
+  setCommandEnabled,
   createEchoCommand,
   createFunctionCommand,
   deleteEchoCommand,
@@ -89,6 +90,41 @@ describe('assertCommandNameAvailable', () => {
     await expect(
       assertCommandNameAvailable(prisma, USER_ID, '카페', { type: 'echo', id: 2 }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('활성/비활성 (#82)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('이름 중복 검사는 비활성 명령어도 포함한다 (다시 켤 때 충돌 방지)', async () => {
+    const { prisma, echo } = createPrisma();
+    // 꺼져 있는 '카페' 가 이미 있는 상황 — enabled 조건 없이 조회하므로 그대로 걸린다
+    echo.findFirst.mockResolvedValue({
+      id: 1,
+      userId: USER_ID,
+      command: '카페',
+      response: 'x',
+      enabled: false,
+    });
+
+    await expect(assertCommandNameAvailable(prisma, USER_ID, '카페')).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('setCommandEnabled 는 본인 명령어만 토글한다', async () => {
+    const { prisma, echo } = createPrisma();
+    echo.findFirst.mockResolvedValue({ id: 1, userId: USER_ID, command: '카페', response: 'x' });
+
+    await setCommandEnabled(prisma, USER_ID, 1, 'echo', false);
+    expect(echo.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { enabled: false } });
+  });
+
+  it('남의 명령어 토글은 NOT_FOUND', async () => {
+    const { prisma } = createPrisma(); // findFirst → null
+    await expect(setCommandEnabled(prisma, USER_ID, 99, 'echo', false)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
   });
 });
 

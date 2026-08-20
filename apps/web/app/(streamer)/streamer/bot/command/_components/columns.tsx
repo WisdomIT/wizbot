@@ -14,11 +14,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 
 import { renderTextWithLink } from '../../../../../_components/utils';
 
 export interface Command {
   id: number;
+  enabled: boolean;
   command: string;
   type: 'echo' | 'function';
   usageTokens: UsageToken[];
@@ -30,11 +32,24 @@ export interface Command {
 export function createColumns({
   onUpdate,
   onDelete,
+  onToggle,
 }: {
   onUpdate: (command: Command) => void;
   onDelete: (command: Command) => void;
+  onToggle: (command: Command, enabled: boolean) => void;
 }): ColumnDef<Command>[] {
   return [
+    {
+      id: 'enabled',
+      header: '사용',
+      cell: ({ row }) => (
+        <Switch
+          checked={row.original.enabled}
+          onCheckedChange={(next) => onToggle(row.original, next)}
+          aria-label={`${row.original.command} 명령어 사용 여부`}
+        />
+      ),
+    },
     {
       accessorKey: 'command',
       header: ({ column }) => {

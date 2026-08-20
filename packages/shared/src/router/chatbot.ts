@@ -62,7 +62,8 @@ export const chatbotRouter = t.router({
     }),
   repeat: internalProcedure
     .input(z.object({ userId: z.number() }))
-    .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId)),
+    // 비활성 반복은 제외 → 워커의 diff 동기화가 타이머를 정리한다 (#82)
+    .query(({ ctx, input }) => repeatService.listRepeats(ctx.prisma, input.userId, true)),
   /** 반복 메시지 등 워커발 채팅 전송 — 전송 주체는 항상 API (#30) */
   send: internalProcedure
     .input(z.object({ userId: z.number(), message: z.string() }))
