@@ -3,11 +3,11 @@ import { notFound } from 'next/navigation';
 import { DataTable } from './_components/data-table';
 import { fetchCommandList } from './_lib/command';
 
-export default async function Page({ params }: { params: Promise<{ nickname: string }> }) {
-  const { nickname } = await params;
+export default async function Page({ params }: { params: Promise<{ channelId: string }> }) {
+  const { channelId } = await params;
 
   try {
-    const data = await fetchCommandList(decodeURIComponent(nickname));
+    const data = await fetchCommandList(channelId);
     return <DataTable data={data} />;
   } catch (error) {
     // eslint-disable-next-line no-console

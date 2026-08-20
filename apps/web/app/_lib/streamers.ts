@@ -38,7 +38,7 @@ export const getStreamers = unstable_cache(
       const commandShortcut = {
         icon: 'BotMessageSquare',
         name: '명령어',
-        url: `/${user.channelName}/command`,
+        url: `/${user.channelId}/command`,
         popup: false,
       };
 
@@ -54,9 +54,9 @@ export const getStreamers = unstable_cache(
   { revalidate: 60 },
 );
 
-export const getStreamerByChannelName = unstable_cache(
-  async (channelName: string): Promise<StreamerProps | null> => {
-    const request = await trpc.user.getUserByChannelName.query({ channelName });
+export const getStreamerByChannelId = unstable_cache(
+  async (channelId: string): Promise<StreamerProps | null> => {
+    const request = await trpc.user.getUserByChannelId.query({ channelId });
     if (!request) return null;
 
     return {
@@ -71,6 +71,6 @@ export const getStreamerByChannelName = unstable_cache(
       })),
     };
   },
-  ['streamer-by-name'],
+  ['streamer-by-channel-id'],
   { revalidate: 60 },
 );

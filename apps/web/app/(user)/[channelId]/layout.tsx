@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 
-import { getStreamerByChannelName } from '@/app/_lib/streamers';
+import { getStreamerByChannelId } from '@/app/_lib/streamers';
 import { AppSidebarUser } from '@/components/app-sidebar-user';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -10,11 +10,11 @@ export default async function RootLayout({
   params,
 }: Readonly<{
   children: React.ReactNode;
-  params: Promise<{ nickname: string }>;
+  params: Promise<{ channelId: string }>;
 }>) {
-  // 미들웨어의 x-url 헤더 파싱 대신 라우트 params 사용 (#23)
-  const { nickname } = await params;
-  const channelData = await getStreamerByChannelName(decodeURIComponent(nickname));
+  // 경로 식별자는 불변인 channelId (#72). 표시용 채널명은 조회 결과에서 얻는다
+  const { channelId } = await params;
+  const channelData = await getStreamerByChannelId(channelId);
 
   if (!channelData) {
     return notFound();

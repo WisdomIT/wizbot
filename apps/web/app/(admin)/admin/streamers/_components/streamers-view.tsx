@@ -70,8 +70,9 @@ export function StreamersView() {
   return (
     <div className="flex flex-col gap-4 py-4">
       <p className="text-sm text-muted-foreground">
-        가입(로그인)한 스트리머 목록입니다. 숨김 처리하면 메인/스트리머 목록에 노출되지 않습니다.
-        탈퇴 처리는 명령어·설정·연동 토큰을 모두 삭제하며, 화이트리스트는 별도로 관리됩니다.
+        가입(로그인)한 스트리머 목록입니다. 숨김 처리하면 메인/스트리머 목록과 공개 명령어
+        페이지에서 노출되지 않습니다. 탈퇴 처리는 명령어·설정·연동 토큰을 모두 삭제하며,
+        화이트리스트는 별도로 관리됩니다.
       </p>
       <div className="rounded-md border">
         <Table>

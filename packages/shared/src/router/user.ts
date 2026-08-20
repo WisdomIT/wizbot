@@ -53,14 +53,17 @@ export const userRouter = t.router({
 
     return users;
   }),
-  getUserByChannelName: publicProcedure
-    .input(z.object({ channelName: z.string() }))
+  /** 시청자 공개 페이지용 — 경로 식별자는 불변인 channelId 를 쓴다 (#72) */
+  getUserByChannelId: publicProcedure
+    .input(z.object({ channelId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const { channelName } = input;
+      const { channelId } = input;
 
+      // 숨김 처리된 채널은 공개 조회에서 제외 — getCommandListByChannelId 와 같은 기준
       const user = await ctx.prisma.user.findFirst({
         where: {
-          channelName,
+          channelId,
+          hidden: false,
         },
         select: {
           channelId: true,
