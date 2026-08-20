@@ -3,7 +3,7 @@
 import { iconNames } from 'lucide-react/dynamic';
 import { useMemo, useState } from 'react';
 
-import { DynamicIcon } from '@/components/custom/dynamic-icon';
+import { DynamicIcon, resolveIconName } from '@/components/custom/dynamic-icon';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 /**
@@ -21,7 +22,10 @@ import { cn } from '@/lib/utils';
  *
  * 전체 아이콘(1,600여 개)을 한 번에 렌더하면 그만큼 lazy 청크를 받으므로,
  * 기본은 큐레이션 목록만 보여주고 검색 시 매칭 결과를 MAX_RESULTS 개까지만 그린다.
- * 값은 DB 호환을 위해 PascalCase 로 주고받는다 (렌더는 DynamicIcon 이 kebab 으로 변환).
+ *
+ * 값은 lucide 표준 이름(kebab-case)을 그대로 쓴다. 예전에는 PascalCase 로 변환해 저장했는데
+ * 숫자가 낀 이름(gamepad-2 → Gamepad2)이 되돌려지지 않아 렌더가 깨졌다.
+ * DB 에 남아 있는 PascalCase 값은 DynamicIcon 의 정규화 매칭이 처리한다.
  */
 
 const MAX_RESULTS = 60;
@@ -78,25 +82,11 @@ const CURATED = [
   'hand-coins',
 ] as const;
 
-function kebabToPascal(name: string): string {
-  return name
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('');
-}
-
-function pascalToKebab(name: string): string {
-  return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-    .toLowerCase();
-}
-
 export function IconPicker({
   value,
   onChange,
 }: {
-  /** PascalCase 아이콘 이름 (DB 저장 형식) */
+  /** lucide 아이콘 이름 (kebab-case). 과거 PascalCase 값도 표시는 정상 동작 */
   value: string;
   onChange: (icon: string) => void;
 }) {
@@ -117,7 +107,7 @@ export function IconPicker({
     return matched.slice(0, MAX_RESULTS);
   }, [search]);
 
-  const selectedKebab = value ? pascalToKebab(value) : '';
+  const selected = value ? resolveIconName(value) : null;
 
   return (
     <Dialog
@@ -146,26 +136,32 @@ export function IconPicker({
           onChange={(event) => setSearch(event.target.value)}
           placeholder="아이콘 검색 (영문)"
         />
-        <div className="grid max-h-72 grid-cols-8 gap-1 overflow-y-auto">
-          {results.map((name) => (
-            <button
-              key={name}
-              type="button"
-              title={name}
-              onClick={() => {
-                onChange(kebabToPascal(name));
-                setOpen(false);
-                setSearch('');
-              }}
-              className={cn(
-                'flex aspect-square items-center justify-center rounded-md border transition-colors hover:bg-accent',
-                selectedKebab === name ? 'border-primary bg-accent' : 'border-transparent',
-              )}
-            >
-              <DynamicIcon name={kebabToPascal(name)} size={20} />
-            </button>
-          ))}
-        </div>
+        <TooltipProvider delayDuration={200}>
+          <div className="grid max-h-72 grid-cols-8 gap-1 overflow-y-auto">
+            {results.map((name) => (
+              <Tooltip key={name}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={name}
+                    onClick={() => {
+                      onChange(name);
+                      setOpen(false);
+                      setSearch('');
+                    }}
+                    className={cn(
+                      'flex aspect-square items-center justify-center rounded-md border transition-colors hover:bg-accent',
+                      selected === name ? 'border-primary bg-accent' : 'border-transparent',
+                    )}
+                  >
+                    <DynamicIcon name={name} size={20} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{name}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
         {results.length === 0 && (
           <p className="py-6 text-center text-sm text-muted-foreground">
             검색 결과가 없습니다. 영문 이름으로 검색해보세요.

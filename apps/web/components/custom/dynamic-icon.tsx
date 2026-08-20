@@ -1,22 +1,29 @@
 'use client';
 
-import { DynamicIcon as LucideDynamicIcon, type IconName } from 'lucide-react/dynamic';
+import { DynamicIcon as LucideDynamicIcon, type IconName, iconNames } from 'lucide-react/dynamic';
+
+import { cn } from '@/lib/utils';
 
 /**
- * 이름(문자열)으로 lucide 아이콘을 렌더한다 (#25).
+ * 이름(문자열)으로 lucide 아이콘을 렌더한다 (#25, #7).
  *
- * 기존 `import * as Icons from 'lucide-react'` 는 아이콘 전체(1,500+)를 클라이언트 번들에
- * 포함시켰다 (/list First Load 301kB 의 주범). lucide-react/dynamic 은 아이콘별 청크를
- * lazy 로드한다.
- *
- * DB(UserShortcut.icon)에는 PascalCase 이름(예: BotMessageSquare)이 저장돼 있으므로
- * kebab-case 로 변환해 넘긴다. 알 수 없는 이름은 ⚠️ 폴백.
+ * 이름 해석: 대소문자·하이픈을 무시한 정규화 키로 매칭한다.
+ *   'Gamepad2' · 'gamepad-2' · 'gamepad2' → 모두 lucide 의 'gamepad-2'
+ * 단순 Pascal↔kebab 변환은 숫자가 낀 이름에서 하이픈이 사라져 되돌릴 수 없었다
+ * (Gamepad2 → gamepad2 ≠ gamepad-2 → 렌더 실패). DB 에 남아 있는 PascalCase 값도
+ * 이 방식으로 그대로 해석된다.
  */
-function pascalToKebab(name: string): string {
-  return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-    .toLowerCase();
+const iconNameByKey = new Map<string, IconName>(
+  (iconNames as readonly IconName[]).map((name) => [normalizeIconKey(name), name]),
+);
+
+function normalizeIconKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** 입력 이름을 실제 lucide 아이콘 이름으로. 없으면 null */
+export function resolveIconName(name: string): IconName | null {
+  return iconNameByKey.get(normalizeIconKey(name)) ?? null;
 }
 
 interface DynamicIconProps {
@@ -32,7 +39,16 @@ export function DynamicIcon({
   color = 'currentColor',
   className = '',
 }: DynamicIconProps) {
-  const iconName = pascalToKebab(name) as IconName;
+  const iconName = resolveIconName(name);
+
+  // 알 수 없는 이름 — 로딩과 구분해서 표시한다
+  if (!iconName) {
+    return (
+      <span title={`알 수 없는 아이콘: ${name}`} className={className}>
+        ⚠️
+      </span>
+    );
+  }
 
   return (
     <LucideDynamicIcon
@@ -40,7 +56,15 @@ export function DynamicIcon({
       size={size}
       color={color}
       className={className}
-      fallback={() => <span>⚠️</span>}
+      // 청크를 받는 동안의 자리표시자 (이전에는 ⚠️ 가 떠서 오류처럼 보였다)
+      fallback={() => (
+        <span
+          role="status"
+          aria-label="아이콘 불러오는 중"
+          className={cn('inline-block animate-pulse rounded-sm bg-muted', className)}
+          style={{ width: size, height: size }}
+        />
+      )}
     />
   );
 }

@@ -152,12 +152,12 @@ function ShortcutDialog({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(shortcut?.name ?? '');
   const [url, setUrl] = useState(shortcut?.url ?? '');
-  const [icon, setIcon] = useState(shortcut?.icon ?? 'Link');
+  const [icon, setIcon] = useState(shortcut?.icon ?? 'link');
 
   function reset() {
     setName(shortcut?.name ?? '');
     setUrl(shortcut?.url ?? '');
-    setIcon(shortcut?.icon ?? 'Link');
+    setIcon(shortcut?.icon ?? 'link');
   }
 
   function handleSubmit(event: React.FormEvent) {
