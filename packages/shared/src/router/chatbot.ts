@@ -27,17 +27,24 @@ export const chatbotRouter = t.router({
       z.object({
         userId: z.number(),
         senderNickname: z.string(),
+        senderChannelId: z.string().optional(),
         senderRole: z.enum(['STREAMER', 'MANAGER', 'VIEWER']),
         content: z.string(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, senderNickname, senderRole, content } = input;
+      const { userId, senderNickname, senderChannelId, senderRole, content } = input;
       if (!userId || !senderNickname || !senderRole || !content) {
         throw new Error('Invalid input.');
       }
 
-      const result = await chatbot(ctx, { userId, senderNickname, senderRole, content });
+      const result = await chatbot(ctx, {
+        userId,
+        senderNickname,
+        senderChannelId,
+        senderRole,
+        content,
+      });
 
       // 응답 전송도 API 가 수행한다 — 워커는 유저 토큰을 만지지 않는다 (#30 토큰 소유 원칙)
       if (result.ok) {

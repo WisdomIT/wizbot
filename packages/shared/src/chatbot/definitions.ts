@@ -85,6 +85,38 @@ export const chatbotFunctionDefinitions = {
     usageTokens: (c) => [cmd(c), arg('반복메시지 id'), { text: 'or' }, arg('all')],
   },
 
+  /* ── 노래 ── */
+  requestSong: {
+    name: '노래 신청',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '노래를 대기열에 신청합니다.',
+    description:
+      '검색어 또는 유튜브 영상 ID 로 노래를 신청합니다.\n\n예) !노래신청 LUCY 개화\n예) !노래신청 7qvrRWMXY-8',
+    usageTokens: (c) => [cmd(c), arg('검색어 또는 영상ID')],
+  },
+  removeSong: {
+    name: '노래 삭제',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '신청한 곡을 취소합니다.',
+    description:
+      '인수 없이 쓰면 본인이 신청한 마지막 곡을 취소합니다.\n\n매니저는 순번을 지정해 다른 사람의 곡도 삭제할 수 있습니다. 예) !노래삭제 3',
+    usageTokens: (c) => [cmd(c), arg('순번(매니저)')],
+  },
+  listSongs: {
+    name: '노래 목록',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '대기열을 조회합니다.',
+    description: '대기 중인 곡 수와 다음 곡을 알려줍니다.',
+    usageTokens: (c) => [cmd(c)],
+  },
+  currentSong: {
+    name: '현재 노래',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '재생 중인 곡과 플레이리스트 링크를 알려줍니다.',
+    description: '현재 재생 중인 곡 정보와 시청자용 플레이리스트 페이지 링크를 응답합니다.',
+    usageTokens: (c) => [cmd(c)],
+  },
+
   /* ── 치지직 조회 ── */
   getChzzkTitle: {
     name: '방송 제목 조회',
