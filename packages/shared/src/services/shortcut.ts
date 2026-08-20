@@ -32,9 +32,12 @@ function assertName(name: string) {
   return trimmed;
 }
 
-/** 아이콘은 웹의 피커가 유효한 이름만 넘긴다. 서버는 형식만 검증(미지의 이름은 렌더 시 폴백) */
+/**
+ * 아이콘은 웹의 피커가 유효한 이름만 넘긴다. 서버는 형식만 검증(미지의 이름은 렌더 시 폴백).
+ * lucide 표준 이름은 kebab-case(gamepad-2) — 과거 PascalCase 값도 허용한다.
+ */
 function assertIcon(icon: string) {
-  if (!/^[A-Za-z0-9]{1,40}$/.test(icon)) {
+  if (!/^[A-Za-z0-9-]{1,40}$/.test(icon)) {
     throw new ServiceError('INVALID_INPUT', '아이콘 이름이 올바르지 않습니다.');
   }
   return icon;

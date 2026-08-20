@@ -36,7 +36,7 @@ export const getStreamers = unstable_cache(
       }));
 
       const commandShortcut = {
-        icon: 'BotMessageSquare',
+        icon: 'bot-message-square',
         name: '명령어',
         url: `/${user.channelId}/command`,
         popup: false,
