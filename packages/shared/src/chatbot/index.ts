@@ -194,6 +194,12 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
     {
       userId: userId,
       permission: 'VIEWER',
+      command: '명령어',
+      function: 'getCommandListUrl',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
       command: '방제',
       function: 'getChzzkTitle',
     },

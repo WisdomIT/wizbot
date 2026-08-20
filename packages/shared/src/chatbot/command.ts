@@ -158,4 +158,22 @@ export const functionCommand = {
       const repeat = await repeatService.deleteRepeat(ctx.prisma, userId, Number(target));
       return { ok: true, message: `${repeat.response} 반복 메시지가 삭제되었습니다.` };
     }),
+  getCommandListUrl: async (ctx, data) => {
+    const siteUrl = process.env.PUBLIC_SITE_URL?.replace(/\/$/, '');
+    if (!siteUrl) {
+      // 미설정 시 깨진 링크를 내보내지 않는다 (#73)
+      return { ok: false, message: 'PUBLIC_SITE_URL이 설정되지 않았습니다.' };
+    }
+
+    const user = await ctx.prisma.user.findUnique({
+      where: { id: data.userId },
+      select: { channelId: true },
+    });
+    if (!user) {
+      return { ok: false, message: '사용자를 찾을 수 없습니다.' };
+    }
+
+    // 경로 식별자는 불변인 channelId (#72)
+    return { ok: true, message: `명령어 목록: ${siteUrl}/${user.channelId}/command` };
+  },
 } satisfies Partial<Record<string, ChatbotFunctionHandler>>;
