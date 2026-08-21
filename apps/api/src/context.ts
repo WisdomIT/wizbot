@@ -58,13 +58,32 @@ function isInternalRequest(req: CreateExpressContextOptions['req']): boolean {
   return typeof value === 'string' && value.length > 0 && value === getSecrets().internalToken;
 }
 
+/** x-song-token 헤더로 송출 소스를 식별한다 (재생용 토큰 / 자막 오버레이용 읽기 전용 토큰) */
+async function resolveSongSource(req: CreateExpressContextOptions['req']) {
+  const header = req.headers['x-song-token'];
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value) return null;
+
+  const setting = await prisma.userSetting.findFirst({
+    where: { OR: [{ songSourceToken: value }, { songOverlayToken: value }] },
+    select: { userId: true, songSourceToken: true },
+  });
+  if (!setting) return null;
+
+  return { userId: setting.userId, readOnly: setting.songSourceToken !== value };
+}
+
 export async function createContext({ req }: CreateExpressContextOptions): Promise<Context> {
   const token = extractSessionToken(req);
-  const user = token ? await verifySession(token) : null;
+  const [user, songSource] = await Promise.all([
+    token ? verifySession(token) : Promise.resolve(null),
+    resolveSongSource(req),
+  ]);
 
   return {
     prisma,
     user,
     internal: isInternalRequest(req),
+    songSource,
   };
 }

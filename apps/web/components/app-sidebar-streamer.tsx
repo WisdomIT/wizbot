@@ -3,7 +3,6 @@
 import {
   BotMessageSquare,
   FileAudio2,
-  Headphones,
   Link,
   ListPlus,
   Play,
@@ -60,11 +59,6 @@ const data = {
       name: '뮤직플레이어',
       url: '/streamer/song/player',
       icon: <Play />,
-    },
-    {
-      name: '플레이리스트',
-      url: '/streamer/song/playlist',
-      icon: <Headphones />,
     },
     {
       name: '즐겨찾기',

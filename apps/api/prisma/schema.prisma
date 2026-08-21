@@ -25,6 +25,13 @@ enum SongStatus {
   STOPPED
 }
 
+/// 소리를 내보내는 경로 (#5 2단계) — 지정된 소스만 재생한다
+enum SongSourceType {
+  NONE
+  OBS
+  ELECTRON
+}
+
 /// 신청된 곡의 최종 상태 (#5/#6 — 재생 여부와 무관하게 전부 기록)
 enum SongHistoryStatus {
   PLAYED    // 끝까지 재생됨
@@ -91,6 +98,11 @@ model UserSetting {
   songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
   songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
   songMaxQueueLength    Int     @db.Int @default(30)        // 대기열 최대 곡 수
+  songSourceType        SongSourceType @default(OBS)        // 소리를 내보낼 경로
+  /// OBS 재생 페이지 토큰 (URL 에 노출되므로 재발급 가능해야 한다)
+  songSourceToken       String? @db.VarChar(64)
+  /// 자막 오버레이용 읽기 전용 토큰
+  songOverlayToken      String? @db.VarChar(64)
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -208,6 +220,12 @@ model SongPlayback {
   title         String?    @db.VarChar(150) // 영상 제목
   videoUploader String?    @db.VarChar(150) // 영상 게시자
   requester     String?    @db.VarChar(40) // 신청자
+  durationSeconds Int      @default(0) @db.Int // 현재 곡 길이(초)
+  positionSeconds Int      @default(0) @db.Int // 재생 위치(초) — 송출 소스가 보고
+  volume        Int        @default(70) @db.Int // 0~100
+  /// 현재 곡이 큐에서 나온 시각 — 이력 기록·타임아웃 판단용
+  startedAt     DateTime?
+  updatedAt     DateTime   @updatedAt
 
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
