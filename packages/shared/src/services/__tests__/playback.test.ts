@@ -11,7 +11,7 @@ import {
   skipToNext,
   touchSourceSession,
 } from '../playback';
-import { clearSource } from '../songEvents';
+import { SOURCE_TIMEOUT_MS, clearSource, subscribeSongEvents } from '../songEvents';
 
 const USER_ID = 1;
 
@@ -222,6 +222,43 @@ describe('송출 소스 중재', () => {
     touchSourceSession(USER_ID, 'ELECTRON', 'session-1'); // 설정은 OBS
     const status = await getSourceStatus(prisma, USER_ID);
     expect(status.online).toBe(false);
+  });
+
+  it('같은 세션의 반복 하트비트는 이벤트를 만들지 않는다 (구독자 재조회 폭주 방지)', () => {
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+
+    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 새 연결 → 알림
+    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 같은 세션 → 조용히
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+
+    expect(events).toEqual([{ type: 'source' }]);
+
+    touchSourceSession(USER_ID, 'OBS', 'session-2'); // 세션이 바뀌면 다시 알린다
+    expect(events).toEqual([{ type: 'source' }, { type: 'source' }]);
+
+    unsubscribe();
+  });
+
+  it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', () => {
+    vi.useFakeTimers();
+    try {
+      touchSourceSession(USER_ID, 'OBS', 'session-1');
+
+      const events: unknown[] = [];
+      const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+
+      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
+      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+
+      // 끊겼다가 같은 세션으로 돌아와도 새 연결이므로 알린다
+      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      expect(events).toEqual([{ type: 'source' }]);
+
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('창을 여러 개 열면 마지막 세션만 활성 (이중 재생 방지)', () => {

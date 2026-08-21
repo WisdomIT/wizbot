@@ -41,6 +41,11 @@ declare global {
 const PLAYER_WIDTH = 854;
 const PLAYER_HEIGHT = 480;
 
+/** 하트비트 주기 — 서버는 이 값의 3배(SOURCE_TIMEOUT_MS)까지 못 받으면 끊긴 것으로 본다 */
+const HEARTBEAT_MS = 5_000;
+/** SSE 이벤트를 놓쳤을 때를 대비한 재동기화 주기 */
+const RESYNC_MS = 30_000;
+
 function loadYouTubeApi(): Promise<any> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
 
@@ -191,9 +196,15 @@ export function ObsPlayer({ token }: { token: string }) {
       }
     };
     void beat();
-    const timer = setInterval(() => void beat(), 10_000);
+    const timer = setInterval(() => void beat(), HEARTBEAT_MS);
     return () => clearInterval(timer);
   }, [trpc, sessionId, sync]);
+
+  // 하트비트는 더 이상 매번 이벤트를 만들지 않으므로, SSE 를 놓쳤을 때를 대비해 가끔 맞춘다
+  useEffect(() => {
+    const timer = setInterval(() => void sync(), RESYNC_MS);
+    return () => clearInterval(timer);
+  }, [sync]);
 
   // 진행률 보고
   useEffect(() => {

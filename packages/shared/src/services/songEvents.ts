@@ -49,13 +49,31 @@ export interface SourcePresence {
   lastSeenAt: number;
 }
 
-/** 하트비트가 이 시간 이상 끊기면 오프라인으로 본다 */
-export const SOURCE_TIMEOUT_MS = 30_000;
+/**
+ * 하트비트가 이 시간 이상 끊기면 오프라인으로 본다.
+ * 송출 소스는 5초마다 보내므로 3번 연속 놓쳐야 끊긴 것으로 판정한다
+ * (한 번쯤 늦는다고 「연결 안 됨」이 깜빡이지 않게).
+ */
+export const SOURCE_TIMEOUT_MS = 15_000;
 
 const presences = new Map<number, SourcePresence>();
 
-export function touchSource(userId: number, source: string, sessionId: string) {
+/**
+ * 하트비트 수신. 연결이 새로 생기거나 소스/세션이 바뀐 경우에만 changed 가 true 다.
+ * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽게 되므로 전환 때만 알린다.
+ */
+export function touchSource(
+  userId: number,
+  source: string,
+  sessionId: string,
+): { changed: boolean } {
+  const previous = getSourcePresence(userId);
   presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
+
+  return {
+    changed:
+      previous === null || previous.sessionId !== sessionId || previous.source !== source,
+  };
 }
 
 export function getSourcePresence(userId: number): SourcePresence | null {
