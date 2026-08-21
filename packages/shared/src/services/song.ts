@@ -191,6 +191,39 @@ export async function moveSong(
   return { moved: true as const };
 }
 
+/**
+ * 드래그로 큐 전체 순서를 다시 매긴다 (#5 2-b).
+ * 클라이언트가 보는 목록과 서버 상태가 어긋난 채 저장되면 엉뚱한 곡이 밀리므로,
+ * 넘어온 id 집합이 현재 큐와 정확히 일치할 때만 반영한다.
+ */
+export async function reorderQueue(prisma: PrismaClient, userId: number, orderedIds: number[]) {
+  const songs = await listQueue(prisma, userId);
+  const currentIds = new Set(songs.map((song) => song.id));
+
+  const sameSet =
+    orderedIds.length === songs.length &&
+    new Set(orderedIds).size === orderedIds.length &&
+    orderedIds.every((id) => currentIds.has(id));
+  if (!sameSet) {
+    throw new ServiceError('CONFLICT', '대기열이 변경되었습니다. 새로고침 후 다시 시도해주세요.');
+  }
+
+  // 기존에 쓰던 order 값을 그대로 재사용해 새 순서에 배분한다
+  const slots = songs.map((song) => song.order).sort((a, b) => a - b);
+  const updates = orderedIds
+    .map((id, index) => ({ id, order: slots[index]! }))
+    .filter(({ id, order }) => songs.find((song) => song.id === id)!.order !== order);
+
+  if (updates.length === 0) return { reordered: false as const };
+
+  await prisma.$transaction(
+    updates.map(({ id, order }) => prisma.song.update({ where: { id }, data: { order } })),
+  );
+
+  publishSongEvent(userId, { type: 'queue' });
+  return { reordered: true as const };
+}
+
 /** 콘솔에서 특정 곡 삭제 — 이력에 CANCELED 로 남긴다 */
 export async function removeSongById(
   prisma: PrismaClient,

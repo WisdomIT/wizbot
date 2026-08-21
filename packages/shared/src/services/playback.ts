@@ -308,5 +308,28 @@ export async function getSourceStatus(prisma: PrismaClient, userId: number) {
     timeoutMs: SOURCE_TIMEOUT_MS,
     sourceToken: setting.songSourceToken,
     overlayToken: setting.songOverlayToken,
+    overlay: {
+      mode: setting.songOverlayMode,
+      durationSeconds: setting.songOverlayDurationSeconds,
+    },
   };
+}
+
+/** 자막 표시 방식 — 계속 띄울지(ALWAYS), 곡이 바뀔 때 잠깐만 보여줄지(TIMED) */
+export async function setOverlaySettings(
+  prisma: PrismaClient,
+  userId: number,
+  input: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number },
+) {
+  await prisma.userSetting.update({
+    where: { userId },
+    data: {
+      songOverlayMode: input.mode,
+      songOverlayDurationSeconds: input.durationSeconds,
+    },
+  });
+
+  // 송출 소스가 즉시 반영하도록 알린다
+  publishSongEvent(userId, { type: 'source' });
+  return { ok: true as const };
 }

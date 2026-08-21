@@ -25,6 +25,12 @@ enum SongStatus {
   STOPPED
 }
 
+/// 자막 표시 방식 (#5) — 계속 띄울지, 곡이 바뀔 때 잠깐만 보여줄지
+enum SongOverlayMode {
+  ALWAYS
+  TIMED
+}
+
 /// 소리를 내보내는 경로 (#5 2단계) — 지정된 소스만 재생한다
 enum SongSourceType {
   NONE
@@ -101,8 +107,10 @@ model UserSetting {
   songSourceType        SongSourceType @default(OBS)        // 소리를 내보낼 경로
   /// OBS 재생 페이지 토큰 (URL 에 노출되므로 재발급 가능해야 한다)
   songSourceToken       String? @db.VarChar(64)
-  /// 자막 오버레이용 읽기 전용 토큰
+  /// 읽기 전용 토큰 (현재 재생 페이지가 자막을 함께 표시하므로 미사용 — 별도 오버레이가 필요해지면 사용)
   songOverlayToken      String? @db.VarChar(64)
+  songOverlayMode       SongOverlayMode @default(ALWAYS) // 자막 표시 방식
+  songOverlayDurationSeconds Int @db.Int @default(10)    // TIMED 일 때 표시 시간(초)
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
