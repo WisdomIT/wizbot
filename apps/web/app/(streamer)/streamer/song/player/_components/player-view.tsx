@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GripVertical,
+  Heart,
   Pause,
   Play,
   PlayCircle,
@@ -86,6 +87,7 @@ export function PlayerView() {
   const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
   const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
   const setOverlaySettings = useMutation(trpc.song.setOverlaySettings.mutationOptions());
+  const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
   const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const seek = useMutation(trpc.song.seek.mutationOptions());
@@ -189,6 +191,16 @@ export function PlayerView() {
             <Button variant="outline" onClick={() => run(stop.mutateAsync(), '정지했습니다.')}>
               <Square /> 정지
             </Button>
+            {playback.youtubeId && (
+              <AddToFavoriteButton
+                onAdd={(favoriteId) =>
+                  run(
+                    addCurrentToFavorite.mutateAsync({ favoriteId }),
+                    '즐겨찾기에 담았습니다.',
+                  )
+                }
+              />
+            )}
 
             <div className="ml-auto flex items-center gap-2">
               <span className="text-sm text-muted-foreground">볼륨</span>
@@ -648,5 +660,39 @@ function OverlayCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** 지금 재생 중인 곡을 즐겨찾기에 담는다 (#5 3단계) */
+function AddToFavoriteButton({ onAdd }: { onAdd: (favoriteId: number) => void }) {
+  const trpc = useTRPC();
+  const { data } = useQuery(trpc.songFavorite.list.queryOptions());
+  const favorites = data?.favorites ?? [];
+
+  if (favorites.length === 0) return null;
+
+  // 즐겨찾기가 하나뿐이면 고를 것도 없다
+  if (favorites.length === 1) {
+    return (
+      <Button variant="outline" onClick={() => onAdd(favorites[0]!.id)}>
+        <Heart /> 즐겨찾기에 담기
+      </Button>
+    );
+  }
+
+  return (
+    <Select onValueChange={(value) => onAdd(Number(value))}>
+      <SelectTrigger className="w-48">
+        <SelectValue placeholder="즐겨찾기에 담기" />
+      </SelectTrigger>
+      <SelectContent>
+        {favorites.map((favorite) => (
+          <SelectItem key={favorite.id} value={String(favorite.id)}>
+            {favorite.name}
+            {favorite.isDefault ? ' (대표)' : ''}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

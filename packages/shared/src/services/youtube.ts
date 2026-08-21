@@ -24,6 +24,8 @@ export interface YoutubeVideo {
 }
 
 const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+/** 한 번에 가져올 재생목록 곡 수 상한 — 너무 큰 목록으로 큐/즐겨찾기가 폭주하지 않게 */
+export const PLAYLIST_MAX_ITEMS = 200;
 const OEMBED_URL = 'https://www.youtube.com/oembed';
 
 let clientPromise: Promise<Innertube> | null = null;
@@ -100,6 +102,114 @@ function toVideo(raw: any): YoutubeVideo | null {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * 재생목록 항목 파서.
+ * 유튜브가 재생목록을 `LockupView` 노드로 내려주기 시작해(실측 2026-08-21) 검색 결과와 모양이 다르다.
+ */
+function fromLockup(raw: any): YoutubeVideo | null {
+  if (raw?.type !== 'LockupView') return null;
+  if (raw?.content_type && raw.content_type !== 'VIDEO') return null;
+
+  const youtubeId: string = raw?.content_id ?? '';
+  if (!isYoutubeId(youtubeId)) return null;
+
+  const title: string = raw?.metadata?.title?.text ?? '';
+  if (!title) return null;
+
+  const uploader: string =
+    raw?.metadata?.metadata?.metadata_rows?.[0]?.metadata_parts?.[0]?.text?.text ?? '';
+
+  // 길이는 썸네일 위 뱃지("3:21" / "1:02:33")로만 내려온다
+  const badge = (raw?.content_image?.overlays ?? []).find((overlay: any) =>
+    Array.isArray(overlay?.badges),
+  )?.badges?.[0]?.text;
+
+  return {
+    youtubeId,
+    title: title.slice(0, 150),
+    uploader: (uploader || '알 수 없음').slice(0, 150),
+    durationSeconds: parseDurationBadge(badge),
+    thumbnailUrl: thumbnailFor(youtubeId),
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+function parseDurationBadge(text: unknown): number {
+  if (typeof text !== 'string') return 0;
+  const parts = text.split(':').map(Number);
+  if (parts.length === 0 || parts.some((part) => !Number.isFinite(part))) return 0;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+/** 재생목록 주소(또는 ID)에서 재생목록 ID 를 뽑는다 */
+export function extractPlaylistId(input: string): string | null {
+  const trimmed = input.trim();
+  const fromUrl = trimmed.match(/[?&]list=([A-Za-z0-9_-]+)/);
+  if (fromUrl) return fromUrl[1]!;
+  // 접두사로 재생목록 ID 임이 분명한 경우만 받는다 (영상 ID 와 헷갈리지 않게)
+  if (/^(PL|UU|OL|RD|LL|FL)[A-Za-z0-9_-]{10,}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+/**
+ * 재생목록의 곡 목록.
+ * 곡마다 재생 가능 여부를 확인하면 수백 번 요청해야 하므로 여기서는 검사하지 않는다
+ * (재생 실패는 송출 소스가 FAILED 로 보고해 자동으로 넘어간다).
+ */
+export async function getPlaylistVideos(
+  input: string,
+): Promise<{ title: string; videos: YoutubeVideo[]; truncated: boolean }> {
+  const playlistId = extractPlaylistId(input);
+  if (!playlistId) {
+    throw new ServiceError('INVALID_INPUT', '유튜브 재생목록 주소가 아닙니다.');
+  }
+
+  let page;
+  try {
+    const yt = await getClient();
+    page = await yt.getPlaylist(playlistId);
+  } catch {
+    throw new ServiceError(
+      'NOT_FOUND',
+      '재생목록을 불러오지 못했습니다. 공개(또는 링크 공개) 상태인지 확인해주세요.',
+    );
+  }
+
+  const title: string = page.info?.title ?? '재생목록';
+  const videos: YoutubeVideo[] = [];
+  const seen = new Set<string>();
+  let truncated = false;
+
+  for (;;) {
+    for (const node of page.videos ?? []) {
+      const video = fromLockup(node) ?? toVideo(node);
+      if (!video || seen.has(video.youtubeId)) continue;
+      seen.add(video.youtubeId);
+      videos.push(video);
+
+      if (videos.length >= PLAYLIST_MAX_ITEMS) {
+        return { title, videos, truncated: true };
+      }
+    }
+
+    if (!page.has_continuation) break;
+    try {
+      page = await page.getContinuation();
+    } catch {
+      // 다음 페이지를 못 읽으면 여기까지만 가져온다
+      truncated = true;
+      break;
+    }
+  }
+
+  if (videos.length === 0) {
+    throw new ServiceError('NOT_FOUND', '재생목록에 가져올 수 있는 영상이 없습니다.');
+  }
+
+  return { title, videos, truncated };
+}
+
 /** 영상 ID 로 직접 조회 */
 export async function getVideoById(youtubeId: string): Promise<YoutubeVideo | null> {
   if (!isYoutubeId(youtubeId)) return null;
@@ -151,10 +261,21 @@ export async function checkPlayable(youtubeId: string): Promise<PlayabilityResul
 }
 
 /** 검색어 또는 영상 ID 로 곡 하나를 확정한다 (재생 가능 여부까지 확인) */
+export function extractVideoId(input: string): string | null {
+  const trimmed = input.trim();
+  if (isYoutubeId(trimmed)) return trimmed;
+
+  const match = trimmed.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/,
+  );
+  return match ? match[1]! : null;
+}
+
 export async function resolveSong(input: string): Promise<YoutubeVideo> {
   const trimmed = input.trim();
 
-  const video = isYoutubeId(trimmed) ? await getVideoById(trimmed) : await searchVideo(trimmed);
+  const youtubeId = extractVideoId(trimmed);
+  const video = youtubeId ? await getVideoById(youtubeId) : await searchVideo(trimmed);
   if (!video) {
     throw new ServiceError('NOT_FOUND', '검색 결과가 없습니다.');
   }

@@ -4,6 +4,7 @@ import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
 import { shortcutRouter } from './shortcut';
 import { songRouter } from './song';
+import { songFavoriteRouter } from './songFavorite';
 import { userRouter } from './user';
 
 export const appRouter = t.router({
@@ -12,6 +13,7 @@ export const appRouter = t.router({
   command: commandRouter,
   shortcut: shortcutRouter,
   song: songRouter,
+  songFavorite: songFavoriteRouter,
   user: userRouter,
 
   ping: publicProcedure.query(() => {

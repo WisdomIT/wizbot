@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { playbackService, songService } from '../services';
+import { ServiceError, playbackService, songFavoriteService, songService } from '../services';
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
@@ -103,6 +103,22 @@ export const songRouter = t.router({
     .mutation(({ ctx, input }) =>
       playbackService.seek(ctx.prisma, ctx.user.id, input.positionSeconds),
     ),
+
+  /** 지금 재생 중인 곡을 즐겨찾기에 담는다 (#5 3단계) */
+  addCurrentToFavorite: streamerProcedure
+    .input(z.object({ favoriteId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const playback = await playbackService.getPlayback(ctx.prisma, ctx.user.id);
+      if (!playback.youtubeId) {
+        throw new ServiceError('NOT_FOUND', '재생 중인 곡이 없습니다.');
+      }
+      return songFavoriteService.addFavoriteItem(
+        ctx.prisma,
+        ctx.user.id,
+        input.favoriteId,
+        playback.youtubeId,
+      );
+    }),
 
   /* ── 송출 소스(OBS 페이지·앱) ── */
   /** 현재 무엇을 재생해야 하는지 + 이 세션이 활성인지 */
