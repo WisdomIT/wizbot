@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { PrismaClient, SongSourceType } from '@prisma/client';
 
 import { ServiceError } from './errors';
+import * as songFavoriteService from './songFavorite';
 import {
   getSourcePresence,
   isActiveSession,
@@ -22,10 +23,44 @@ export async function getPlayback(prisma: PrismaClient, userId: number) {
 }
 
 /** 큐의 첫 곡을 현재 곡으로 올린다. 큐가 비면 정지 상태로 */
+/**
+ * 대기열이 비었을 때 대표 즐겨찾기에서 한 곡을 이어 재생한다 (#5 3단계).
+ * 설정이 꺼져 있거나 담긴 곡이 없으면 null 을 돌려주고 평소대로 정지한다.
+ */
+async function pickAutoPlaySong(prisma: PrismaClient, userId: number) {
+  const setting = await prisma.userSetting.findUnique({ where: { userId } });
+  if (!setting?.songAutoPlayFromDefault) return null;
+
+  const current = await prisma.songPlayback.findUnique({ where: { userId } });
+  const item = await songFavoriteService.pickAutoPlayItem(prisma, userId, current?.youtubeId);
+  if (!item) return null;
+
+  const playback = await prisma.songPlayback.update({
+    where: { userId },
+    data: {
+      status: 'PLAYING',
+      youtubeId: item.youtubeId,
+      title: item.title,
+      videoUploader: item.videoUploader,
+      requester: songFavoriteService.AUTO_PLAY_REQUESTER,
+      durationSeconds: item.durationSeconds,
+      positionSeconds: 0,
+      startedAt: new Date(),
+    },
+  });
+
+  publishSongEvent(userId, { type: 'playback' });
+  return playback;
+}
+
 export async function advanceToNext(prisma: PrismaClient, userId: number) {
   const next = await prisma.song.findFirst({ where: { userId }, orderBy: { order: 'asc' } });
 
   if (!next) {
+    // 대기열이 비었으면 설정에 따라 대표 즐겨찾기에서 한 곡 골라 잇는다 (#5 3단계)
+    const auto = await pickAutoPlaySong(prisma, userId);
+    if (auto) return auto;
+
     const stopped = await prisma.songPlayback.update({
       where: { userId },
       data: {

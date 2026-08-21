@@ -30,6 +30,8 @@ function createPrisma(queue: unknown[] = [], playback: unknown = null) {
       findFirst: vi.fn().mockResolvedValue(queue[0] ?? null),
       delete: vi.fn().mockResolvedValue({}),
     },
+    songFavorite: { findFirst: vi.fn().mockResolvedValue(null) },
+    songFavoriteItem: { findMany: vi.fn().mockResolvedValue([]) },
     songHistory: { create: vi.fn().mockResolvedValue({}) },
     userSetting: {
       findUnique: vi.fn().mockResolvedValue({
@@ -56,6 +58,45 @@ const QUEUE_ITEM = {
   durationSeconds: 200,
   order: 1,
 };
+
+describe('자동 재생 (#5 3단계)', () => {
+  beforeEach(() => clearSource(USER_ID));
+
+  it('대기열이 비면 대표 즐겨찾기에서 한 곡을 이어 재생한다', async () => {
+    const { prisma, songPlayback } = createPrisma([]);
+    // 설정 on + 대표 즐겨찾기에 곡 하나
+    vi.mocked(prisma.userSetting.findUnique).mockResolvedValue({
+      userId: USER_ID,
+      songAutoPlayFromDefault: true,
+    } as never);
+    vi.mocked(prisma.songFavorite.findFirst).mockResolvedValue({
+      id: 3,
+      userId: USER_ID,
+      isDefault: true,
+    } as never);
+    vi.mocked(prisma.songFavoriteItem.findMany).mockResolvedValue([
+      { id: 1, favoriteId: 3, youtubeId: 'zzzzzzzzzzz', title: '즐겨찾기 곡', videoUploader: 'ch', durationSeconds: 100, order: 1 },
+    ] as never);
+
+    const result = await advanceToNext(prisma, USER_ID);
+
+    expect(result).toMatchObject({ status: 'PLAYING', youtubeId: 'zzzzzzzzzzz', requester: '자동 재생' });
+    expect(songPlayback.update).toHaveBeenCalled();
+  });
+
+  it('설정이 꺼져 있으면 평소대로 정지한다', async () => {
+    const { prisma } = createPrisma([]);
+    vi.mocked(prisma.userSetting.findUnique).mockResolvedValue({
+      userId: USER_ID,
+      songAutoPlayFromDefault: false,
+    } as never);
+
+    const result = await advanceToNext(prisma, USER_ID);
+
+    expect(result).toMatchObject({ status: 'STOPPED', youtubeId: null });
+    expect(prisma.songFavorite.findFirst).not.toHaveBeenCalled();
+  });
+});
 
 describe('advanceToNext', () => {
   beforeEach(() => vi.clearAllMocks());

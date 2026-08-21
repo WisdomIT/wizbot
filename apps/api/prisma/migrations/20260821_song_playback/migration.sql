@@ -6,6 +6,10 @@ ALTER TABLE `SongPlayback` ADD COLUMN `durationSeconds` INTEGER NOT NULL DEFAULT
     ADD COLUMN `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     ADD COLUMN `volume` INTEGER NOT NULL DEFAULT 70;
 
+-- 기존 행을 채웠으니 기본값은 걷어낸다 (@updatedAt 은 앱이 채운다).
+-- 마이그레이션은 디렉터리 이름의 사전순으로 적용되므로 이 구문은 반드시 같은 파일 안에 둔다.
+ALTER TABLE `SongPlayback` ALTER COLUMN `updatedAt` DROP DEFAULT;
+
 -- AlterTable
 ALTER TABLE `UserSetting` ADD COLUMN `songOverlayToken` VARCHAR(64) NULL,
     ADD COLUMN `songSourceToken` VARCHAR(64) NULL,

@@ -215,7 +215,6 @@ export const userRouter = t.router({
     .input(
       z.object({
         setting: z.object({
-          songFavoriteAuto: z.number().nullable().optional(),
           songKeyboardShortcut: z.boolean().optional(),
           songActive: z.boolean().optional(),
           chatbotDefaultRepeat: z.number().optional(),
