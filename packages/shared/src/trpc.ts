@@ -15,10 +15,19 @@ export interface AuthUser {
  * - user: 세션 JWT(session-token)에서 검증된 사용자. 없으면 null
  * - internal: 내부 서비스(챗봇 워커)가 INTERNAL_API_TOKEN으로 호출한 요청인지
  */
+/** 노래 송출 소스(OBS 페이지·Electron 앱) 인증 결과 (#5 2단계) */
+export interface SongSourceAuth {
+  userId: number;
+  /** 읽기 전용(자막 오버레이)인지 */
+  readOnly: boolean;
+}
+
 export interface Context {
   prisma: PrismaClient;
   user: AuthUser | null;
   internal: boolean;
+  /** x-song-token 헤더로 인증된 송출 소스. 없으면 null */
+  songSource: SongSourceAuth | null;
 }
 
 export const t = initTRPC.context<Context>().create();
@@ -65,6 +74,17 @@ export const adminProcedure = publicProcedure.use(({ ctx, next }) => {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: '관리자 권한이 필요합니다.' });
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
+});
+
+/**
+ * 노래 송출 소스 전용 (OBS 재생 페이지 등). 토큰 권한은 상태 구독 + 재생 보고로 제한된다 —
+ * 큐 삭제 같은 조작은 할 수 없다 (토큰이 URL 에 노출되기 때문, #5)
+ */
+export const songSourceProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ctx.songSource || ctx.songSource.readOnly) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: '유효하지 않은 송출 소스 토큰입니다.' });
+  }
+  return next({ ctx: { ...ctx, songSource: ctx.songSource } });
 });
 
 /** 내부 서비스(챗봇 워커) 전용 — INTERNAL_API_TOKEN 헤더 필요 */

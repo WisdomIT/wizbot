@@ -8,8 +8,14 @@ import { appRouter } from '@wizbot/shared/src/router';
 import express from 'express';
 
 import { createContext } from './context';
+import { songEventsHandler } from './song-events';
 
 const app = express();
+
+// 노래 재생 실시간 이벤트 (SSE) — tRPC 보다 먼저 등록한다
+app.get('/song/events', (req, res) => {
+  void songEventsHandler(req, res);
+});
 
 app.use(
   '/trpc',
