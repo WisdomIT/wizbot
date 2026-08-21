@@ -70,8 +70,15 @@ export function PlayerView() {
     [queryClient, trpc],
   );
 
+  // 송출 소스가 광고로 추정되는 재생을 감지하면 알려준다 (#5)
+  const [adActive, setAdActive] = useState(false);
+
   // 서버 이벤트로 즉시 갱신 (폴링 없이)
   useSongEvents((event) => {
+    if (event.type === 'ad') {
+      setAdActive(event.active);
+      return;
+    }
     if (event.type === 'playback' || event.type === 'queue' || event.type === 'source') {
       invalidate();
     }
@@ -152,7 +159,10 @@ export function PlayerView() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col">
-            <span className="font-medium">{playback.title ?? '재생 중인 곡이 없습니다.'}</span>
+            <span className="flex items-center gap-2 font-medium">
+              {playback.title ?? '재생 중인 곡이 없습니다.'}
+              {adActive && <Badge variant="destructive">광고 재생 중</Badge>}
+            </span>
             {playback.title && (
               <span className="text-sm text-muted-foreground">
                 {playback.videoUploader}
@@ -415,6 +425,12 @@ function SourceCard({
             <p className="text-xs text-muted-foreground">
               ⚠️ 이 주소를 아는 사람은 재생 상태를 볼 수 있습니다. 방송 화면에 노출됐다면
               재발급하세요.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              💡 유튜브 프리미엄 계정이 있다면, OBS 에서 브라우저 소스를 하나 더 만들어 주소를{' '}
+              <code className="font-mono">https://www.youtube.com</code> 로 두고 [상호작용] 창에서
+              로그인해두면 광고 없이 재생됩니다. 로그인 정보는 OBS 의 브라우저 소스끼리 공유되며,
+              OBS 캐시를 지우면 다시 로그인해야 합니다.
             </p>
           </div>
         )}

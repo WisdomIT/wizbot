@@ -7,6 +7,8 @@ export type SongEvent =
   | { type: 'connected' }
   | { type: 'playback' }
   | { type: 'queue' }
+  /** 송출 소스가 광고로 추정되는 재생을 감지/해제함 */
+  | { type: 'ad'; active: boolean }
   | {
       type: 'command';
       action: 'play' | 'pause' | 'stop' | 'next' | 'seek' | 'volume';

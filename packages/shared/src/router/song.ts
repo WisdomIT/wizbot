@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   ServiceError,
+  publishSongEvent,
   playbackService,
   songFavoriteService,
   songHistoryService,
@@ -225,6 +226,13 @@ export const songRouter = t.router({
   reportFailed: songSourceProcedure.mutation(({ ctx }) =>
     playbackService.reportFailed(ctx.prisma, ctx.songSource.userId),
   ),
+  /** 광고로 추정되는 재생 감지 — 컨트롤러에 알리기만 한다 (#5) */
+  reportAd: songSourceProcedure
+    .input(z.object({ active: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      publishSongEvent(ctx.songSource.userId, { type: 'ad', active: input.active });
+      return { ok: true as const };
+    }),
   reportPosition: songSourceProcedure
     .input(z.object({ positionSeconds: z.number().min(0) }))
     .mutation(({ ctx, input }) =>

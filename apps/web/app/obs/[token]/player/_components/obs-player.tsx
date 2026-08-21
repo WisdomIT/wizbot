@@ -41,6 +41,9 @@ declare global {
 const PLAYER_WIDTH = 854;
 const PLAYER_HEIGHT = 480;
 
+/** 곡 길이와 이만큼(초) 넘게 어긋나면 광고로 본다 — 검색으로 얻은 길이는 1~2초 오차가 있다 */
+const AD_DURATION_TOLERANCE = 3;
+
 function loadYouTubeApi(): Promise<any> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
 
@@ -64,6 +67,9 @@ export function ObsPlayer({ token }: { token: string }) {
 
   const playerRef = useRef<any>(null);
   const currentVideoRef = useRef<string | null>(null);
+  /** 서버가 아는 곡 길이 — 플레이어가 보고하는 길이와 다르면 광고로 본다 */
+  const expectedDurationRef = useRef(0);
+  const adActiveRef = useRef(false);
   // 창마다 고유 — 마지막에 연 창만 활성 세션이 된다
   const sessionId = useMemo(() => crypto.randomUUID(), []);
   const isActiveRef = useRef(false);
@@ -116,6 +122,8 @@ export function ObsPlayer({ token }: { token: string }) {
         setNotice(null);
         return;
       }
+
+      expectedDurationRef.current = playback.durationSeconds ?? 0;
 
       if (currentVideoRef.current !== playback.youtubeId) {
         currentVideoRef.current = playback.youtubeId;
@@ -195,11 +203,30 @@ export function ObsPlayer({ token }: { token: string }) {
     return () => clearInterval(timer);
   }, [trpc, sessionId, sync]);
 
-  // 진행률 보고
+  /**
+   * 진행률 보고 + 광고 판정.
+   *
+   * IFrame API 에는 광고 이벤트가 없다. 다만 광고가 재생되는 동안에는 getDuration() 이
+   * 곡이 아니라 광고의 길이를 돌려주므로, 서버가 아는 곡 길이와 어긋나면 광고로 본다.
+   * 이때 위치를 그대로 보고하면 진행률 막대가 광고 시간으로 튀므로 보고를 건너뛴다.
+   * (판정이 빗나가도 손해는 보고 몇 번을 거르는 정도 — 그 사이는 클라이언트가 보간한다)
+   */
   useEffect(() => {
     const timer = setInterval(() => {
       const player = playerRef.current;
       if (!isActiveRef.current || !player?.getCurrentTime) return;
+
+      const expected = expectedDurationRef.current;
+      const reported = player.getDuration?.() ?? 0;
+      const adActive =
+        expected > 0 && reported > 0 && Math.abs(reported - expected) > AD_DURATION_TOLERANCE;
+
+      if (adActive !== adActiveRef.current) {
+        adActiveRef.current = adActive;
+        void trpc.song.reportAd.mutate({ active: adActive }).catch(() => null);
+      }
+      if (adActive) return;
+
       const position = player.getCurrentTime();
       if (typeof position === 'number' && position > 0) {
         void trpc.song.reportPosition.mutate({ positionSeconds: position }).catch(() => null);

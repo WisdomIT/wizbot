@@ -10,6 +10,11 @@ import { EventEmitter } from 'node:events';
 export type SongEvent =
   /** 재생 상태가 바뀜 (컨트롤러·시청자·소스 모두 구독) */
   | { type: 'playback' }
+  /**
+   * 송출 소스가 광고로 추정되는 재생을 감지/해제함 (#5).
+   * DB 에 남길 값이 아니라 그 순간의 상태라 이벤트로만 흘린다.
+   */
+  | { type: 'ad'; active: boolean }
   /** 대기열이 바뀜 */
   | { type: 'queue' }
   /** 컨트롤러 → 송출 소스 명령 */
