@@ -6,7 +6,9 @@ const commands = [
   { command: '방제' },
   { command: '방제 수정' },
   { command: '카페' },
-  { command: '노래신청' },
+  { command: '노래' },
+  { command: '노래 신청' },
+  { command: '노래 목록' },
 ];
 
 describe('findExactCommandMatch', () => {
@@ -31,8 +33,23 @@ describe('findExactCommandMatch', () => {
     });
   });
 
+  it("띄어쓰기 명령어('노래 신청')가 짧은 명령어('노래')보다 우선한다", () => {
+    expect(findExactCommandMatch('노래 신청 LUCY 개화', commands)).toEqual({
+      matched: { command: '노래 신청' },
+      args: 'LUCY 개화',
+    });
+    expect(findExactCommandMatch('노래 목록', commands)?.matched.command).toBe('노래 목록');
+    // 인수 없는 '노래' 는 그대로 '노래'
+    expect(findExactCommandMatch('노래', commands)?.matched.command).toBe('노래');
+    // 등록되지 않은 하위 명령은 '노래' 로 떨어지고 나머지가 인수가 된다
+    expect(findExactCommandMatch('노래 없는것', commands)).toEqual({
+      matched: { command: '노래' },
+      args: '없는것',
+    });
+  });
+
   it('공백 없이 이어진 문자열은 접두어로 취급하지 않는다', () => {
-    // "노래신청곡" 은 "노래신청" 명령어가 아님
+    // "노래신청곡" 은 "노래 신청" 명령어가 아님
     expect(findExactCommandMatch('노래신청곡', commands)).toBeNull();
     // "방제수정" 도 "방제 수정"/"방제" 어느 쪽도 아님
     expect(findExactCommandMatch('방제수정', commands)).toBeNull();
