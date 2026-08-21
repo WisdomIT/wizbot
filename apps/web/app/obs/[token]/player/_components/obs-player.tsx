@@ -2,7 +2,7 @@
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@wizbot/shared/src/router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSongEvents } from '@/src/hooks/use-song-events';
 
@@ -26,6 +26,11 @@ interface OverlaySetting {
   durationSeconds: number;
 }
 
+/** sourceState / heartbeat 가 함께 돌려주는 재생 상태 */
+type SourceState = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof createTRPCClient<AppRouter>>['song']['sourceState']['query']>>
+>;
+
 declare global {
   interface Window {
     YT?: any;
@@ -40,6 +45,12 @@ declare global {
  */
 const PLAYER_WIDTH = 854;
 const PLAYER_HEIGHT = 480;
+
+/**
+ * 하트비트 주기 — 서버는 이 값의 3배(SOURCE_TIMEOUT_MS)까지 못 받으면 끊긴 것으로 본다.
+ * 응답에 재생 상태가 함께 오므로, 이 주기가 곧 "어긋남이 정정되는 최대 지연"이다.
+ */
+const HEARTBEAT_MS = 5_000;
 
 function loadYouTubeApi(): Promise<any> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
@@ -76,10 +87,9 @@ export function ObsPlayer({ token }: { token: string }) {
     [token],
   );
 
-  /** 서버 상태를 읽어 플레이어와 자막을 맞춘다 */
-  const sync = useMemo(
-    () => async () => {
-      const state = await trpc.song.sourceState.query().catch(() => null);
+  /** 서버가 준 상태에 플레이어와 자막을 맞춘다 */
+  const applyState = useCallback(
+    (state: SourceState | null) => {
       if (!state) {
         setNotice('토큰이 유효하지 않습니다.');
         setNow(null);
@@ -131,8 +141,14 @@ export function ObsPlayer({ token }: { token: string }) {
         status: playback.status as NowPlaying['status'],
       });
     },
-    [trpc],
+    [],
   );
+
+  /** 서버에서 상태를 읽어와 맞춘다 — SSE 로 변화를 통보받았을 때 쓴다 */
+  const sync = useCallback(async () => {
+    const state = await trpc.song.sourceState.query().catch(() => null);
+    applyState(state);
+  }, [trpc, applyState]);
 
   // 플레이어 초기화
   useEffect(() => {
@@ -178,22 +194,24 @@ export function ObsPlayer({ token }: { token: string }) {
     };
   }, [sync, trpc]);
 
-  // 하트비트 — 활성 세션 여부를 갱신한다
+  /**
+   * 하트비트 — 활성 세션 여부를 갱신하고, 같은 응답으로 재생 상태까지 맞춘다.
+   * SSE 는 끊긴 사이의 이벤트가 유실되고 재전송이 없으므로, 이 주기가 복구를 보장한다.
+   */
   useEffect(() => {
     const beat = async () => {
       const result = await trpc.song.heartbeat
         .mutate({ sessionId, source: 'OBS' })
         .catch(() => null);
-      if (result) {
-        const wasActive = isActiveRef.current;
-        isActiveRef.current = result.active;
-        if (wasActive !== result.active) void sync();
-      }
+      if (!result) return;
+
+      isActiveRef.current = result.active;
+      applyState(result.state);
     };
     void beat();
-    const timer = setInterval(() => void beat(), 10_000);
+    const timer = setInterval(() => void beat(), HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [trpc, sessionId, sync]);
+  }, [trpc, sessionId, applyState]);
 
   // 진행률 보고
   useEffect(() => {
@@ -215,7 +233,13 @@ export function ObsPlayer({ token }: { token: string }) {
       if (isActiveRef.current) playerRef.current?.seekTo?.(event.value, true);
       return;
     }
-    if (event.type === 'playback' || event.type === 'command' || event.type === 'source') {
+    // connected = SSE 재연결. 끊겨 있던 동안의 이벤트는 재전송되지 않으므로 바로 맞춘다
+    if (
+      event.type === 'connected' ||
+      event.type === 'playback' ||
+      event.type === 'command' ||
+      event.type === 'source'
+    ) {
       void sync();
     }
   }, token);

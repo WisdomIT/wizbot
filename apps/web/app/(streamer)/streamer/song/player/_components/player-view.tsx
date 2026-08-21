@@ -63,16 +63,27 @@ import { useTRPC } from '@/src/utils/trpc-react';
 export function PlayerView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data, isPending, error } = useQuery(trpc.song.getState.queryOptions());
+  const { data, isPending, error } = useQuery({
+    ...trpc.song.getState.queryOptions(),
+    // SSE 가 주된 경로다. 이건 프록시 계층에서 이벤트가 조용히 새는 경우를 대비한 백스톱
+    refetchInterval: 10_000,
+  });
 
   const invalidate = useCallback(
     () => void queryClient.invalidateQueries(trpc.song.getState.queryFilter()),
     [queryClient, trpc],
   );
 
-  // 서버 이벤트로 즉시 갱신 (폴링 없이)
+  // 서버 이벤트로 즉시 갱신
   useSongEvents((event) => {
-    if (event.type === 'playback' || event.type === 'queue' || event.type === 'source') {
+    // SSE 가 끊겨 있던 동안의 이벤트는 재전송되지 않는다.
+    // 재연결(connected)이 곧 유실 구간의 끝이므로 이때 전체를 다시 읽는다.
+    if (
+      event.type === 'connected' ||
+      event.type === 'playback' ||
+      event.type === 'queue' ||
+      event.type === 'source'
+    ) {
       invalidate();
     }
   });
@@ -336,6 +347,29 @@ function AddSongForm({
   );
 }
 
+/**
+ * 송출 소스가 살아 있는지 직접 판정한다.
+ *
+ * 서버는 조회 시점에 online 을 계산해 주지만, 소스가 끊기면 하트비트도 멈춰서
+ * 다시 조회할 계기가 사라진다(그래서 새로고침 전까지 「연결됨」에 머물러 있었다).
+ * 마지막 하트비트 시각과 타임아웃을 같이 받아오므로 여기서 세어 준다.
+ */
+function useSourceOnline(source: {
+  online: boolean;
+  lastSeenAt: string | Date | null;
+  timeoutMs: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (!source.online || !source.lastSeenAt) return false;
+  return now - new Date(source.lastSeenAt).getTime() <= source.timeoutMs;
+}
+
 function SourceCard({
   source,
   onChangeType,
@@ -344,6 +378,8 @@ function SourceCard({
   source: {
     sourceType: 'NONE' | 'OBS' | 'ELECTRON';
     online: boolean;
+    lastSeenAt: string | Date | null;
+    timeoutMs: number;
     sourceToken: string | null;
     overlayToken: string | null;
     overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
@@ -351,6 +387,7 @@ function SourceCard({
   onChangeType: (sourceType: 'NONE' | 'OBS' | 'ELECTRON') => void;
   onRegenerate: (kind: 'source' | 'overlay') => void;
 }) {
+  const online = useSourceOnline(source);
   const [origin, setOrigin] = useState('');
   useState(() => {
     if (typeof window !== 'undefined') setOrigin(window.location.origin);
@@ -365,7 +402,7 @@ function SourceCard({
           송출 소스
           {source.sourceType === 'NONE' ? (
             <Badge variant="outline">사용 안 함</Badge>
-          ) : source.online ? (
+          ) : online ? (
             <Badge>연결됨</Badge>
           ) : (
             <Badge variant="destructive">연결 안 됨</Badge>
@@ -387,7 +424,7 @@ function SourceCard({
               <SelectItem value="NONE">사용 안 함</SelectItem>
             </SelectContent>
           </Select>
-          {source.sourceType !== 'NONE' && !source.online && (
+          {source.sourceType !== 'NONE' && !online && (
             <span className="text-sm text-destructive">
               송출 소스가 연결되어 있지 않습니다. 재생해도 소리가 나지 않습니다.
             </span>

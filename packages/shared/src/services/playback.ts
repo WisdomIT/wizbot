@@ -273,8 +273,9 @@ export async function setVolume(prisma: PrismaClient, userId: number, volume: nu
 
 /** 하트비트 갱신 — 창을 여러 개 열면 마지막 것이 활성 세션이 된다 */
 export function touchSourceSession(userId: number, source: string, sessionId: string) {
-  touchSource(userId, source, sessionId);
-  publishSongEvent(userId, { type: 'source' });
+  const { changed } = touchSource(userId, source, sessionId);
+  // 연결이 새로 붙었을 때만 알린다 — 끊기는 쪽은 구독자가 lastSeenAt 으로 직접 판정한다
+  if (changed) publishSongEvent(userId, { type: 'source' });
 }
 
 export function isSessionActive(userId: number, sessionId: string) {
