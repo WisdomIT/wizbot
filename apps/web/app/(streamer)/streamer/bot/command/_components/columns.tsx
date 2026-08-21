@@ -98,7 +98,9 @@ export function createColumns({
       header: '설명',
       cell: ({ getValue }) => {
         return (
-          <span className="text-sm">{renderTextWithLink(getValue<Command['description']>())}</span>
+          <span className="text-sm break-words whitespace-normal">
+            {renderTextWithLink(getValue<Command['description']>())}
+          </span>
         );
       },
     },

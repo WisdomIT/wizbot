@@ -514,7 +514,8 @@ function SortableItemRow({
           <span className="tabular-nums">{index + 1}</span>
         </div>
       </TableCell>
-      <TableCell>
+      {/* 제목은 줄바꿈시킨다 — nowrap 이면 긴 제목이 표를 밀어내 오른쪽 「관리」 열이 잘린다 */}
+      <TableCell className="break-words whitespace-normal">
         <div className="flex flex-col">
           <span>{item.title}</span>
           <span className="text-xs text-muted-foreground">{item.videoUploader}</span>
