@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import {
@@ -10,6 +11,28 @@ import {
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
+
+/** 송출 소스가 재생을 맞추는 데 필요한 전부 — sourceState 와 heartbeat 가 같은 값을 돌려준다 */
+async function loadSourceState(
+  prisma: PrismaClient,
+  userId: number,
+  readOnly: boolean,
+) {
+  const [playback, setting] = await Promise.all([
+    playbackService.getPlayback(prisma, userId),
+    prisma.userSetting.findUnique({ where: { userId } }),
+  ]);
+
+  return {
+    playback,
+    sourceType: setting?.songSourceType ?? ('NONE' as const),
+    readOnly,
+    overlay: {
+      mode: setting?.songOverlayMode ?? ('ALWAYS' as const),
+      durationSeconds: setting?.songOverlayDurationSeconds ?? 10,
+    },
+  };
+}
 
 export const songRouter = t.router({
   /* ── 스트리머 컨트롤러 ── */
@@ -196,27 +219,24 @@ export const songRouter = t.router({
     if (!ctx.songSource) {
       return null;
     }
-    const { userId } = ctx.songSource;
-    const [playback, setting] = await Promise.all([
-      playbackService.getPlayback(ctx.prisma, userId),
-      ctx.prisma.userSetting.findUnique({ where: { userId } }),
-    ]);
-    return {
-      playback,
-      sourceType: setting?.songSourceType ?? 'NONE',
-      readOnly: ctx.songSource.readOnly,
-      overlay: {
-        mode: setting?.songOverlayMode ?? ('ALWAYS' as const),
-        durationSeconds: setting?.songOverlayDurationSeconds ?? 10,
-      },
-    };
+    return loadSourceState(ctx.prisma, ctx.songSource.userId, ctx.songSource.readOnly);
   }),
 
+  /**
+   * 하트비트 — 응답에 재생 상태를 함께 실어 보낸다.
+   * 송출 소스는 어차피 5초마다 이걸 부르므로, 요청을 늘리지 않고도 5초마다 전체 대조가 된다.
+   * (SSE 는 유실될 수 있고 재전송 장치가 없어서, 이 응답이 어긋남을 되돌리는 마지막 보루다)
+   */
   heartbeat: songSourceProcedure
     .input(z.object({ sessionId: z.string(), source: sourceTypeSchema }))
-    .mutation(({ ctx, input }) => {
-      playbackService.touchSourceSession(ctx.songSource.userId, input.source, input.sessionId);
-      return { active: playbackService.isSessionActive(ctx.songSource.userId, input.sessionId) };
+    .mutation(async ({ ctx, input }) => {
+      const { userId, readOnly } = ctx.songSource;
+      playbackService.touchSourceSession(userId, input.source, input.sessionId);
+
+      return {
+        active: playbackService.isSessionActive(userId, input.sessionId),
+        state: await loadSourceState(ctx.prisma, userId, readOnly),
+      };
     }),
 
   reportEnded: songSourceProcedure.mutation(({ ctx }) =>
