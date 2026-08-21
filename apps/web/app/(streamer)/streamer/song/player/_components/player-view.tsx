@@ -416,6 +416,12 @@ function SourceCard({
               ⚠️ 이 주소를 아는 사람은 재생 상태를 볼 수 있습니다. 방송 화면에 노출됐다면
               재발급하세요.
             </p>
+            <p className="text-xs text-muted-foreground">
+              💡 임베드 재생에는 광고가 붙을 수 있습니다. 유튜브 프리미엄 계정이 있다면, OBS 에서
+              브라우저 소스를 하나 더 만들어 주소를 <code className="font-mono">https://www.youtube.com</code>{' '}
+              으로 두고 [상호작용] 창에서 로그인해두세요. 로그인 정보는 OBS 의 브라우저 소스끼리
+              공유되므로 이 재생 페이지에도 적용됩니다. OBS 캐시를 지우면 다시 로그인해야 합니다.
+            </p>
           </div>
         )}
       </CardContent>
