@@ -1,8 +1,18 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pause, Play, RefreshCw, SkipForward, Square } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Pause,
+  Play,
+  PlayCircle,
+  RefreshCw,
+  SkipForward,
+  Square,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +66,11 @@ export function PlayerView() {
   const setVolume = useMutation(trpc.song.setVolume.mutationOptions());
   const setSourceType = useMutation(trpc.song.setSourceType.mutationOptions());
   const regenerate = useMutation(trpc.song.regenerateToken.mutationOptions());
+  const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
+  const moveInQueue = useMutation(trpc.song.moveInQueue.mutationOptions());
+  const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
+  const playNow = useMutation(trpc.song.playNow.mutationOptions());
+  const seek = useMutation(trpc.song.seek.mutationOptions());
 
   if (isPending) {
     return (
@@ -119,6 +134,17 @@ export function PlayerView() {
             )}
           </div>
 
+          {playback.title && playback.durationSeconds > 0 && (
+            <ProgressBar
+              positionSeconds={playback.positionSeconds}
+              durationSeconds={playback.durationSeconds}
+              playing={playing}
+              onSeek={(seconds) =>
+                run(seek.mutateAsync({ positionSeconds: seconds }), '재생 위치를 옮겼습니다.')
+              }
+            />
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             {playing ? (
               <Button onClick={() => run(pause.mutateAsync(), '일시정지했습니다.')}>
@@ -162,20 +188,29 @@ export function PlayerView() {
       <Card>
         <CardHeader>
           <CardTitle>대기열 {queue.length > 0 && `(${queue.length})`}</CardTitle>
+          <CardDescription>
+            검색어나 유튜브 영상 ID 로 직접 추가할 수 있습니다. 스트리머가 추가하는 곡에는 신청
+            제한(길이·1인 1곡 등)이 적용되지 않습니다.
+          </CardDescription>
         </CardHeader>
         <CardContent>
+          <AddSongForm
+            pending={addToQueue.isPending}
+            onSubmit={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}
+          />
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">#</TableHead>
                 <TableHead>제목</TableHead>
                 <TableHead className="w-32">신청자</TableHead>
+                <TableHead className="w-44 text-right">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {queue.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                  <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
                     대기열이 비어 있습니다.
                   </TableCell>
                 </TableRow>
@@ -190,6 +225,64 @@ export function PlayerView() {
                       </div>
                     </TableCell>
                     <TableCell>{song.requester}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="위로"
+                        disabled={index === 0 || moveInQueue.isPending}
+                        onClick={() =>
+                          run(
+                            moveInQueue.mutateAsync({ id: song.id, direction: 'up' }),
+                            '순서를 옮겼습니다.',
+                          )
+                        }
+                      >
+                        <ChevronUp />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="아래로"
+                        disabled={index === queue.length - 1 || moveInQueue.isPending}
+                        onClick={() =>
+                          run(
+                            moveInQueue.mutateAsync({ id: song.id, direction: 'down' }),
+                            '순서를 옮겼습니다.',
+                          )
+                        }
+                      >
+                        <ChevronDown />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="바로 재생"
+                        title="바로 재생"
+                        onClick={() =>
+                          run(
+                            playNow.mutateAsync({ id: song.id }),
+                            `${song.title} 재생을 시작합니다.`,
+                          )
+                        }
+                      >
+                        <PlayCircle />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="삭제"
+                        className="text-destructive"
+                        onClick={() =>
+                          run(
+                            removeFromQueue.mutateAsync({ id: song.id }),
+                            '대기열에서 삭제했습니다.',
+                          )
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -198,6 +291,99 @@ export function PlayerView() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * 진행률 — 서버는 5초마다 위치를 받으므로 그 사이는 클라이언트에서 보간한다.
+ * 막대를 클릭하면 해당 지점으로 시크한다.
+ */
+function ProgressBar({
+  positionSeconds,
+  durationSeconds,
+  playing,
+  onSeek,
+}: {
+  positionSeconds: number;
+  durationSeconds: number;
+  playing: boolean;
+  onSeek: (seconds: number) => void;
+}) {
+  const [position, setPosition] = useState(positionSeconds);
+
+  useEffect(() => setPosition(positionSeconds), [positionSeconds]);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setInterval(() => {
+      setPosition((prev) => Math.min(durationSeconds, prev + 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [playing, durationSeconds]);
+
+  const ratio = durationSeconds > 0 ? Math.min(1, position / durationSeconds) : 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-12 text-right text-xs tabular-nums text-muted-foreground">
+        {formatTime(position)}
+      </span>
+      <button
+        type="button"
+        aria-label="재생 위치 이동"
+        className="h-2 flex-1 cursor-pointer rounded-full bg-muted"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const clicked = ((event.clientX - rect.left) / rect.width) * durationSeconds;
+          onSeek(Math.max(0, Math.min(durationSeconds, Math.round(clicked))));
+        }}
+      >
+        <span
+          className="block h-2 rounded-full bg-primary transition-[width]"
+          style={{ width: `${ratio * 100}%` }}
+        />
+      </button>
+      <span className="w-12 text-xs tabular-nums text-muted-foreground">
+        {formatTime(durationSeconds)}
+      </span>
+    </div>
+  );
+}
+
+function AddSongForm({
+  pending,
+  onSubmit,
+}: {
+  pending: boolean;
+  onSubmit: (query: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+
+  return (
+    <form
+      className="mb-4 flex items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!query.trim()) return;
+        onSubmit(query.trim());
+        setQuery('');
+      }}
+    >
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="검색어 또는 유튜브 영상 ID"
+      />
+      <Button type="submit" disabled={pending || !query.trim()}>
+        추가
+      </Button>
+    </form>
   );
 }
 

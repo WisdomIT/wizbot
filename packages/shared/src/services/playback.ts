@@ -164,6 +164,53 @@ export async function reportFailed(prisma: PrismaClient, userId: number) {
   return advanceToNext(prisma, userId);
 }
 
+/** 대기열의 특정 곡을 지금 재생한다 — 현재 곡은 SKIPPED 로 기록 (#5 2-b) */
+export async function playSongNow(
+  prisma: PrismaClient,
+  userId: number,
+  songId: number,
+  resolvedBy?: string,
+) {
+  const target = await prisma.song.findFirst({ where: { id: songId, userId } });
+  if (!target) throw new ServiceError('NOT_FOUND', '대기열에 없는 곡입니다.');
+
+  await getPlayback(prisma, userId);
+  await recordHistory(prisma, userId, 'SKIPPED', resolvedBy);
+
+  const [playback] = await prisma.$transaction([
+    prisma.songPlayback.update({
+      where: { userId },
+      data: {
+        status: 'PLAYING',
+        youtubeId: target.youtubeId,
+        title: target.title,
+        videoUploader: target.videoUploader,
+        requester: target.requester,
+        durationSeconds: target.durationSeconds,
+        positionSeconds: 0,
+        startedAt: new Date(),
+      },
+    }),
+    prisma.song.delete({ where: { id: target.id } }),
+  ]);
+
+  publishSongEvent(userId, { type: 'playback' });
+  publishSongEvent(userId, { type: 'queue' });
+  return playback;
+}
+
+/** 재생 위치 이동 — 소스에 seek 명령을 보내고 상태도 맞춘다 */
+export async function seek(prisma: PrismaClient, userId: number, positionSeconds: number) {
+  const position = Math.max(0, Math.floor(positionSeconds));
+  const updated = await prisma.songPlayback.update({
+    where: { userId },
+    data: { positionSeconds: position },
+  });
+  publishSongEvent(userId, { type: 'command', action: 'seek', value: position });
+  publishSongEvent(userId, { type: 'playback' });
+  return updated;
+}
+
 export async function reportPosition(
   prisma: PrismaClient,
   userId: number,

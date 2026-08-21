@@ -36,6 +36,58 @@ export const songRouter = t.router({
       playbackService.regenerateSourceToken(ctx.prisma, ctx.user.id, input.kind),
     ),
 
+  /* ── 큐 편집 (#5 2-b) ── */
+  addToQueue: streamerProcedure
+    .input(z.object({ query: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const me = await ctx.prisma.user.findUnique({
+        where: { id: ctx.user.id },
+        select: { channelId: true, channelName: true },
+      });
+      // 스트리머 직접 추가는 시청자용 정책을 적용하지 않는다
+      const { song } = await songService.requestSong(
+        ctx.prisma,
+        ctx.user.id,
+        input.query,
+        { nickname: me?.channelName ?? '스트리머', channelId: me?.channelId ?? null },
+        { bypassPolicy: true },
+      );
+      return song;
+    }),
+  moveInQueue: streamerProcedure
+    .input(z.object({ id: z.number(), direction: z.enum(['up', 'down']) }))
+    .mutation(({ ctx, input }) =>
+      songService.moveSong(ctx.prisma, ctx.user.id, input.id, input.direction),
+    ),
+  removeFromQueue: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const me = await ctx.prisma.user.findUnique({
+        where: { id: ctx.user.id },
+        select: { channelName: true },
+      });
+      return songService.removeSongById(
+        ctx.prisma,
+        ctx.user.id,
+        input.id,
+        me?.channelName ?? '스트리머',
+      );
+    }),
+  playNow: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const me = await ctx.prisma.user.findUnique({
+        where: { id: ctx.user.id },
+        select: { channelName: true },
+      });
+      return playbackService.playSongNow(ctx.prisma, ctx.user.id, input.id, me?.channelName);
+    }),
+  seek: streamerProcedure
+    .input(z.object({ positionSeconds: z.number().min(0) }))
+    .mutation(({ ctx, input }) =>
+      playbackService.seek(ctx.prisma, ctx.user.id, input.positionSeconds),
+    ),
+
   /* ── 송출 소스(OBS 페이지·앱) ── */
   /** 현재 무엇을 재생해야 하는지 + 이 세션이 활성인지 */
   sourceState: publicProcedure.query(async ({ ctx }) => {
