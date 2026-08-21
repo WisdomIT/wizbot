@@ -1,5 +1,6 @@
-import Construction from '@/components/construction';
+import { PlaylistView } from './_components/playlist-view';
 
-export default function Page() {
-  return <Construction />;
+export default async function Page({ params }: { params: Promise<{ channelId: string }> }) {
+  const { channelId } = await params;
+  return <PlaylistView channelId={channelId} />;
 }
