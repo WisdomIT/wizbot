@@ -6,7 +6,7 @@ vi.mock('../youtube', () => ({
   resolveSong: vi.fn(),
 }));
 
-import { removeSong, requestSong } from '../song';
+import { moveSong, removeSong, removeSongById, requestSong } from '../song';
 import { resolveSong } from '../youtube';
 
 const USER_ID = 1;
@@ -29,7 +29,9 @@ const DEFAULT_SETTING = {
 function createPrisma(queue: unknown[] = [], setting = {}) {
   const song = {
     findMany: vi.fn().mockResolvedValue(queue),
+    findFirst: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ id: 10, ...data })),
+    update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
   };
   const prisma = {
@@ -118,6 +120,69 @@ describe('requestSong', () => {
     await expect(requestSong(prisma, USER_ID, 'x', REQUESTER)).rejects.toMatchObject({
       code: 'CONFLICT',
     });
+  });
+});
+
+describe('콘솔 큐 편집 (#5 2-b)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(resolveSong).mockResolvedValue(VIDEO);
+  });
+
+  it('스트리머 직접 추가는 시청자 정책(기능 off·길이·상한·1인1곡)을 건너뛴다', async () => {
+    const { prisma, song } = createPrisma([queueItem(), queueItem({ id: 2 })], {
+      songActive: false,
+      songMaxQueueLength: 1,
+      songMaxDurationSeconds: 10,
+      songOneRequestPerUser: true,
+    });
+
+    await expect(
+      requestSong(prisma, USER_ID, 'x', REQUESTER, { bypassPolicy: true }),
+    ).resolves.toBeTruthy();
+    expect(song.create).toHaveBeenCalled();
+  });
+
+  it('중복 곡은 우회해도 막는다', async () => {
+    const { prisma } = createPrisma([queueItem({ youtubeId: VIDEO.youtubeId })]);
+    await expect(
+      requestSong(prisma, USER_ID, 'x', REQUESTER, { bypassPolicy: true }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('순서 이동은 인접 항목과 교체하고 경계에서는 아무것도 하지 않는다', async () => {
+    const { prisma, song } = createPrisma();
+    song.findFirst
+      .mockResolvedValueOnce(queueItem({ id: 2, order: 2 })) // 대상
+      .mockResolvedValueOnce(queueItem({ id: 1, order: 1 })); // 이웃
+    await expect(moveSong(prisma, USER_ID, 2, 'up')).resolves.toEqual({ moved: true });
+    expect(prisma.$transaction).toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    song.findFirst
+      .mockResolvedValueOnce(queueItem({ id: 1, order: 1 }))
+      .mockResolvedValueOnce(null);
+    await expect(moveSong(prisma, USER_ID, 1, 'up')).resolves.toEqual({ moved: false });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('콘솔 삭제는 CANCELED 이력을 남긴다', async () => {
+    const { prisma, song } = createPrisma();
+    song.findFirst.mockResolvedValue(queueItem({ id: 3, title: '지울 곡' }));
+    await removeSongById(prisma, USER_ID, 3, '스트리머');
+    expect(prisma.songHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'CANCELED', resolvedBy: '스트리머' }),
+      }),
+    );
+  });
+
+  it('남의 대기열 곡은 건드릴 수 없다', async () => {
+    const { prisma } = createPrisma(); // findFirst → null (userId 조건 불일치)
+    await expect(removeSongById(prisma, USER_ID, 99, 'x')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    await expect(moveSong(prisma, USER_ID, 99, 'up')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });
 

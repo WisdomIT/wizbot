@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
+import { publishSongEvent } from './songEvents';
 import { resolveSong, type YoutubeVideo } from './youtube';
 
 /** 노래 대기열 (#5 #6 1단계) */
@@ -37,22 +38,24 @@ export async function requestSong(
   userId: number,
   input: string,
   requester: SongRequester,
+  /** 스트리머가 콘솔에서 직접 추가할 때는 시청자용 정책(기능 on/off·1인1곡·길이·상한)을 적용하지 않는다 */
+  options: { bypassPolicy?: boolean } = {},
 ) {
   const setting = await getSettings(prisma, userId);
-  if (!setting.songActive) {
+  if (!setting.songActive && !options.bypassPolicy) {
     throw new ServiceError('FORBIDDEN', '현재 노래 신청을 받지 않습니다.');
   }
 
   const queue = await listQueue(prisma, userId);
 
-  if (queue.length >= setting.songMaxQueueLength) {
+  if (!options.bypassPolicy && queue.length >= setting.songMaxQueueLength) {
     throw new ServiceError(
       'CONFLICT',
       `대기열이 가득 찼습니다. (최대 ${setting.songMaxQueueLength}곡)`,
     );
   }
 
-  if (setting.songOneRequestPerUser && requester.channelId) {
+  if (!options.bypassPolicy && setting.songOneRequestPerUser && requester.channelId) {
     const mine = queue.find((song) => song.requesterChannelId === requester.channelId);
     if (mine) {
       throw new ServiceError('CONFLICT', `이미 신청한 곡이 있습니다: ${mine.title}`);
@@ -61,7 +64,7 @@ export async function requestSong(
 
   const video: YoutubeVideo = await resolveSong(input);
 
-  if (video.durationSeconds > setting.songMaxDurationSeconds) {
+  if (!options.bypassPolicy && video.durationSeconds > setting.songMaxDurationSeconds) {
     throw new ServiceError(
       'INVALID_INPUT',
       `${formatDuration(setting.songMaxDurationSeconds)} 이하의 영상만 신청할 수 있습니다. (${formatDuration(video.durationSeconds)})`,
@@ -86,6 +89,7 @@ export async function requestSong(
     },
   });
 
+  publishSongEvent(userId, { type: 'queue' });
   return { song, position: queue.length + 1 };
 }
 
@@ -148,5 +152,73 @@ export async function removeSong(
     }),
   ]);
 
+  publishSongEvent(userId, { type: 'queue' });
+  return target;
+}
+
+/* ── 콘솔 큐 편집 (#5 2-b) ── */
+
+async function getOwnedSong(prisma: PrismaClient, userId: number, id: number) {
+  const song = await prisma.song.findFirst({ where: { id, userId } });
+  if (!song) throw new ServiceError('NOT_FOUND', '대기열에 없는 곡입니다.');
+  return song;
+}
+
+/** 순서 이동 — 인접 항목과 교체 (링크 설정과 같은 방식) */
+export async function moveSong(
+  prisma: PrismaClient,
+  userId: number,
+  id: number,
+  direction: 'up' | 'down',
+) {
+  const current = await getOwnedSong(prisma, userId, id);
+
+  const neighbor = await prisma.song.findFirst({
+    where:
+      direction === 'up'
+        ? { userId, order: { lt: current.order } }
+        : { userId, order: { gt: current.order } },
+    orderBy: { order: direction === 'up' ? 'desc' : 'asc' },
+  });
+  if (!neighbor) return { moved: false as const };
+
+  await prisma.$transaction([
+    prisma.song.update({ where: { id: current.id }, data: { order: neighbor.order } }),
+    prisma.song.update({ where: { id: neighbor.id }, data: { order: current.order } }),
+  ]);
+
+  publishSongEvent(userId, { type: 'queue' });
+  return { moved: true as const };
+}
+
+/** 콘솔에서 특정 곡 삭제 — 이력에 CANCELED 로 남긴다 */
+export async function removeSongById(
+  prisma: PrismaClient,
+  userId: number,
+  id: number,
+  resolvedBy: string,
+) {
+  const target = await getOwnedSong(prisma, userId, id);
+
+  await prisma.$transaction([
+    prisma.song.delete({ where: { id: target.id } }),
+    prisma.songHistory.create({
+      data: {
+        userId,
+        youtubeId: target.youtubeId,
+        title: target.title,
+        videoUploader: target.videoUploader,
+        requester: target.requester,
+        requesterChannelId: target.requesterChannelId,
+        durationSeconds: target.durationSeconds,
+        status: 'CANCELED',
+        resolvedBy: resolvedBy.slice(0, 40),
+        requestedAt: target.createdAt,
+        resolvedAt: new Date(),
+      },
+    }),
+  ]);
+
+  publishSongEvent(userId, { type: 'queue' });
   return target;
 }

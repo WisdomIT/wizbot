@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   advanceToNext,
+  playSongNow,
+  seek,
   getSourceStatus,
   isSessionActive,
   reportEnded,
@@ -112,6 +114,46 @@ describe('이력 기록', () => {
     const { prisma } = createPrisma([], { userId: USER_ID, status: 'STOPPED', youtubeId: null });
     await skipToNext(prisma, USER_ID);
     expect(prisma.songHistory.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('바로 재생·시크 (#5 2-b)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('지정한 곡을 현재 곡으로 올리고 이전 곡은 SKIPPED 로 남긴다', async () => {
+    const { prisma } = createPrisma([QUEUE_ITEM], {
+      userId: USER_ID,
+      status: 'PLAYING',
+      youtubeId: 'bbbbbbbbbbb',
+      title: '이전 곡',
+      videoUploader: 'ch',
+      requester: '위즈',
+      durationSeconds: 100,
+      startedAt: new Date(),
+    });
+    prisma.song.findFirst = vi.fn().mockResolvedValue(QUEUE_ITEM);
+
+    await playSongNow(prisma, USER_ID, QUEUE_ITEM.id, '스트리머');
+
+    expect(prisma.songHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED' }) }),
+    );
+    expect(prisma.song.delete).toHaveBeenCalledWith({ where: { id: QUEUE_ITEM.id } });
+  });
+
+  it('대기열에 없는 곡은 NOT_FOUND', async () => {
+    const { prisma } = createPrisma([]);
+    prisma.song.findFirst = vi.fn().mockResolvedValue(null);
+    await expect(playSongNow(prisma, USER_ID, 999)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('시크는 위치를 정수로 맞춰 저장한다', async () => {
+    const { prisma, songPlayback } = createPrisma();
+    await seek(prisma, USER_ID, 42.7);
+    expect(songPlayback.update).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { positionSeconds: 42 },
+    });
   });
 });
 

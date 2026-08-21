@@ -172,6 +172,11 @@ export function ObsPlayer({ token }: { token: string }) {
 
   // 서버 이벤트에 반응
   useSongEvents((event) => {
+    // 시크는 재로드 없이 위치만 옮긴다
+    if (event.type === 'command' && event.action === 'seek' && typeof event.value === 'number') {
+      if (isActiveRef.current) playerRef.current?.seekTo?.(event.value, true);
+      return;
+    }
     if (event.type === 'playback' || event.type === 'command' || event.type === 'source') {
       void sync();
     }
