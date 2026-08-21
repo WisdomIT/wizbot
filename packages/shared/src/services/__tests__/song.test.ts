@@ -6,7 +6,7 @@ vi.mock('../youtube', () => ({
   resolveSong: vi.fn(),
 }));
 
-import { moveSong, removeSong, removeSongById, requestSong } from '../song';
+import { moveSong, removeSong, removeSongById, reorderQueue, requestSong } from '../song';
 import { resolveSong } from '../youtube';
 
 const USER_ID = 1;
@@ -163,6 +163,36 @@ describe('콘솔 큐 편집 (#5 2-b)', () => {
       .mockResolvedValueOnce(queueItem({ id: 1, order: 1 }))
       .mockResolvedValueOnce(null);
     await expect(moveSong(prisma, USER_ID, 1, 'up')).resolves.toEqual({ moved: false });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('드래그 재정렬은 기존 order 값을 새 순서에 배분한다', async () => {
+    const { prisma, song } = createPrisma([
+      queueItem({ id: 1, order: 3 }),
+      queueItem({ id: 2, order: 7 }),
+      queueItem({ id: 3, order: 9 }),
+    ]);
+
+    await expect(reorderQueue(prisma, USER_ID, [3, 1, 2])).resolves.toEqual({ reordered: true });
+
+    expect(song.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { order: 3 } });
+    expect(song.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { order: 7 } });
+    expect(song.update).toHaveBeenCalledWith({ where: { id: 2 }, data: { order: 9 } });
+  });
+
+  it('순서가 그대로면 아무것도 쓰지 않는다', async () => {
+    const { prisma } = createPrisma([queueItem({ id: 1, order: 1 }), queueItem({ id: 2, order: 2 })]);
+
+    await expect(reorderQueue(prisma, USER_ID, [1, 2])).resolves.toEqual({ reordered: false });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('큐와 어긋난 id 목록은 거부한다 (그 사이 곡이 빠졌을 때 엉뚱한 곡이 밀리지 않게)', async () => {
+    const { prisma } = createPrisma([queueItem({ id: 1, order: 1 }), queueItem({ id: 2, order: 2 })]);
+
+    await expect(reorderQueue(prisma, USER_ID, [1, 99])).rejects.toThrow('대기열이 변경');
+    await expect(reorderQueue(prisma, USER_ID, [1])).rejects.toThrow('대기열이 변경');
+    await expect(reorderQueue(prisma, USER_ID, [1, 1])).rejects.toThrow('대기열이 변경');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

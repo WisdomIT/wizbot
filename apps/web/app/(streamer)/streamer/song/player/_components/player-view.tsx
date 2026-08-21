@@ -1,9 +1,26 @@
 'use client';
 
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronDown,
-  ChevronUp,
+  GripVertical,
   Pause,
   Play,
   PlayCircle,
@@ -67,7 +84,8 @@ export function PlayerView() {
   const setSourceType = useMutation(trpc.song.setSourceType.mutationOptions());
   const regenerate = useMutation(trpc.song.regenerateToken.mutationOptions());
   const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
-  const moveInQueue = useMutation(trpc.song.moveInQueue.mutationOptions());
+  const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
+  const setOverlaySettings = useMutation(trpc.song.setOverlaySettings.mutationOptions());
   const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const seek = useMutation(trpc.song.seek.mutationOptions());
@@ -113,6 +131,13 @@ export function PlayerView() {
             regenerate.mutateAsync({ kind }),
             '주소를 새로 발급했습니다. OBS 에 다시 붙여넣으세요.',
           )
+        }
+      />
+
+      <OverlayCard
+        setting={source.overlay}
+        onSave={(setting) =>
+          run(setOverlaySettings.mutateAsync(setting), '자막 설정을 저장했습니다.')
         }
       />
 
@@ -185,111 +210,23 @@ export function PlayerView() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>대기열 {queue.length > 0 && `(${queue.length})`}</CardTitle>
-          <CardDescription>
-            검색어나 유튜브 영상 ID 로 직접 추가할 수 있습니다. 스트리머가 추가하는 곡에는 신청
-            제한(길이·1인 1곡 등)이 적용되지 않습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AddSongForm
-            pending={addToQueue.isPending}
-            onSubmit={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}
-          />
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">#</TableHead>
-                <TableHead>제목</TableHead>
-                <TableHead className="w-32">신청자</TableHead>
-                <TableHead className="w-44 text-right">관리</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {queue.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                    대기열이 비어 있습니다.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                queue.map((song, index) => (
-                  <TableRow key={song.id}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span>{song.title}</span>
-                        <span className="text-xs text-muted-foreground">{song.videoUploader}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{song.requester}</TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="위로"
-                        disabled={index === 0 || moveInQueue.isPending}
-                        onClick={() =>
-                          run(
-                            moveInQueue.mutateAsync({ id: song.id, direction: 'up' }),
-                            '순서를 옮겼습니다.',
-                          )
-                        }
-                      >
-                        <ChevronUp />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="아래로"
-                        disabled={index === queue.length - 1 || moveInQueue.isPending}
-                        onClick={() =>
-                          run(
-                            moveInQueue.mutateAsync({ id: song.id, direction: 'down' }),
-                            '순서를 옮겼습니다.',
-                          )
-                        }
-                      >
-                        <ChevronDown />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="바로 재생"
-                        title="바로 재생"
-                        onClick={() =>
-                          run(
-                            playNow.mutateAsync({ id: song.id }),
-                            `${song.title} 재생을 시작합니다.`,
-                          )
-                        }
-                      >
-                        <PlayCircle />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="삭제"
-                        className="text-destructive"
-                        onClick={() =>
-                          run(
-                            removeFromQueue.mutateAsync({ id: song.id }),
-                            '대기열에서 삭제했습니다.',
-                          )
-                        }
-                      >
-                        <Trash2 />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <QueueCard
+        queue={queue}
+        addPending={addToQueue.isPending}
+        onAdd={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}
+        onReorder={(orderedIds) => {
+          reorderQueue.mutateAsync({ orderedIds }).catch((err: unknown) => {
+            toast.error(err instanceof Error ? err.message : '순서를 바꾸지 못했습니다.');
+            invalidate();
+          });
+        }}
+        onPlayNow={(song) =>
+          run(playNow.mutateAsync({ id: song.id }), `${song.title} 재생을 시작합니다.`)
+        }
+        onRemove={(song) =>
+          run(removeFromQueue.mutateAsync({ id: song.id }), '대기열에서 삭제했습니다.')
+        }
+      />
     </div>
   );
 }
@@ -397,6 +334,7 @@ function SourceCard({
     online: boolean;
     sourceToken: string | null;
     overlayToken: string | null;
+    overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   };
   onChangeType: (sourceType: 'NONE' | 'OBS' | 'ELECTRON') => void;
   onRegenerate: (kind: 'source' | 'overlay') => void;
@@ -466,6 +404,246 @@ function SourceCard({
               ⚠️ 이 주소를 아는 사람은 재생 상태를 볼 수 있습니다. 방송 화면에 노출됐다면
               재발급하세요.
             </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface QueueItem {
+  id: number;
+  title: string;
+  videoUploader: string;
+  requester: string;
+}
+
+/** 대기열 — 순서는 왼쪽 핸들을 잡고 드래그해서 바꾼다 (#5 2-b) */
+function QueueCard({
+  queue,
+  addPending,
+  onAdd,
+  onReorder,
+  onPlayNow,
+  onRemove,
+}: {
+  queue: QueueItem[];
+  addPending: boolean;
+  onAdd: (query: string) => void;
+  onReorder: (orderedIds: number[]) => void;
+  onPlayNow: (song: QueueItem) => void;
+  onRemove: (song: QueueItem) => void;
+}) {
+  // 드래그 직후 서버 응답을 기다리지 않고 바로 보여주기 위해 로컬 사본을 둔다
+  const [items, setItems] = useState(queue);
+  useEffect(() => setItems(queue), [queue]);
+
+  const sensors = useSensors(
+    // 살짝 눌린 정도로는 드래그가 시작되지 않게 — 삭제/재생 버튼 클릭을 방해하지 않는다
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = items.findIndex((item) => item.id === active.id);
+    const newIndex = items.findIndex((item) => item.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+
+    const next = arrayMove(items, oldIndex, newIndex);
+    setItems(next);
+    onReorder(next.map((item) => item.id));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>대기열 {items.length > 0 && `(${items.length})`}</CardTitle>
+        <CardDescription>
+          검색어나 유튜브 영상 ID 로 직접 추가할 수 있습니다. 스트리머가 추가하는 곡에는 신청
+          제한(길이·1인 1곡 등)이 적용되지 않습니다. 순서는 핸들을 잡고 끌어서 바꿉니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <AddSongForm pending={addPending} onSubmit={onAdd} />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={handleDragEnd}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-20">#</TableHead>
+                <TableHead>제목</TableHead>
+                <TableHead className="w-32">신청자</TableHead>
+                <TableHead className="w-24 text-right">관리</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                    대기열이 비어 있습니다.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <SortableContext
+                  items={items.map((item) => item.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {items.map((song, index) => (
+                    <SortableSongRow
+                      key={song.id}
+                      song={song}
+                      index={index}
+                      onPlayNow={() => onPlayNow(song)}
+                      onRemove={() => onRemove(song)}
+                    />
+                  ))}
+                </SortableContext>
+              )}
+            </TableBody>
+          </Table>
+        </DndContext>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SortableSongRow({
+  song,
+  index,
+  onPlayNow,
+  onRemove,
+}: {
+  song: QueueItem;
+  index: number;
+  onPlayNow: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: song.id });
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        // 끌고 있는 행이 다른 행에 가리지 않도록
+        position: isDragging ? 'relative' : undefined,
+        zIndex: isDragging ? 1 : undefined,
+      }}
+      className={isDragging ? 'bg-muted' : undefined}
+    >
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            aria-label={`${song.title} 순서 변경`}
+            className="cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-4" />
+          </button>
+          <span className="tabular-nums">{index + 1}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col">
+          <span>{song.title}</span>
+          <span className="text-xs text-muted-foreground">{song.videoUploader}</span>
+        </div>
+      </TableCell>
+      <TableCell>{song.requester}</TableCell>
+      <TableCell className="text-right whitespace-nowrap">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="바로 재생"
+          title="바로 재생"
+          onClick={onPlayNow}
+        >
+          <PlayCircle />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="삭제"
+          className="text-destructive"
+          onClick={onRemove}
+        >
+          <Trash2 />
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** 송출 화면에 곡 제목을 어떻게 띄울지 (#5 2-b) */
+function OverlayCard({
+  setting,
+  onSave,
+}: {
+  setting: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
+  onSave: (setting: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number }) => void;
+}) {
+  const [seconds, setSeconds] = useState(String(setting.durationSeconds));
+
+  useEffect(() => setSeconds(String(setting.durationSeconds)), [setting.durationSeconds]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>자막</CardTitle>
+        <CardDescription>
+          송출 소스 화면에 현재 곡 제목이 표시됩니다. 글자 크기는 브라우저 소스 높이에 맞춰
+          자동으로 조절되고(최대 120px), 제목이 길면 옆으로 흐릅니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center gap-2">
+        <Select
+          value={setting.mode}
+          onValueChange={(mode) =>
+            onSave({ mode: mode as 'ALWAYS' | 'TIMED', durationSeconds: setting.durationSeconds })
+          }
+        >
+          <SelectTrigger className="w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALWAYS">항상 표시</SelectItem>
+            <SelectItem value="TIMED">곡이 바뀔 때만 잠시 표시</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {setting.mode === 'TIMED' && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={60}
+              value={seconds}
+              className="w-20"
+              onChange={(event) => setSeconds(event.target.value)}
+              onBlur={() => {
+                const durationSeconds = Number(seconds);
+                if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 60) {
+                  setSeconds(String(setting.durationSeconds));
+                  return;
+                }
+                if (durationSeconds !== setting.durationSeconds) {
+                  onSave({ mode: setting.mode, durationSeconds });
+                }
+              }}
+            />
+            <span className="text-sm text-muted-foreground">초 동안 표시</span>
           </div>
         )}
       </CardContent>

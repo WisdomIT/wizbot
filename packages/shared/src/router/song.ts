@@ -36,6 +36,17 @@ export const songRouter = t.router({
       playbackService.regenerateSourceToken(ctx.prisma, ctx.user.id, input.kind),
     ),
 
+  setOverlaySettings: streamerProcedure
+    .input(
+      z.object({
+        mode: z.enum(['ALWAYS', 'TIMED']),
+        durationSeconds: z.number().int().min(1).max(60),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      playbackService.setOverlaySettings(ctx.prisma, ctx.user.id, input),
+    ),
+
   /* ── 큐 편집 (#5 2-b) ── */
   addToQueue: streamerProcedure
     .input(z.object({ query: z.string() }))
@@ -58,6 +69,11 @@ export const songRouter = t.router({
     .input(z.object({ id: z.number(), direction: z.enum(['up', 'down']) }))
     .mutation(({ ctx, input }) =>
       songService.moveSong(ctx.prisma, ctx.user.id, input.id, input.direction),
+    ),
+  reorderQueue: streamerProcedure
+    .input(z.object({ orderedIds: z.array(z.number()) }))
+    .mutation(({ ctx, input }) =>
+      songService.reorderQueue(ctx.prisma, ctx.user.id, input.orderedIds),
     ),
   removeFromQueue: streamerProcedure
     .input(z.object({ id: z.number() }))
@@ -103,6 +119,10 @@ export const songRouter = t.router({
       playback,
       sourceType: setting?.songSourceType ?? 'NONE',
       readOnly: ctx.songSource.readOnly,
+      overlay: {
+        mode: setting?.songOverlayMode ?? ('ALWAYS' as const),
+        durationSeconds: setting?.songOverlayDurationSeconds ?? 10,
+      },
     };
   }),
 
