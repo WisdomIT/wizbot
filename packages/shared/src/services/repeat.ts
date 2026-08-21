@@ -2,8 +2,25 @@ import type { PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
 
-export function listRepeats(prisma: PrismaClient, userId: number) {
-  return prisma.chatbotRepeat.findMany({ where: { userId } });
+/**
+ * 반복 메시지 목록.
+ * @param onlyEnabled 켜진 것만 (워커용). 콘솔은 전부 필요하므로 기본 false (#82)
+ */
+export function listRepeats(prisma: PrismaClient, userId: number, onlyEnabled = false) {
+  return prisma.chatbotRepeat.findMany({
+    where: onlyEnabled ? { userId, enabled: true } : { userId },
+  });
+}
+
+/** 활성/비활성 토글 — 끄면 워커가 다음 동기화에서 타이머를 정리한다 (#82) */
+export async function setRepeatEnabled(
+  prisma: PrismaClient,
+  userId: number,
+  id: number,
+  enabled: boolean,
+) {
+  const existing = await getRepeat(prisma, userId, id);
+  return prisma.chatbotRepeat.update({ where: { id: existing.id }, data: { enabled } });
 }
 
 export async function getRepeat(prisma: PrismaClient, userId: number, id: number) {

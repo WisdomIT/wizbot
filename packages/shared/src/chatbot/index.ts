@@ -75,9 +75,12 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
 
   const contentWithoutPrefix = content.slice(1).trim();
 
+  // 비활성 명령어는 매칭 후보에서 빠진다 — 없는 명령어처럼 동작하고,
+  // 최장일치도 자연히 짧은 명령어로 폴백된다 (#82)
   const { echo: echoCommands, function: functionCommands } = await commandService.listCommands(
     ctx.prisma,
     userId,
+    true,
   );
   const matchedEcho = findExactCommandMatch(contentWithoutPrefix, echoCommands);
   const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);

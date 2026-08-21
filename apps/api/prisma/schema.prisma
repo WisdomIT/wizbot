@@ -112,7 +112,7 @@ model OAuthCredential {
   accessToken  String   @db.Text
   refreshToken String   @db.Text
   tokenType    String   @db.VarChar(20)  // 예: "Bearer"
-  expiresIn    DateTime @db.DateTime() 
+  expiresIn    DateTime @db.DateTime(0)
 
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -122,6 +122,8 @@ model ChatbotEchoCommand {
   userId   Int
   command  String   @db.VarChar(20)
   response String   @db.Text
+  /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
+  enabled  Boolean  @default(true) @db.TinyInt
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -133,6 +135,8 @@ model ChatbotFunctionCommand {
   command    String               @db.VarChar(20)
   function   String               @db.VarChar(100)
   option     String?              @db.VarChar(20)
+  /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
+  enabled    Boolean              @default(true) @db.TinyInt
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -142,6 +146,8 @@ model ChatbotRepeat {
   userId     Int
   response   String               @db.Text
   interval   Int                  @db.Int
+  /// 꺼두면 워커가 타이머를 정리해 전송이 멈춘다 (#82)
+  enabled    Boolean              @default(true) @db.TinyInt
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

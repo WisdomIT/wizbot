@@ -47,7 +47,8 @@ export const commandRouter = t.router({
         select: { id: true },
       });
       if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 채널입니다.');
-      return commandService.listCommands(ctx.prisma, user.id);
+      // 비활성 명령어는 시청자에게 노출하지 않는다 (#82)
+      return commandService.listCommands(ctx.prisma, user.id, true);
     }),
 
   getCommandList: streamerProcedure.query(({ ctx }) =>
@@ -148,6 +149,24 @@ export const commandRouter = t.router({
   getRepeatList: streamerProcedure.query(({ ctx }) =>
     repeatService.listRepeats(ctx.prisma, ctx.user.id),
   ),
+
+  /* ── 활성/비활성 토글 (#82) ── */
+  setEnabled: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema, enabled: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      commandService.setCommandEnabled(
+        ctx.prisma,
+        ctx.user.id,
+        input.id,
+        input.type,
+        input.enabled,
+      ),
+    ),
+  setRepeatEnabled: streamerProcedure
+    .input(z.object({ id: z.number(), enabled: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      repeatService.setRepeatEnabled(ctx.prisma, ctx.user.id, input.id, input.enabled),
+    ),
 
   getRepeatById: streamerProcedure
     .input(z.object({ id: z.number() }))

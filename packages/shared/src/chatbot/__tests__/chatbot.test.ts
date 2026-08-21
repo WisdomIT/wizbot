@@ -6,8 +6,14 @@ import chatbot, { getChatbotDatabaseInitial } from '..';
 const USER_ID = 1;
 
 const echoCommands = [
-  { id: 1, userId: USER_ID, command: '카페', response: 'https://cafe.naver.com/x' },
-  { id: 2, userId: USER_ID, command: '방제 수정 도움말', response: '방제 수정 사용법입니다' },
+  { id: 1, userId: USER_ID, command: '카페', response: 'https://cafe.naver.com/x', enabled: true },
+  {
+    id: 2,
+    userId: USER_ID,
+    command: '방제 수정 도움말',
+    response: '방제 수정 사용법입니다',
+    enabled: true,
+  },
 ];
 
 const functionCommands = [
@@ -135,6 +141,55 @@ describe('chatbot 디스패처', () => {
     expect(result.ok).toBe(true);
     expect(result.message).toContain('!추가 인사 <응답>');
     expect(echo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('비활성 명령어 (#82)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /**
+   * 디스패처는 commandService.listCommands(..., onlyEnabled=true) 로 조회하므로
+   * 비활성 명령어는 애초에 후보 목록에 오지 않는다. 여기서는 그 결과 동작을 고정한다.
+   */
+  function ctxWithEnabled(echo: object[], func: object[]) {
+    return {
+      prisma: {
+        chatbotEchoCommand: { findMany: vi.fn().mockResolvedValue(echo) },
+        chatbotFunctionCommand: { findMany: vi.fn().mockResolvedValue(func) },
+      },
+    } as unknown as Context;
+  }
+
+  it('비활성 명령어는 없는 것처럼 동작한다 (무응답)', async () => {
+    // 활성 목록에서 빠진 상태 = 조회 결과가 비어 있음
+    const ctx = ctxWithEnabled([], []);
+    await expect(chatbot(ctx, message('!카페'))).resolves.toEqual({
+      ok: false,
+      message: 'Command not found',
+    });
+  });
+
+  it('비활성 최장일치 명령어가 있으면 짧은 명령어로 폴백된다', async () => {
+    // '방제 수정'(function)이 비활성이라 목록에 없고, '방제'만 활성인 상황
+    const ctx = ctxWithEnabled(
+      [],
+      [
+        {
+          id: 10,
+          userId: USER_ID,
+          command: '방제',
+          function: 'getChzzkTitle',
+          permission: 'VIEWER',
+          option: null,
+          enabled: true,
+        },
+      ],
+    );
+
+    // '!방제 수정 하이' → '방제 수정'이 후보에 없으므로 '방제'가 매칭된다
+    const result = await chatbot(ctx, message('!방제 수정 하이'));
+    // getChzzkTitle 은 치지직 API 를 타므로 여기서는 매칭 여부만 확인 (not found 가 아니어야 함)
+    expect(result.message).not.toBe('Command not found');
   });
 });
 

@@ -13,9 +13,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 
 export interface Repeat {
   id: number;
+  enabled: boolean;
   response: string;
   interval: number;
 }
@@ -23,11 +25,24 @@ export interface Repeat {
 export function createColumns({
   onUpdate,
   onDelete,
+  onToggle,
 }: {
   onUpdate: (command: Repeat) => void;
   onDelete: (command: Repeat) => void;
+  onToggle: (repeat: Repeat, enabled: boolean) => void;
 }): ColumnDef<Repeat>[] {
   return [
+    {
+      id: 'enabled',
+      header: '사용',
+      cell: ({ row }) => (
+        <Switch
+          checked={row.original.enabled}
+          onCheckedChange={(next) => onToggle(row.original, next)}
+          aria-label={`${row.original.id}번 반복 메시지 사용 여부`}
+        />
+      ),
+    },
     {
       accessorKey: 'id',
       header: ({ column }) => {

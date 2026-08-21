@@ -12,12 +12,37 @@ export function normalizeCommandName(command: string): string {
 
 /* ---------- 조회 ---------- */
 
-export async function listCommands(prisma: PrismaClient, userId: number) {
+/**
+ * 명령어 목록.
+ * @param onlyEnabled 켜진 명령어만 (채팅 디스패처·시청자 공개 목록). 콘솔은 전부 필요하므로 기본 false (#82)
+ */
+export async function listCommands(prisma: PrismaClient, userId: number, onlyEnabled = false) {
+  const where = onlyEnabled ? { userId, enabled: true } : { userId };
   const [echo, func] = await Promise.all([
-    prisma.chatbotEchoCommand.findMany({ where: { userId } }),
-    prisma.chatbotFunctionCommand.findMany({ where: { userId } }),
+    prisma.chatbotEchoCommand.findMany({ where }),
+    prisma.chatbotFunctionCommand.findMany({ where }),
   ]);
   return { echo, function: func };
+}
+
+/**
+ * 활성/비활성 토글 (#82).
+ * ⚠️ 이름 중복 검사(assertCommandNameAvailable)는 비활성 명령어도 포함한다 —
+ *    꺼둔 이름을 다른 명령어가 가져가면 다시 켤 때 충돌하기 때문.
+ */
+export async function setCommandEnabled(
+  prisma: PrismaClient,
+  userId: number,
+  id: number,
+  type: CommandType,
+  enabled: boolean,
+) {
+  if (type === 'echo') {
+    const existing = await getEchoCommand(prisma, userId, id);
+    return prisma.chatbotEchoCommand.update({ where: { id: existing.id }, data: { enabled } });
+  }
+  const existing = await getFunctionCommand(prisma, userId, id);
+  return prisma.chatbotFunctionCommand.update({ where: { id: existing.id }, data: { enabled } });
 }
 
 export function findEchoCommandByName(prisma: PrismaClient, userId: number, command: string) {
