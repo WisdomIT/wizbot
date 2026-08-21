@@ -4,6 +4,7 @@ import { getStreamerByChannelId } from '@/app/_lib/streamers';
 import { AppSidebarUser } from '@/components/app-sidebar-user';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
 export default async function RootLayout({
   children,
@@ -34,10 +35,13 @@ export default async function RootLayout({
   }));
 
   return (
-    <SidebarProvider>
-      <AppSidebarUser channel={channel} shortcuts={shortcuts}>
-        {children}
-      </AppSidebarUser>
-    </SidebarProvider>
+    // 플레이리스트·재생 기록은 클라이언트에서 조회한다 (#5 4단계)
+    <TRPCReactProvider>
+      <SidebarProvider>
+        <AppSidebarUser channel={channel} shortcuts={shortcuts}>
+          {children}
+        </AppSidebarUser>
+      </SidebarProvider>
+    </TRPCReactProvider>
   );
 }

@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { ServiceError, playbackService, songFavoriteService, songService } from '../services';
+import {
+  ServiceError,
+  playbackService,
+  songFavoriteService,
+  songHistoryService,
+  songService,
+} from '../services';
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
@@ -8,12 +14,21 @@ const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
 export const songRouter = t.router({
   /* ── 스트리머 컨트롤러 ── */
   getState: streamerProcedure.query(async ({ ctx }) => {
-    const [playback, queue, source] = await Promise.all([
+    const [playback, queue, source, setting] = await Promise.all([
       playbackService.getPlayback(ctx.prisma, ctx.user.id),
       songService.listQueue(ctx.prisma, ctx.user.id),
       playbackService.getSourceStatus(ctx.prisma, ctx.user.id),
+      ctx.prisma.userSetting.findUnique({
+        where: { userId: ctx.user.id },
+        select: { songHistoryPublic: true },
+      }),
     ]);
-    return { playback, queue, source };
+    return {
+      playback,
+      queue,
+      source,
+      historyPublic: setting?.songHistoryPublic ?? false,
+    };
   }),
 
   play: streamerProcedure.mutation(({ ctx }) => playbackService.play(ctx.prisma, ctx.user.id)),
@@ -119,6 +134,61 @@ export const songRouter = t.router({
         playback.youtubeId,
       );
     }),
+
+  /* ── 재생 기록 (#5 4단계) ── */
+  history: streamerProcedure
+    .input(
+      z.object({
+        cursor: z.number().optional(),
+        status: z.enum(['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED']).optional(),
+        query: z.string().optional(),
+      }),
+    )
+    .query(({ ctx, input }) => songHistoryService.listHistory(ctx.prisma, ctx.user.id, input)),
+
+  setHistoryHidden: streamerProcedure
+    .input(z.object({ id: z.number(), hidden: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      songHistoryService.setHistoryHidden(ctx.prisma, ctx.user.id, input.id, input.hidden),
+    ),
+
+  setHistoryPublic: streamerProcedure
+    .input(z.object({ isPublic: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.userSetting.update({
+        where: { userId: ctx.user.id },
+        data: { songHistoryPublic: input.isPublic },
+      });
+      return { ok: true as const };
+    }),
+
+  /** 기록에 있는 곡을 대기열에 다시 올린다 — 신청자 이름은 원래 신청자로 남긴다 */
+  requeueFromHistory: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const entry = await songHistoryService.getHistoryEntry(ctx.prisma, ctx.user.id, input.id);
+      const { song } = await songService.requestSong(
+        ctx.prisma,
+        ctx.user.id,
+        entry.youtubeId,
+        { nickname: entry.requester, channelId: entry.requesterChannelId },
+        { bypassPolicy: true },
+      );
+      return song;
+    }),
+
+  /* ── 시청자 공개 (#5 4단계) ── */
+  publicPlaylist: publicProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(({ ctx, input }) =>
+      songHistoryService.getPublicPlaylist(ctx.prisma, input.channelId),
+    ),
+
+  publicHistory: publicProcedure
+    .input(z.object({ channelId: z.string(), cursor: z.number().optional() }))
+    .query(({ ctx, input }) =>
+      songHistoryService.getPublicHistory(ctx.prisma, input.channelId, { cursor: input.cursor }),
+    ),
 
   /* ── 송출 소스(OBS 페이지·앱) ── */
   /** 현재 무엇을 재생해야 하는지 + 이 세션이 활성인지 */
