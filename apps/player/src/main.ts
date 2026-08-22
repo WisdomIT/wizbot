@@ -20,7 +20,7 @@ import {
   SOURCE_URL,
   SOURCE_WINDOW_SIZE,
 } from './config';
-import { loadTrayIcon } from './icons';
+import { appIconPath, loadTrayIcon } from './icons';
 
 /**
  * wizbot player (#85).
@@ -35,6 +35,9 @@ import { loadTrayIcon } from './icons';
 
 type Mode = 'mini' | 'desktop';
 
+// 창 제목·작업 표시줄 등에서 「Electron」 으로 보이지 않도록
+app.setName('wizbot player');
+
 let mainWindow: BrowserWindow | null = null;
 let sourceWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -44,12 +47,17 @@ let registeredSignature = '';
 let lastState: PlayerState | null = null;
 /** 트레이에서 종료를 골랐을 때만 실제로 끝낸다 (창을 닫으면 숨기기만 한다) */
 let quitting = false;
+/** 컴퓨터 시작과 함께 켜진 경우 — 창을 띄우지 않고 트레이에만 남는다 */
+const startedHidden =
+  process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: DESKTOP.width,
     height: DESKTOP.height,
     title: 'wizbot player',
+    icon: appIconPath(),
+    show: !startedHidden,
     backgroundColor: '#0a0a0a',
     // 자체 타이틀바를 쓴다. macOS 는 시스템 신호등 버튼을 그대로 남기고,
     // Windows 는 시스템 버튼이 어두운 사각형으로 떠 밝은 화면과 어울리지 않아 직접 그린다.
@@ -64,6 +72,9 @@ function createMainWindow() {
 
   void mainWindow.loadURL(PLAYER_URL);
   applyMode('desktop', false);
+
+  // 웹 페이지의 <title>(위즈봇)이 창 제목을 덮어쓰지 않게 한다
+  mainWindow.on('page-title-updated', (event) => event.preventDefault());
 
   // 외부 링크는 기본 브라우저로 (앱 창이 엉뚱한 페이지로 새지 않게)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -192,6 +203,8 @@ function trayTooltip(state: PlayerState | null) {
 
 function buildTrayMenu(state: PlayerState | null) {
   const playing = state?.playback.status === 'PLAYING';
+  // 단축키가 꺼져 있으면 표시하지 않는다 (트레이 메뉴의 accelerator 는 표시 전용)
+  const keys = state?.keyboardShortcut ? state.shortcuts : null;
 
   const items: MenuItemConstructorOptions[] = [
     // 현재 곡 줄이 곧 창 열기 버튼이다
@@ -199,18 +212,40 @@ function buildTrayMenu(state: PlayerState | null) {
     { type: 'separator' },
     {
       label: playing ? '일시정지' : '재생',
+      accelerator: keys?.playPause,
       click: () => run(api.song.togglePlay.mutate()),
     },
-    { label: '다음 곡', click: () => run(api.song.next.mutate()) },
-    { label: '정지', click: () => run(api.song.stop.mutate()) },
+    { label: '다음 곡', accelerator: keys?.next, click: () => run(api.song.next.mutate()) },
+    { label: '정지', accelerator: keys?.stop, click: () => run(api.song.stop.mutate()) },
     { type: 'separator' },
     {
+      label: '컴퓨터 시작 시 자동 실행',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => {
+        // 자동 실행으로 켜질 때는 창을 띄우지 않는다 — 부팅할 때마다 창이 뜨면 성가시다
+        app.setLoginItemSettings({
+          openAtLogin: item.checked,
+          openAsHidden: true,
+          args: ['--hidden'],
+        });
+      },
+    },
+  ];
+
+  // 숨은 재생 창을 들여다보는 메뉴는 개발 중에만
+  if (!app.isPackaged) {
+    items.push({
       label: '재생 창 보기 (진단)',
       click: () => {
         sourceWindow?.show();
         sourceWindow?.webContents.openDevTools({ mode: 'detach' });
       },
-    },
+    });
+  }
+
+  items.push(
+    { type: 'separator' },
     {
       label: '종료',
       click: () => {
@@ -218,7 +253,7 @@ function buildTrayMenu(state: PlayerState | null) {
         app.quit();
       },
     },
-  ];
+  );
 
   return Menu.buildFromTemplate(items);
 }
@@ -327,6 +362,12 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    // Windows 에서 작업 표시줄 아이콘이 제대로 묶이려면 필요하다
+    if (process.platform === 'win32') app.setAppUserModelId('co.kr.wisdomit.wizbot.player');
+
+    // 기본 메뉴는 「Electron」 이름이 그대로 노출되고, 자체 타이틀바를 쓰므로 쓸 일도 없다
+    Menu.setApplicationMenu(null);
+
     createMainWindow();
     createSourceWindow();
     createTray();
@@ -338,6 +379,7 @@ if (!app.requestSingleInstanceLock()) {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
       else showMainWindow();
     });
+
   });
 
   // 창을 모두 닫아도 트레이에 남아 재생을 계속한다
