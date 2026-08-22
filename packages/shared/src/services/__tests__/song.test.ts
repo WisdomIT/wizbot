@@ -6,7 +6,14 @@ vi.mock('../youtube', () => ({
   resolveSong: vi.fn(),
 }));
 
-import { moveSong, removeSong, removeSongById, reorderQueue, requestSong } from '../song';
+import {
+  clearQueue,
+  moveSong,
+  removeSong,
+  removeSongById,
+  reorderQueue,
+  requestSong,
+} from '../song';
 import { resolveSong } from '../youtube';
 
 const USER_ID = 1;
@@ -33,11 +40,15 @@ function createPrisma(queue: unknown[] = [], setting = {}) {
     create: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ id: 10, ...data })),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
   const prisma = {
     userSetting: { findUnique: vi.fn().mockResolvedValue({ ...DEFAULT_SETTING, ...setting }) },
     song,
-    songHistory: { create: vi.fn().mockResolvedValue({}) },
+    songHistory: {
+      create: vi.fn().mockResolvedValue({}),
+      createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     $transaction: vi.fn().mockResolvedValue([]),
   } as unknown as PrismaClient;
   return { prisma, song };
@@ -193,6 +204,29 @@ describe('콘솔 큐 편집 (#5 2-b)', () => {
     await expect(reorderQueue(prisma, USER_ID, [1, 99])).rejects.toThrow('대기열이 변경');
     await expect(reorderQueue(prisma, USER_ID, [1])).rejects.toThrow('대기열이 변경');
     await expect(reorderQueue(prisma, USER_ID, [1, 1])).rejects.toThrow('대기열이 변경');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('대기열 비우기는 전부 지우고 CANCELED 이력을 남긴다', async () => {
+    const { prisma, song } = createPrisma([
+      queueItem({ id: 1, youtubeId: 'aaaaaaaaaaa' }),
+      queueItem({ id: 2, youtubeId: 'bbbbbbbbbbb' }),
+    ]);
+
+    await expect(clearQueue(prisma, USER_ID, '스트리머')).resolves.toEqual({ removed: 2 });
+
+    expect(song.deleteMany).toHaveBeenCalledWith({ where: { userId: USER_ID } });
+    expect(prisma.songHistory.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ youtubeId: 'aaaaaaaaaaa', status: 'CANCELED' }),
+        expect.objectContaining({ youtubeId: 'bbbbbbbbbbb', status: 'CANCELED' }),
+      ],
+    });
+  });
+
+  it('빈 대기열은 아무것도 하지 않는다', async () => {
+    const { prisma } = createPrisma([]);
+    await expect(clearQueue(prisma, USER_ID, '스트리머')).resolves.toEqual({ removed: 0 });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

@@ -32,6 +32,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -339,41 +340,6 @@ function RenameDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfirmDialog({
-  open,
-  title,
-  description,
-  confirmLabel,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>
-            취소
-          </Button>
-          <Button variant="destructive" onClick={onConfirm}>
-            {confirmLabel}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

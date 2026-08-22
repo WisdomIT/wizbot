@@ -19,10 +19,11 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, Heart, Minimize2, PlayCircle, Trash2 } from 'lucide-react';
+import { Eraser, GripVertical, Heart, Minimize2, PlayCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AppTitleBar } from '@/components/song/app-title-bar';
 import { MiniPlayer } from '@/components/song/mini-player';
 import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
@@ -98,6 +99,7 @@ export function PlayerView() {
   const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
   const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
   const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
+  const clearQueue = useMutation(trpc.song.clearQueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
@@ -323,6 +325,9 @@ export function PlayerView() {
           onRemove={(song) =>
             run(removeFromQueue.mutateAsync({ id: song.id }), '대기열에서 삭제했습니다.')
           }
+          onClear={() =>
+            run(clearQueue.mutateAsync(), '대기열을 비웠습니다.')
+          }
         />
       </div>
     </div>
@@ -398,6 +403,7 @@ function QueueCard({
   onReorder,
   onPlayNow,
   onRemove,
+  onClear,
 }: {
   queue: QueueItem[];
   /** 앱에서는 카드가 높이를 채우고 표 안에서만 스크롤한다 */
@@ -407,9 +413,11 @@ function QueueCard({
   onReorder: (orderedIds: number[]) => void;
   onPlayNow: (song: QueueItem) => void;
   onRemove: (song: QueueItem) => void;
+  onClear: () => void;
 }) {
   // 드래그 직후 서버 응답을 기다리지 않고 바로 보여주기 위해 로컬 사본을 둔다
   const [items, setItems] = useState(queue);
+  const [clearing, setClearing] = useState(false);
   useEffect(() => setItems(queue), [queue]);
 
   const sensors = useSensors(
@@ -443,7 +451,29 @@ function QueueCard({
         </CardHeader>
       )}
       <CardContent className={fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}>
-        <AddSongForm pending={addPending} onSubmit={onAdd} />
+        <div className="mb-4 flex items-center gap-2">
+          <AddSongForm pending={addPending} onSubmit={onAdd} />
+          <Button
+            variant="outline"
+            className="shrink-0 text-destructive"
+            disabled={items.length === 0}
+            onClick={() => setClearing(true)}
+          >
+            <Eraser /> 비우기
+          </Button>
+        </div>
+
+        <ConfirmDialog
+          open={clearing}
+          title="대기열을 비울까요?"
+          description={`대기 중인 ${items.length}곡이 모두 삭제됩니다. 되돌릴 수 없습니다. (재생 중인 곡은 그대로입니다)`}
+          confirmLabel="비우기"
+          onCancel={() => setClearing(false)}
+          onConfirm={() => {
+            setClearing(false);
+            onClear();
+          }}
+        />
         <div className={fill ? 'flex min-h-0 flex-1 flex-col' : undefined}>
         <DndContext
           sensors={sensors}
@@ -589,7 +619,7 @@ function AddSongForm({
 
   return (
     <form
-      className="mb-4 flex items-center gap-2"
+      className="flex flex-1 items-center gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         if (!query.trim()) return;
