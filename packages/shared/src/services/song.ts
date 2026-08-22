@@ -191,6 +191,36 @@ export async function moveSong(
   return { moved: true as const };
 }
 
+/** 대기열 전체 비우기 — 개별 삭제와 같이 이력에 CANCELED 로 남긴다 */
+export async function clearQueue(prisma: PrismaClient, userId: number, resolvedBy: string) {
+  const queue = await listQueue(prisma, userId);
+  if (queue.length === 0) return { removed: 0 };
+
+  const resolvedAt = new Date();
+
+  await prisma.$transaction([
+    prisma.song.deleteMany({ where: { userId } }),
+    prisma.songHistory.createMany({
+      data: queue.map((song) => ({
+        userId,
+        youtubeId: song.youtubeId,
+        title: song.title,
+        videoUploader: song.videoUploader,
+        requester: song.requester,
+        requesterChannelId: song.requesterChannelId,
+        durationSeconds: song.durationSeconds,
+        status: 'CANCELED' as const,
+        resolvedBy: resolvedBy.slice(0, 40),
+        requestedAt: song.createdAt,
+        resolvedAt,
+      })),
+    }),
+  ]);
+
+  publishSongEvent(userId, { type: 'queue' });
+  return { removed: queue.length };
+}
+
 /**
  * 드래그로 큐 전체 순서를 다시 매긴다 (#5 2-b).
  * 클라이언트가 보는 목록과 서버 상태가 어긋난 채 저장되면 엉뚱한 곡이 밀리므로,

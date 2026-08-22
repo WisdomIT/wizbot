@@ -149,6 +149,13 @@ export const songRouter = t.router({
     .mutation(({ ctx, input }) =>
       songService.reorderQueue(ctx.prisma, ctx.user.id, input.orderedIds),
     ),
+  clearQueue: streamerProcedure.mutation(async ({ ctx }) => {
+    const me = await ctx.prisma.user.findUnique({
+      where: { id: ctx.user.id },
+      select: { channelName: true },
+    });
+    return songService.clearQueue(ctx.prisma, ctx.user.id, me?.channelName ?? '스트리머');
+  }),
   removeFromQueue: streamerProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
