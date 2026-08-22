@@ -75,7 +75,6 @@ export function FavoriteView() {
   const rename = useMutation(trpc.songFavorite.rename.mutationOptions());
   const remove = useMutation(trpc.songFavorite.remove.mutationOptions());
   const setDefault = useMutation(trpc.songFavorite.setDefault.mutationOptions());
-  const setAutoPlay = useMutation(trpc.songFavorite.setAutoPlay.mutationOptions());
 
   // 처음 열었을 때는 대표(목록 첫 번째)를 펼쳐둔다
   const firstId = data?.favorites[0]?.id ?? null;
@@ -102,29 +101,6 @@ export function FavoriteView() {
 
   return (
     <div className="flex max-w-5xl flex-col gap-4 py-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>자동 재생</CardTitle>
-          <CardDescription>
-            대기열이 비면 <strong>대표</strong> 즐겨찾기에서 한 곡을 무작위로 골라 이어서
-            재생합니다. 신청자는 「자동 재생」으로 표시됩니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Switch
-            id="auto-play"
-            checked={data.autoPlay}
-            onCheckedChange={(enabled) =>
-              run(
-                setAutoPlay.mutateAsync({ enabled }),
-                enabled ? '자동 재생을 켰습니다.' : '자동 재생을 껐습니다.',
-              )
-            }
-          />
-          <Label htmlFor="auto-play">대기열이 비면 대표 즐겨찾기에서 이어 재생</Label>
-        </CardContent>
-      </Card>
-
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <FavoriteListCard
           favorites={data.favorites}

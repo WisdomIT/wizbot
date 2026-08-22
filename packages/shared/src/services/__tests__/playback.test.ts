@@ -59,6 +59,43 @@ const QUEUE_ITEM = {
   order: 1,
 };
 
+describe('한 곡 반복 (#97)', () => {
+  it('곡이 끝나도 다음으로 넘기지 않고 처음부터 다시 재생한다', async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], {
+      userId: USER_ID,
+      status: 'PLAYING',
+      youtubeId: 'zzzzzzzzzzz',
+      title: '반복 중인 곡',
+      repeatOne: true,
+    });
+
+    const result = await reportEnded(prisma, USER_ID);
+
+    expect(result).toMatchObject({ status: 'PLAYING', positionSeconds: 0 });
+    // 반복은 이력을 남기지 않는다 — 같은 곡으로 기록이 뒤덮이지 않게
+    expect(prisma.songHistory.create).not.toHaveBeenCalled();
+    // 대기열의 다음 곡을 끌어오지 않는다
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.not.objectContaining({ youtubeId: expect.anything() }) }),
+    );
+  });
+
+  it('반복이 꺼져 있으면 평소대로 이력을 남기고 다음 곡으로 간다', async () => {
+    const { prisma } = createPrisma([QUEUE_ITEM], {
+      userId: USER_ID,
+      status: 'PLAYING',
+      youtubeId: 'zzzzzzzzzzz',
+      title: '재생하던 곡',
+      repeatOne: false,
+    });
+
+    const result = await reportEnded(prisma, USER_ID);
+
+    expect(prisma.songHistory.create).toHaveBeenCalled();
+    expect(result).toMatchObject({ youtubeId: QUEUE_ITEM.youtubeId });
+  });
+});
+
 describe('자동 재생 (#5 3단계)', () => {
   beforeEach(() => clearSource(USER_ID));
 

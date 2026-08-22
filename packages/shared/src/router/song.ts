@@ -43,7 +43,7 @@ export const songRouter = t.router({
       playbackService.getSourceStatus(ctx.prisma, ctx.user.id),
       ctx.prisma.userSetting.findUnique({
         where: { userId: ctx.user.id },
-        select: { songHistoryPublic: true },
+        select: { songHistoryPublic: true, songAutoPlayFromDefault: true },
       }),
     ]);
     return {
@@ -51,6 +51,7 @@ export const songRouter = t.router({
       queue,
       source,
       historyPublic: setting?.songHistoryPublic ?? false,
+      autoPlay: setting?.songAutoPlayFromDefault ?? false,
     };
   }),
 
@@ -60,6 +61,11 @@ export const songRouter = t.router({
   next: streamerProcedure.mutation(({ ctx }) =>
     playbackService.skipToNext(ctx.prisma, ctx.user.id),
   ),
+  setRepeat: streamerProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      playbackService.setRepeatOne(ctx.prisma, ctx.user.id, input.enabled),
+    ),
   setVolume: streamerProcedure
     .input(z.object({ volume: z.number().min(0).max(100) }))
     .mutation(({ ctx, input }) => playbackService.setVolume(ctx.prisma, ctx.user.id, input.volume)),

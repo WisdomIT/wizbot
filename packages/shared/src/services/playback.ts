@@ -187,8 +187,35 @@ export async function skipToNext(prisma: PrismaClient, userId: number, resolvedB
   return playback;
 }
 
-/** 곡이 끝까지 재생됨 — 소스가 보고한다 */
+/** 한 곡 반복 — 곡이 끝나도 다음으로 넘기지 않고 처음부터 다시 재생한다 */
+export async function setRepeatOne(prisma: PrismaClient, userId: number, enabled: boolean) {
+  await getPlayback(prisma, userId);
+  const updated = await prisma.songPlayback.update({
+    where: { userId },
+    data: { repeatOne: enabled },
+  });
+  publishSongEvent(userId, { type: 'playback' });
+  return updated;
+}
+
+/**
+ * 곡이 끝까지 재생됨 — 소스가 보고한다.
+ * 한 곡 반복 중이면 이력을 남기지 않고 처음부터 다시 재생한다
+ * (반복할 때마다 이력이 쌓이면 기록이 같은 곡으로 뒤덮인다).
+ */
 export async function reportEnded(prisma: PrismaClient, userId: number) {
+  const playback = await getPlayback(prisma, userId);
+
+  if (playback.repeatOne && playback.youtubeId) {
+    const looped = await prisma.songPlayback.update({
+      where: { userId },
+      data: { status: 'PLAYING', positionSeconds: 0, startedAt: new Date() },
+    });
+    publishSongEvent(userId, { type: 'playback' });
+    publishSongEvent(userId, { type: 'command', action: 'play' });
+    return looped;
+  }
+
   await recordHistory(prisma, userId, 'PLAYED');
   return advanceToNext(prisma, userId);
 }

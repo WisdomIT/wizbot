@@ -230,6 +230,8 @@ model SongPlayback {
   durationSeconds Int      @default(0) @db.Int // 현재 곡 길이(초)
   positionSeconds Int      @default(0) @db.Int // 재생 위치(초) — 송출 소스가 보고
   volume        Int        @default(70) @db.Int // 0~100
+  /// 한 곡 반복 — 곡이 끝나면 다음 곡으로 넘기지 않고 처음부터 다시 재생한다
+  repeatOne     Boolean    @default(false) @db.TinyInt
   /// 현재 곡이 큐에서 나온 시각 — 이력 기록·타임아웃 판단용
   startedAt     DateTime?
   updatedAt     DateTime   @updatedAt
