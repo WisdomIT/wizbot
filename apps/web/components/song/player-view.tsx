@@ -103,8 +103,16 @@ export function PlayerView() {
 
   const shell = useAppShell();
 
+  // 미니 플레이어는 창이 작아 토스트가 화면을 통째로 덮는다 — 조용히 처리한다
+  const quiet = shell.isApp && shell.mode === 'mini';
+
   const run = useCallback(
     (promise: Promise<unknown>, success: string) => {
+      if (quiet) {
+        promise.then(invalidate).catch(invalidate);
+        return;
+      }
+
       toast.promise(promise, {
         loading: '처리 중...',
         success: () => {
@@ -114,7 +122,7 @@ export function PlayerView() {
         error: (err) => `${err instanceof Error ? err.message : err}`,
       });
     },
-    [invalidate],
+    [invalidate, quiet],
   );
 
   // 데스크톱·미니가 같은 재생 위치를 보도록 여기서 한 번만 만든다

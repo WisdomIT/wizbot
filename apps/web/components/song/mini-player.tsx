@@ -56,7 +56,7 @@ export function MiniPlayer({
       {/* macOS 는 신호등 버튼 자리를, Windows 는 우리 창 제어 버튼을 여기에 둔다 */}
       <AppTitleBar platform={platform} controls={windowControls} canMaximize={false} compact />
 
-      <div className="flex shrink-0 flex-col gap-2 p-3 pt-0">
+      <div className="flex shrink-0 flex-col gap-2 px-4 pt-0 pb-2">
         <div className="flex items-center gap-2">
           <div className="size-11 shrink-0 overflow-hidden rounded bg-muted">
             {playback.youtubeId ? (
@@ -172,7 +172,7 @@ export function MiniPlayer({
                 {/* 누르면 그 곡을 바로 재생한다 */}
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-muted"
                   onClick={() => onPlaySong(song)}
                 >
                   <div className="flex min-w-0 flex-1 flex-col">
