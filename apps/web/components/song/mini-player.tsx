@@ -33,6 +33,7 @@ export function MiniPlayer({
   queueOpen,
   onToggleQueue,
   onExpand,
+  onPlaySong,
   platform,
   windowControls,
 }: {
@@ -44,6 +45,7 @@ export function MiniPlayer({
   queueOpen: boolean;
   onToggleQueue: () => void;
   onExpand: () => void;
+  onPlaySong: (song: MiniQueueItem) => void;
   platform: string;
   windowControls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
 }) {
@@ -166,16 +168,23 @@ export function MiniPlayer({
             <li className="p-3 text-center text-xs text-muted-foreground">대기열이 비어 있습니다.</li>
           ) : (
             queue.map((song) => (
-              <li key={song.id} className="flex items-center gap-2 border-b px-3 py-2 last:border-0">
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-xs">{song.title}</span>
-                  <span className="truncate text-[10px] text-muted-foreground">
-                    {song.videoUploader}
+              <li key={song.id} className="border-b last:border-0">
+                {/* 누르면 그 곡을 바로 재생한다 */}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted"
+                  onClick={() => onPlaySong(song)}
+                >
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-xs">{song.title}</span>
+                    <span className="truncate text-[10px] text-muted-foreground">
+                      {song.videoUploader}
+                    </span>
+                  </div>
+                  <span className="w-14 shrink-0 truncate text-right text-[10px] text-muted-foreground">
+                    {song.requester}
                   </span>
-                </div>
-                <span className="w-14 shrink-0 truncate text-right text-[10px] text-muted-foreground">
-                  {song.requester}
-                </span>
+                </button>
               </li>
             ))
           )}
