@@ -139,6 +139,29 @@ export async function getPublicPlaylist(prisma: PrismaClient, channelId: string)
   };
 }
 
+/**
+ * 시청자 화면 하단 재생 바용 — 현재 곡만 (#97).
+ * 모든 시청자 페이지에서 주기적으로 부르므로 대기열·명령어까지 실어 보내지 않는다.
+ */
+export async function getPublicNowPlaying(prisma: PrismaClient, channelId: string) {
+  const user = await getPublicUser(prisma, channelId);
+  const playback = await prisma.songPlayback.findUnique({ where: { userId: user.id } });
+
+  if (!playback?.youtubeId || playback.status === 'STOPPED') return { playback: null };
+
+  return {
+    playback: {
+      status: playback.status,
+      youtubeId: playback.youtubeId,
+      title: playback.title,
+      videoUploader: playback.videoUploader,
+      requester: playback.requester,
+      durationSeconds: playback.durationSeconds,
+      positionSeconds: playback.positionSeconds,
+    },
+  };
+}
+
 /** 시청자 재생 기록 — 설정이 켜져 있고, 개별 숨김되지 않은 항목만 */
 export async function getPublicHistory(
   prisma: PrismaClient,

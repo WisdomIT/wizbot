@@ -213,6 +213,13 @@ export const songRouter = t.router({
       songHistoryService.getPublicPlaylist(ctx.prisma, input.channelId),
     ),
 
+  /** 시청자 하단 재생 바 — 현재 곡만 (#97) */
+  publicNowPlaying: publicProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(({ ctx, input }) =>
+      songHistoryService.getPublicNowPlaying(ctx.prisma, input.channelId),
+    ),
+
   publicHistory: publicProcedure
     .input(z.object({ channelId: z.string(), cursor: z.number().optional() }))
     .query(({ ctx, input }) =>
