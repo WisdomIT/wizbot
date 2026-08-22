@@ -2,7 +2,7 @@
   "name": "@wizbot/player",
   "version": "1.0.0",
   "private": true,
-  "description": "위즈봇 플레이어 — 노래 신청 송출용 데스크톱 앱",
+  "description": "wizbot player — 노래 신청 송출용 데스크톱 앱",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsup",

@@ -1,10 +1,15 @@
 appId: co.kr.wisdomit.wizbot.player
-productName: 위즈봇 플레이어
+productName: wizbot player
 directories:
   output: release
+  buildResources: build
 files:
   - dist/**
   - package.json
+# 트레이 아이콘은 실행 중에 읽으므로 asar 밖(Resources/)에 둔다
+extraResources:
+  - from: resources
+    to: .
 # 코드 서명 인증서가 없다 — 설치 시 SmartScreen/Gatekeeper 경고가 뜬다 (README 참고)
 win:
   target: nsis

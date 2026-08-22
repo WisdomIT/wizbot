@@ -250,11 +250,20 @@ export const songRouter = t.router({
     .input(z.object({ sessionId: z.string(), source: sourceTypeSchema }))
     .mutation(async ({ ctx, input }) => {
       const { userId, readOnly } = ctx.songSource;
+      const state = await loadSourceState(ctx.prisma, userId, readOnly);
+
+      // 지정된 소스가 아닌 창의 하트비트는 무시한다.
+      // OBS 페이지와 앱을 함께 열어두면 두 창이 같은 자리를 번갈아 덮어써서
+      // 연결 상태가 「연결됨 ↔ 연결 안 됨」으로 깜빡였다 (#85).
+      if (state.sourceType !== input.source) {
+        return { active: false, state };
+      }
+
       playbackService.touchSourceSession(userId, input.source, input.sessionId);
 
       return {
         active: playbackService.isSessionActive(userId, input.sessionId),
-        state: await loadSourceState(ctx.prisma, userId, readOnly),
+        state,
       };
     }),
 

@@ -3,17 +3,17 @@ import {
   BrowserWindow,
   globalShortcut,
   Menu,
-  nativeImage,
   shell,
   Tray,
   type MenuItemConstructorOptions,
 } from 'electron';
 
 import { api, fetchState, type PlayerState } from './api';
-import { POLL_MS, PLAYER_URL, SOURCE_URL, SOURCE_WINDOW_SIZE } from './config';
+import { loadTrayIcon } from './icons';
+import { isAppPath, MAIN_WINDOW, POLL_MS, PLAYER_URL, SOURCE_URL, SOURCE_WINDOW_SIZE } from './config';
 
 /**
- * 위즈봇 플레이어 (#85).
+ * wizbot player (#85).
  *
  * 사이트를 그대로 로드하는 셸이다.
  * - 메인 창: /app/player — 콘솔과 같은 뮤직플레이어 화면
@@ -34,11 +34,8 @@ let quitting = false;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 780,
-    minWidth: 900,
-    minHeight: 600,
-    title: '위즈봇 플레이어',
+    ...MAIN_WINDOW,
+    title: 'wizbot player',
     backgroundColor: '#0a0a0a',
     autoHideMenuBar: true,
     webPreferences: {
@@ -54,6 +51,11 @@ function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // 로그인을 마치면 웹은 /streamer 로 보낸다 — 앱에서는 플레이어 화면으로 되돌린다
+  mainWindow.webContents.on('did-navigate', (_event, url) => {
+    if (!isAppPath(url)) void mainWindow?.loadURL(PLAYER_URL);
   });
 
   mainWindow.on('close', (event) => {
@@ -108,7 +110,7 @@ function showMainWindow() {
 
 function trayTooltip(state: PlayerState | null) {
   const playback = state?.playback;
-  if (!playback?.title || playback.status === 'STOPPED') return '위즈봇 플레이어';
+  if (!playback?.title || playback.status === 'STOPPED') return 'wizbot player';
   const mark = playback.status === 'PAUSED' ? '⏸' : '♪';
   return `${mark} ${playback.title}`;
 }
@@ -140,11 +142,19 @@ function buildTrayMenu(state: PlayerState | null) {
 }
 
 function createTray() {
-  // 아이콘 파일 없이도 뜨도록 빈 이미지로 만든다 (OS 가 기본 아이콘을 보여준다)
-  tray = new Tray(nativeImage.createEmpty());
-  tray.setToolTip('위즈봇 플레이어');
-  tray.setContextMenu(buildTrayMenu(null));
-  tray.on('click', showMainWindow);
+  const icon = loadTrayIcon();
+  // 아이콘이 없으면 트레이를 만들지 않는다 — 빈 이미지로 만들면 macOS 에서 바로 죽는다
+  if (!icon) return;
+
+  try {
+    tray = new Tray(icon);
+    tray.setToolTip('wizbot player');
+    tray.setContextMenu(buildTrayMenu(null));
+    tray.on('click', showMainWindow);
+  } catch {
+    // 트레이를 못 만들어도 앱은 계속 동작해야 한다
+    tray = null;
+  }
 }
 
 /* ── 전역 단축키 ── */
