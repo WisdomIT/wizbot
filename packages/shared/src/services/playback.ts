@@ -144,6 +144,18 @@ export async function play(prisma: PrismaClient, userId: number) {
   return updated;
 }
 
+/**
+ * 재생 ↔ 일시정지 뒤집기 (#85).
+ *
+ * 단축키는 메인 프로세스에서 오는데, 거기서는 폴링으로 받은 스냅샷만 들고 있어
+ * 방향을 스스로 정하면 최대 10초까지 틀린다(누른 직후 다시 누르면 같은 방향을 또 보냄).
+ * 서버가 지금 상태를 보고 뒤집는다.
+ */
+export async function togglePlay(prisma: PrismaClient, userId: number) {
+  const playback = await getPlayback(prisma, userId);
+  return playback.status === 'PLAYING' ? pause(prisma, userId) : play(prisma, userId);
+}
+
 export async function pause(prisma: PrismaClient, userId: number) {
   await getPlayback(prisma, userId);
   const updated = await prisma.songPlayback.update({

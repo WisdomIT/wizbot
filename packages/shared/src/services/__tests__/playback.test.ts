@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   advanceToNext,
   setShortcuts,
+  togglePlay,
   playSongNow,
   seek,
   getSourceStatus,
@@ -59,6 +60,38 @@ const QUEUE_ITEM = {
   durationSeconds: 200,
   order: 1,
 };
+
+describe('togglePlay (#85)', () => {
+  it('재생 중이면 일시정지한다', async () => {
+    const { prisma, songPlayback } = createPrisma([], {
+      userId: USER_ID,
+      status: 'PLAYING',
+      youtubeId: 'aaaaaaaaaaa',
+      title: '곡',
+    });
+
+    await togglePlay(prisma, USER_ID);
+
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'PAUSED' } }),
+    );
+  });
+
+  it('멈춰 있으면 재생한다', async () => {
+    const { prisma, songPlayback } = createPrisma([], {
+      userId: USER_ID,
+      status: 'PAUSED',
+      youtubeId: 'aaaaaaaaaaa',
+      title: '곡',
+    });
+
+    await togglePlay(prisma, USER_ID);
+
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'PLAYING' } }),
+    );
+  });
+});
 
 describe('전역 단축키 (#85)', () => {
   it('수식키 없는 조합은 거부한다', async () => {

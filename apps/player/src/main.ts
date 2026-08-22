@@ -199,10 +199,10 @@ function buildTrayMenu(state: PlayerState | null) {
     { type: 'separator' },
     {
       label: playing ? '일시정지' : '재생',
-      click: () => void (playing ? api.song.pause.mutate() : api.song.play.mutate()).catch(noop),
+      click: () => run(api.song.togglePlay.mutate()),
     },
-    { label: '다음 곡', click: () => void api.song.next.mutate().catch(noop) },
-    { label: '정지', click: () => void api.song.stop.mutate().catch(noop) },
+    { label: '다음 곡', click: () => run(api.song.next.mutate()) },
+    { label: '정지', click: () => run(api.song.stop.mutate()) },
     { type: 'separator' },
     {
       label: '재생 창 보기 (진단)',
@@ -241,14 +241,28 @@ function createTray() {
 
 /* ── 전역 단축키 ── */
 
+/**
+ * 단축키가 실행하는 동작.
+ *
+ * 재생/일시정지는 **서버가 뒤집는다** — 여기서 방향을 정하면 폴링 사이(최대 10초)
+ * 낡은 상태를 보고 같은 방향을 또 보내게 되어 눌러도 아무 일이 없는 것처럼 보인다.
+ * 실행 후에는 곧바로 상태를 다시 읽어 트레이 표시와 다음 판단을 맞춘다.
+ */
 const ACTIONS = {
-  playPause: () => {
-    const playing = lastState?.playback.status === 'PLAYING';
-    void (playing ? api.song.pause.mutate() : api.song.play.mutate()).catch(noop);
-  },
-  stop: () => void api.song.stop.mutate().catch(noop),
-  next: () => void api.song.next.mutate().catch(noop),
+  playPause: () => run(api.song.togglePlay.mutate()),
+  stop: () => run(api.song.stop.mutate()),
+  next: () => run(api.song.next.mutate()),
 } as const;
+
+function run(action: Promise<unknown>) {
+  void action
+    .then(() => poll())
+    .catch((error: unknown) => {
+      // 조용히 삼키면 왜 안 되는지 알 길이 없다
+      // eslint-disable-next-line no-console
+      console.error('[wizbot] 단축키 동작 실패:', error);
+    });
+}
 
 type Shortcuts = PlayerState['shortcuts'];
 
@@ -276,10 +290,6 @@ function syncShortcuts(enabled: boolean, shortcuts: Shortcuts) {
       /* 형식이 잘못된 조합은 건너뛴다 */
     }
   }
-}
-
-function noop() {
-  /* 네트워크 오류는 다음 폴링에서 회복된다 */
 }
 
 /** 트레이 표시와 단축키 상태를 주기적으로 맞춘다 */
