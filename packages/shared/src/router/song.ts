@@ -43,7 +43,11 @@ export const songRouter = t.router({
       playbackService.getSourceStatus(ctx.prisma, ctx.user.id),
       ctx.prisma.userSetting.findUnique({
         where: { userId: ctx.user.id },
-        select: { songHistoryPublic: true, songAutoPlayFromDefault: true },
+        select: {
+          songHistoryPublic: true,
+          songAutoPlayFromDefault: true,
+          songKeyboardShortcut: true,
+        },
       }),
     ]);
     return {
@@ -52,6 +56,8 @@ export const songRouter = t.router({
       source,
       historyPublic: setting?.songHistoryPublic ?? false,
       autoPlay: setting?.songAutoPlayFromDefault ?? false,
+      /** 앱의 전역 단축키 사용 여부 (#85) */
+      keyboardShortcut: setting?.songKeyboardShortcut ?? true,
     };
   }),
 

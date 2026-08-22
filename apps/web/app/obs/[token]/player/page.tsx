@@ -1,4 +1,4 @@
-import { ObsPlayer } from './_components/obs-player';
+import { SourcePlayer } from '@/components/song/source-player';
 
 /**
  * OBS 브라우저 소스용 재생 페이지 (#5 2단계).
@@ -7,5 +7,5 @@ import { ObsPlayer } from './_components/obs-player';
  */
 export default async function Page({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  return <ObsPlayer token={token} />;
+  return <SourcePlayer token={token} />;
 }

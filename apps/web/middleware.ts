@@ -28,7 +28,11 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/admin') && payload.role !== 'admin') {
       return redirectToLogin(request);
     }
-    if (pathname.startsWith('/streamer') && payload.role !== 'streamer') {
+    // 앱(#85)이 여는 /app 도 스트리머 전용
+    if (
+      (pathname.startsWith('/streamer') || pathname.startsWith('/app')) &&
+      payload.role !== 'streamer'
+    ) {
       return redirectToLogin(request);
     }
 
@@ -56,5 +60,5 @@ export async function middleware(request: NextRequest) {
 
 // 인증이 필요한 경로에서만 실행 (기존: 전 경로 실행 + x-url 헤더 주입 + 매 요청 tRPC 호출)
 export const config = {
-  matcher: ['/admin/:path*', '/streamer/:path*'],
+  matcher: ['/admin/:path*', '/streamer/:path*', '/app/:path*'],
 };
