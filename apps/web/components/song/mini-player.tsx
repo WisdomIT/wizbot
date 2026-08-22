@@ -5,6 +5,7 @@ import { ListMusic, Maximize2, Music, Pause, Play, Repeat1, SkipForward, Volume2
 import { formatTime, type PlaybackView, type PlayerControls } from '@/components/song/song-player';
 import { Button } from '@/components/ui/button';
 
+import { AppTitleBar } from './app-title-bar';
 import { DRAG, NO_DRAG } from './drag-region';
 
 /**
@@ -32,6 +33,8 @@ export function MiniPlayer({
   queueOpen,
   onToggleQueue,
   onExpand,
+  platform,
+  windowControls,
 }: {
   playback: PlaybackView;
   controls: PlayerControls;
@@ -41,12 +44,17 @@ export function MiniPlayer({
   queueOpen: boolean;
   onToggleQueue: () => void;
   onExpand: () => void;
+  platform: string;
+  windowControls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
 }) {
   const playing = playback.status === 'PLAYING';
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background" style={DRAG}>
-      <div className="flex shrink-0 flex-col gap-2 p-3 pt-10">
+      {/* macOS 는 신호등 버튼 자리를, Windows 는 우리 창 제어 버튼을 여기에 둔다 */}
+      <AppTitleBar platform={platform} controls={windowControls} canMaximize={false} compact />
+
+      <div className="flex shrink-0 flex-col gap-2 p-3 pt-0">
         <div className="flex items-center gap-2">
           <div className="size-11 shrink-0 overflow-hidden rounded bg-muted">
             {playback.youtubeId ? (

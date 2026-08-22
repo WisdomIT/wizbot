@@ -12,4 +12,12 @@ contextBridge.exposeInMainWorld('wizbotApp', {
   /** 창 모드 — 크기·리사이즈 가능 여부는 메인 프로세스가 정한다 */
   setMode: (mode: 'mini' | 'desktop', queueOpen: boolean) =>
     ipcRenderer.send('app:set-mode', mode, queueOpen),
+
+  /**
+   * 창 제어. macOS 는 시스템 신호등 버튼을 그대로 쓰므로 필요 없고,
+   * Windows 는 시스템 버튼(어두운 오버레이)이 밝은 화면과 어울리지 않아 직접 그린다.
+   */
+  minimize: () => ipcRenderer.send('app:window', 'minimize'),
+  toggleMaximize: () => ipcRenderer.send('app:window', 'toggle-maximize'),
+  close: () => ipcRenderer.send('app:window', 'close'),
 });

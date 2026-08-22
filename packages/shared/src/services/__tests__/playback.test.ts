@@ -270,10 +270,6 @@ describe('송출 소스 중재', () => {
     touchSourceSession(USER_ID, 'OBS', 'session-1');
 
     expect(events).toEqual([{ type: 'source' }]);
-
-    touchSourceSession(USER_ID, 'OBS', 'session-2'); // 세션이 바뀌면 다시 알린다
-    expect(events).toEqual([{ type: 'source' }, { type: 'source' }]);
-
     unsubscribe();
   });
 
@@ -298,10 +294,37 @@ describe('송출 소스 중재', () => {
     }
   });
 
-  it('창을 여러 개 열면 마지막 세션만 활성 (이중 재생 방지)', () => {
+  it('창을 여러 개 열면 먼저 잡은 세션이 유지된다 (이중 재생 방지)', () => {
+    // 마지막 하트비트가 이기게 두면, 두 기기가 동시에 켜져 있을 때 5초마다 주인이
+    // 뒤바뀌어 어느 쪽도 재생하지 못한다 (#85 실측)
     touchSourceSession(USER_ID, 'OBS', 'session-1');
     touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
+    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
+    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+
+    // 계속 번갈아 보내도 주인은 그대로다
+    touchSourceSession(USER_ID, 'OBS', 'session-2');
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    touchSourceSession(USER_ID, 'OBS', 'session-2');
+    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
+    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+  });
+
+  it('주인이 하트비트를 멈추면 타임아웃 뒤에 다른 세션이 이어받는다', () => {
+    vi.useFakeTimers();
+    try {
+      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      touchSourceSession(USER_ID, 'OBS', 'session-2');
+      expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+
+      // session-1 이 사라졌다 — session-2 만 계속 보낸다
+      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
+      touchSourceSession(USER_ID, 'OBS', 'session-2');
+
+      expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
+      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

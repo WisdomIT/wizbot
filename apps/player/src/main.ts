@@ -46,16 +46,13 @@ let quitting = false;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: MINI.width,
-    height: MINI.height,
+    width: DESKTOP.width,
+    height: DESKTOP.height,
     title: 'wizbot player',
     backgroundColor: '#0a0a0a',
-    // 자체 타이틀바를 쓴다. macOS 는 신호등 버튼이 그대로 남고,
-    // Windows 는 titleBarOverlay 로 시스템 버튼이 우리 화면 위에 그려진다.
+    // 자체 타이틀바를 쓴다. macOS 는 시스템 신호등 버튼을 그대로 남기고,
+    // Windows 는 시스템 버튼이 어두운 사각형으로 떠 밝은 화면과 어울리지 않아 직접 그린다.
     titleBarStyle: 'hidden',
-    ...(process.platform === 'win32'
-      ? { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e5e5e5', height: 40 } }
-      : {}),
     webPreferences: {
       // 사이트를 그대로 띄우므로 렌더러에 특권을 주지 않는다 — 통로는 preload 하나뿐
       nodeIntegration: false,
@@ -65,7 +62,7 @@ function createMainWindow() {
   });
 
   void mainWindow.loadURL(PLAYER_URL);
-  applyMode('mini', false);
+  applyMode('desktop', false);
 
   // 외부 링크는 기본 브라우저로 (앱 창이 엉뚱한 페이지로 새지 않게)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -99,6 +96,15 @@ function createMainWindow() {
 }
 
 /**
+ * 「제한 없음」을 뜻하는 값.
+ *
+ * ⚠️ setMaximumSize 에 0 을 넘기면 안 된다. Windows 는 0 을 무제한으로 보지만
+ * macOS 는 그대로 **최대 크기 0** 으로 받아들여, 크기를 조절하면 창이 떨리다가
+ * 마우스를 떼는 순간 사라진다 (실측).
+ */
+const NO_LIMIT = 16_384;
+
+/**
  * 창 모드 적용.
  * - 미니 + 대기열 닫힘: 크기 고정
  * - 미니 + 대기열 열림: 세로만 조절 (하한 있음)
@@ -108,25 +114,30 @@ function applyMode(mode: Mode, queueOpen: boolean) {
   const win = mainWindow;
   if (!win) return;
 
-  // 이전 모드의 제한을 먼저 풀어야 새 크기가 적용된다
+  // 이전 모드의 제한을 먼저 푼다
   win.setResizable(true);
   win.setMinimumSize(1, 1);
-  win.setMaximumSize(0, 0);
+  win.setMaximumSize(NO_LIMIT, NO_LIMIT);
 
   if (mode === 'mini') {
     const height = queueOpen
       ? Math.max(MINI.minHeightWithQueue, win.getSize()[1])
       : MINI.height;
 
-    win.setSize(MINI.width, height);
+    // 제한을 크기보다 먼저 걸어야 한다 — 나중에 걸면 적용된 크기가 뒤늦게 잘려 화면이 튄다
     win.setMinimumSize(MINI.width, queueOpen ? MINI.minHeightWithQueue : MINI.height);
-    // 가로 상한을 같은 값으로 묶어 세로만 늘어나게 한다
-    win.setMaximumSize(MINI.width, queueOpen ? 0 : MINI.height);
+    // 가로를 하한·상한 같은 값으로 묶어 세로만 늘어나게 한다
+    win.setMaximumSize(MINI.width, queueOpen ? NO_LIMIT : MINI.height);
+    win.setSize(MINI.width, height);
     win.setResizable(queueOpen);
+    // 미니는 크기가 묶여 있어 최대화하면 제한과 충돌한다 — 버튼 자체를 막는다
+    win.setMaximizable(false);
     return;
   }
 
   win.setMinimumSize(DESKTOP.minWidth, DESKTOP.minHeight);
+  win.setMaximizable(true);
+
   const [width, height] = win.getSize();
   if (width < DESKTOP.minWidth || height < DESKTOP.minHeight) {
     win.setSize(DESKTOP.width, DESKTOP.height);
@@ -192,6 +203,13 @@ function buildTrayMenu(state: PlayerState | null) {
     { label: '다음 곡', click: () => void api.song.next.mutate().catch(noop) },
     { label: '정지', click: () => void api.song.stop.mutate().catch(noop) },
     { type: 'separator' },
+    {
+      label: '재생 창 보기 (진단)',
+      click: () => {
+        sourceWindow?.show();
+        sourceWindow?.webContents.openDevTools({ mode: 'detach' });
+      },
+    },
     {
       label: '종료',
       click: () => {
@@ -273,6 +291,17 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.on('app:set-mode', (_event, mode: Mode, queueOpen: boolean) => {
     applyMode(mode, queueOpen);
+  });
+
+  ipcMain.on('app:window', (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
+    const win = mainWindow;
+    if (!win) return;
+
+    if (action === 'minimize') win.minimize();
+    // 닫기는 트레이로 숨긴다 (close 핸들러가 가로챈다) — 재생은 계속돼야 한다
+    else if (action === 'close') win.close();
+    else if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
   });
 
   void app.whenReady().then(() => {

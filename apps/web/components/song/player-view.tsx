@@ -171,14 +171,28 @@ export function PlayerView() {
         queueOpen={shell.queueOpen}
         onToggleQueue={() => shell.setQueueOpen(!shell.queueOpen)}
         onExpand={() => shell.setMode('desktop')}
+        platform={shell.platform}
+        windowControls={shell.windowControls}
       />
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 py-4">
+    // 앱에서는 웹 페이지가 아니라 창처럼 동작해야 한다 —
+    // 전체가 화면 높이에 맞고, 스크롤은 대기열 표 안에서만 일어난다
+    <div
+      className={
+        shell.isApp
+          ? 'flex h-svh flex-col overflow-hidden'
+          : 'flex flex-col gap-4 py-4'
+      }
+    >
       {shell.isApp && (
-        <AppTitleBar platform={shell.platform} className="-mx-4 -mt-4 border-b">
+        <AppTitleBar
+          platform={shell.platform}
+          controls={shell.windowControls}
+          className="-mx-4 border-b"
+        >
           <Button
             variant="ghost"
             size="icon"
@@ -191,10 +205,22 @@ export function PlayerView() {
         </AppTitleBar>
       )}
 
-      <SourceStatus source={source} />
+      {shell.isApp ? (
+        <div className="px-1 pt-3">
+          <SourceStatus source={source} expected="ELECTRON" />
+        </div>
+      ) : (
+        <SourceStatus source={source} />
+      )}
 
       {/* 큰 화면은 좌측 플레이어 · 우측 대기열, 작은 화면은 플레이어가 위 */}
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <div
+        className={
+          shell.isApp
+            ? 'grid min-h-0 flex-1 gap-4 overflow-hidden pt-3 pb-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
+            : 'grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
+        }
+      >
         <SongPlayer
           playback={playback}
           position={position}
@@ -247,6 +273,7 @@ export function PlayerView() {
 
         <QueueCard
           queue={queue}
+          fill={shell.isApp}
           addPending={addToQueue.isPending}
           onAdd={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}
           onReorder={(orderedIds) => {
@@ -272,8 +299,15 @@ export function PlayerView() {
  * 서버는 조회 시점에 online 을 계산해 주지만, 소스가 끊기면 하트비트도 멈춰서
  * 다시 조회할 계기가 사라진다. 마지막 하트비트 시각과 타임아웃으로 여기서 센다.
  */
+const SOURCE_LABEL = {
+  NONE: '사용 안 함',
+  OBS: 'OBS 브라우저 소스',
+  ELECTRON: '위즈봇 플레이어 앱',
+} as const;
+
 function SourceStatus({
   source,
+  expected,
 }: {
   source: {
     sourceType: 'NONE' | 'OBS' | 'ELECTRON';
@@ -281,6 +315,8 @@ function SourceStatus({
     lastSeenAt: string | Date | null;
     timeoutMs: number;
   };
+  /** 이 화면이 스스로 송출 소스인 경우(앱) — 설정이 다르면 재생되지 않는다 */
+  expected?: 'OBS' | 'ELECTRON';
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -288,6 +324,17 @@ function SourceStatus({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // 앱에서 열었는데 송출 소스가 다른 것으로 지정돼 있으면 아무리 기다려도 연결되지 않는다
+  if (expected && source.sourceType !== expected) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+        <Badge variant="destructive">재생 안 됨</Badge>
+        송출 소스가 「{SOURCE_LABEL[source.sourceType]}」 으로 지정돼 있습니다. 설정에서 「위즈봇
+        플레이어 앱」 으로 바꿔야 이 앱에서 재생됩니다.
+      </div>
+    );
+  }
 
   if (source.sourceType === 'NONE') {
     return (
@@ -307,7 +354,7 @@ function SourceStatus({
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       {online ? <Badge>연결됨</Badge> : <Badge variant="destructive">연결 안 됨</Badge>}
       {online
-        ? `${source.sourceType === 'OBS' ? 'OBS 브라우저 소스' : '위즈봇 플레이어 앱'} 에서 재생 중입니다.`
+        ? `${SOURCE_LABEL[source.sourceType]} 에서 재생 중입니다.`
         : '송출 소스가 연결되어 있지 않습니다. 재생해도 소리가 나지 않습니다.'}
     </div>
   );
@@ -325,14 +372,15 @@ interface QueueItem {
 function QueueCard({
   queue,
   addPending,
-  className,
+  fill,
   onAdd,
   onReorder,
   onPlayNow,
   onRemove,
 }: {
   queue: QueueItem[];
-  className?: string;
+  /** 앱에서는 카드가 높이를 채우고 표 안에서만 스크롤한다 */
+  fill?: boolean;
   addPending: boolean;
   onAdd: (query: string) => void;
   onReorder: (orderedIds: number[]) => void;
@@ -363,22 +411,26 @@ function QueueCard({
   };
 
   return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>대기열 {items.length > 0 && `(${items.length})`}</CardTitle>
-        <CardDescription>
-          검색어나 유튜브 주소로 직접 추가할 수 있습니다. 스트리머가 추가하는 곡에는 신청
-          제한(길이·1인 1곡 등)이 적용되지 않습니다. 순서는 핸들을 잡고 끌어서 바꿉니다.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Card className={fill ? 'flex h-full min-h-0 flex-col gap-3 py-3' : undefined}>
+      {!fill && (
+        <CardHeader>
+          <CardTitle>대기열 {items.length > 0 && `(${items.length})`}</CardTitle>
+          <CardDescription>
+            검색어나 유튜브 주소로 직접 추가할 수 있습니다. 스트리머가 추가하는 곡에는 신청
+            제한(길이·1인 1곡 등)이 적용되지 않습니다. 순서는 핸들을 잡고 끌어서 바꿉니다.
+          </CardDescription>
+        </CardHeader>
+      )}
+      <CardContent className={fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}>
         <AddSongForm pending={addPending} onSubmit={onAdd} />
+        <div className={fill ? 'flex min-h-0 flex-1 flex-col' : undefined}>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           modifiers={[restrictToVerticalAxis, restrictToParentElement]}
           onDragEnd={handleDragEnd}
         >
+          <div className={fill ? 'min-h-0 flex-1 overflow-y-auto' : undefined}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -414,7 +466,9 @@ function QueueCard({
               )}
             </TableBody>
           </Table>
+          </div>
         </DndContext>
+        </div>
       </CardContent>
     </Card>
   );
