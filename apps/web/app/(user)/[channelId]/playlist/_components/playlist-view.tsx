@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { formatTime,SongPlayer } from '@/components/song/song-player';
+import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +25,12 @@ export function PlaylistView({ channelId }: { channelId: string }) {
     ...trpc.song.publicPlaylist.queryOptions({ channelId }),
     refetchInterval: REFRESH_MS,
   });
+
+  const position = usePlayerPosition(
+    data?.playback?.positionSeconds ?? 0,
+    data?.playback?.durationSeconds ?? 0,
+    data?.playback?.status === 'PLAYING',
+  );
 
   if (isPending) {
     return (
@@ -59,7 +65,7 @@ export function PlaylistView({ channelId }: { channelId: string }) {
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-        <SongPlayer playback={playback} />
+        <SongPlayer playback={playback} position={position} />
 
         <div className="flex flex-col gap-4">
           <Card>

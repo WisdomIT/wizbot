@@ -1,6 +1,7 @@
 {
   "name": "@wizbot/player",
   "version": "1.0.0",
+  "productName": "wizbot player",
   "private": true,
   "description": "wizbot player — 노래 신청 송출용 데스크톱 앱",
   "main": "dist/main.js",

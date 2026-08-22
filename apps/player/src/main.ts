@@ -2,22 +2,25 @@ import {
   app,
   BrowserWindow,
   globalShortcut,
+  ipcMain,
   Menu,
   shell,
   Tray,
   type MenuItemConstructorOptions,
 } from 'electron';
+import { join } from 'node:path';
 
 import { api, fetchState, type PlayerState } from './api';
-import { loadTrayIcon } from './icons';
 import {
-  MAIN_WINDOW,
-  POLL_MS,
+  DESKTOP,
+  MINI,
   PLAYER_URL,
+  POLL_MS,
   shouldReturnToPlayer,
   SOURCE_URL,
   SOURCE_WINDOW_SIZE,
 } from './config';
+import { loadTrayIcon } from './icons';
 
 /**
  * wizbot player (#85).
@@ -30,6 +33,8 @@ import {
  * 유튜브에 로그인해두면(프리미엄) 그 세션도 같은 프로필에 남아 광고 없이 재생된다.
  */
 
+type Mode = 'mini' | 'desktop';
+
 let mainWindow: BrowserWindow | null = null;
 let sourceWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -41,18 +46,26 @@ let quitting = false;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    ...MAIN_WINDOW,
+    width: MINI.width,
+    height: MINI.height,
     title: 'wizbot player',
     backgroundColor: '#0a0a0a',
-    autoHideMenuBar: true,
+    // 자체 타이틀바를 쓴다. macOS 는 신호등 버튼이 그대로 남고,
+    // Windows 는 titleBarOverlay 로 시스템 버튼이 우리 화면 위에 그려진다.
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'win32'
+      ? { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e5e5e5', height: 40 } }
+      : {}),
     webPreferences: {
-      // 사이트를 그대로 띄우므로 렌더러에 특권을 주지 않는다
+      // 사이트를 그대로 띄우므로 렌더러에 특권을 주지 않는다 — 통로는 preload 하나뿐
       nodeIntegration: false,
       contextIsolation: true,
+      preload: join(__dirname, 'preload.js'),
     },
   });
 
   void mainWindow.loadURL(PLAYER_URL);
+  applyMode('mini', false);
 
   // 외부 링크는 기본 브라우저로 (앱 창이 엉뚱한 페이지로 새지 않게)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -83,6 +96,42 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+/**
+ * 창 모드 적용.
+ * - 미니 + 대기열 닫힘: 크기 고정
+ * - 미니 + 대기열 열림: 세로만 조절 (하한 있음)
+ * - 큰 창: 자유롭게 조절 (하한 있음)
+ */
+function applyMode(mode: Mode, queueOpen: boolean) {
+  const win = mainWindow;
+  if (!win) return;
+
+  // 이전 모드의 제한을 먼저 풀어야 새 크기가 적용된다
+  win.setResizable(true);
+  win.setMinimumSize(1, 1);
+  win.setMaximumSize(0, 0);
+
+  if (mode === 'mini') {
+    const height = queueOpen
+      ? Math.max(MINI.minHeightWithQueue, win.getSize()[1])
+      : MINI.height;
+
+    win.setSize(MINI.width, height);
+    win.setMinimumSize(MINI.width, queueOpen ? MINI.minHeightWithQueue : MINI.height);
+    // 가로 상한을 같은 값으로 묶어 세로만 늘어나게 한다
+    win.setMaximumSize(MINI.width, queueOpen ? 0 : MINI.height);
+    win.setResizable(queueOpen);
+    return;
+  }
+
+  win.setMinimumSize(DESKTOP.minWidth, DESKTOP.minHeight);
+  const [width, height] = win.getSize();
+  if (width < DESKTOP.minWidth || height < DESKTOP.minHeight) {
+    win.setSize(DESKTOP.width, DESKTOP.height);
+    win.center();
+  }
 }
 
 /**
@@ -133,7 +182,8 @@ function buildTrayMenu(state: PlayerState | null) {
   const playing = state?.playback.status === 'PLAYING';
 
   const items: MenuItemConstructorOptions[] = [
-    { label: trayTooltip(state), enabled: false },
+    // 현재 곡 줄이 곧 창 열기 버튼이다
+    { label: trayTooltip(state), click: showMainWindow },
     { type: 'separator' },
     {
       label: playing ? '일시정지' : '재생',
@@ -142,7 +192,6 @@ function buildTrayMenu(state: PlayerState | null) {
     { label: '다음 곡', click: () => void api.song.next.mutate().catch(noop) },
     { label: '정지', click: () => void api.song.stop.mutate().catch(noop) },
     { type: 'separator' },
-    { label: '창 열기', click: showMainWindow },
     {
       label: '종료',
       click: () => {
@@ -221,6 +270,10 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', showMainWindow);
+
+  ipcMain.on('app:set-mode', (_event, mode: Mode, queueOpen: boolean) => {
+    applyMode(mode, queueOpen);
+  });
 
   void app.whenReady().then(() => {
     createMainWindow();

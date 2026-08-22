@@ -19,11 +19,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, Heart, PlayCircle, Trash2 } from 'lucide-react';
+import { GripVertical, Heart, Minimize2, PlayCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { formatTime,SongPlayer } from '@/components/song/song-player';
+import { AppTitleBar } from '@/components/song/app-title-bar';
+import { MiniPlayer } from '@/components/song/mini-player';
+import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useAppShell } from '@/src/hooks/use-app-shell';
 import { useSongEvents } from '@/src/hooks/use-song-events';
 import { useTRPC } from '@/src/utils/trpc-react';
 
@@ -98,6 +101,30 @@ export function PlayerView() {
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
 
+  const shell = useAppShell();
+
+  const run = useCallback(
+    (promise: Promise<unknown>, success: string) => {
+      toast.promise(promise, {
+        loading: '처리 중...',
+        success: () => {
+          invalidate();
+          return success;
+        },
+        error: (err) => `${err instanceof Error ? err.message : err}`,
+      });
+    },
+    [invalidate],
+  );
+
+  // 데스크톱·미니가 같은 재생 위치를 보도록 여기서 한 번만 만든다
+  const position = usePlayerPosition(
+    data?.playback.positionSeconds ?? 0,
+    data?.playback.durationSeconds ?? 0,
+    data?.playback.status === 'PLAYING',
+    (seconds) => run(seek.mutateAsync({ positionSeconds: seconds }), '재생 위치를 옮겼습니다.'),
+  );
+
   if (isPending) {
     return (
       <div className="grid gap-4 py-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
@@ -115,48 +142,63 @@ export function PlayerView() {
 
   const { playback, queue, source, historyPublic, autoPlay } = data;
 
-  const run = (promise: Promise<unknown>, success: string) => {
-    toast.promise(promise, {
-      loading: '처리 중...',
-      success: () => {
-        invalidate();
-        return success;
-      },
-      error: (err) => `${err instanceof Error ? err.message : err}`,
-    });
+  const playerControls = {
+    volume: playback.volume,
+    repeatOne: playback.repeatOne,
+    onPlay: () => run(play.mutateAsync(), '재생을 시작했습니다.'),
+    onPause: () => run(pause.mutateAsync(), '일시정지했습니다.'),
+    onNext: () => run(next.mutateAsync(), '다음 곡으로 넘겼습니다.'),
+    onStop: () => run(stop.mutateAsync(), '정지했습니다.'),
+    onSeek: (seconds: number) =>
+      run(seek.mutateAsync({ positionSeconds: seconds }), '재생 위치를 옮겼습니다.'),
+    onVolume: (volume: number) =>
+      run(setVolume.mutateAsync({ volume }), `볼륨을 ${volume} 로 변경했습니다.`),
+    onRepeat: (enabled: boolean) =>
+      run(
+        setRepeat.mutateAsync({ enabled }),
+        enabled ? '한 곡 반복을 켰습니다.' : '한 곡 반복을 껐습니다.',
+      ),
   };
 
+  // 앱을 작게 띄웠을 때 — 컨트롤러만 남고 대기열은 버튼으로 여닫는다
+  if (shell.isApp && shell.mode === 'mini') {
+    return (
+      <MiniPlayer
+        playback={playback}
+        controls={playerControls}
+        queue={queue}
+        position={position}
+        queueOpen={shell.queueOpen}
+        onToggleQueue={() => shell.setQueueOpen(!shell.queueOpen)}
+        onExpand={() => shell.setMode('desktop')}
+      />
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-4 py-4 max-[479px]:gap-2 max-[479px]:py-2">
+    <div className="flex flex-col gap-4 py-4">
+      {shell.isApp && (
+        <AppTitleBar platform={shell.platform} className="-mx-4 -mt-4 border-b">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="미니 플레이어"
+            title="미니 플레이어"
+            onClick={() => shell.setMode('mini')}
+          >
+            <Minimize2 />
+          </Button>
+        </AppTitleBar>
+      )}
+
       <SourceStatus source={source} />
 
       {/* 큰 화면은 좌측 플레이어 · 우측 대기열, 작은 화면은 플레이어가 위 */}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <SongPlayer
           playback={playback}
-          controls={{
-            volume: playback.volume,
-            repeatOne: playback.repeatOne,
-            autoPlay,
-            onPlay: () => run(play.mutateAsync(), '재생을 시작했습니다.'),
-            onPause: () => run(pause.mutateAsync(), '일시정지했습니다.'),
-            onNext: () => run(next.mutateAsync(), '다음 곡으로 넘겼습니다.'),
-            onStop: () => run(stop.mutateAsync(), '정지했습니다.'),
-            onSeek: (seconds) =>
-              run(seek.mutateAsync({ positionSeconds: seconds }), '재생 위치를 옮겼습니다.'),
-            onVolume: (volume) =>
-              run(setVolume.mutateAsync({ volume }), `볼륨을 ${volume} 로 변경했습니다.`),
-            onRepeat: (enabled) =>
-              run(
-                setRepeat.mutateAsync({ enabled }),
-                enabled ? '한 곡 반복을 켰습니다.' : '한 곡 반복을 껐습니다.',
-              ),
-            onAutoPlay: (enabled) =>
-              run(
-                setAutoPlay.mutateAsync({ enabled }),
-                enabled ? '자동 재생을 켰습니다.' : '자동 재생을 껐습니다.',
-              ),
-          }}
+          position={position}
+          controls={playerControls}
           actions={
             <div className="flex items-center gap-1 rounded-full bg-background/80 backdrop-blur">
               {playback.youtubeId && (
@@ -203,9 +245,7 @@ export function PlayerView() {
           }
         />
 
-        {/* 아주 좁은 창(앱 미니 플레이어)에서는 플레이어만 남긴다 */}
         <QueueCard
-          className="max-[479px]:hidden"
           queue={queue}
           addPending={addToQueue.isPending}
           onAdd={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}

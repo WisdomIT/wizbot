@@ -34,12 +34,23 @@ export function shouldReturnToPlayer(url: string): boolean {
   return true;
 }
 
-/** 앱 창 기본 크기 — 작게 띄우는 앱이다. 좁히면 미니 플레이어가 된다 */
-export const MAIN_WINDOW = {
-  width: 460,
-  height: 720,
-  minWidth: 320,
-  minHeight: 260,
+/**
+ * 창 모드별 크기 (#85).
+ * 화면 폭이 아니라 사용자가 버튼으로 모드를 고르므로, 크기는 메인 프로세스가 강제한다.
+ */
+export const MINI = {
+  width: 380,
+  /** 대기열을 닫았을 때 — 이 크기로 고정한다 */
+  height: 176,
+  /** 대기열을 열었을 때 세로 하한 */
+  minHeightWithQueue: 300,
+};
+
+export const DESKTOP = {
+  width: 1100,
+  height: 760,
+  minWidth: 760,
+  minHeight: 520,
 };
 
 /**
