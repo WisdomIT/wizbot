@@ -19,6 +19,7 @@ import { NavLogin } from './nav-login';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavTitleSkeleton } from './nav-title-skeleton';
+import { ViewerPlayerBar } from './song/viewer-player-bar';
 
 const group = {
   bot: '봇',
@@ -120,6 +121,7 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        <ViewerPlayerBar channelId={channel.channelId} />
       </SidebarInset>
     </>
   );

@@ -26,6 +26,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { StreamerPlayerBar } from './song/streamer-player-bar';
 
 const group = {
   bot: '봇',
@@ -139,6 +140,7 @@ export default function AppSidebarStreamer({ children, user, ...props }: AppSide
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        <StreamerPlayerBar />
       </SidebarInset>
     </>
   );

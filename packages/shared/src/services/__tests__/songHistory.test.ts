@@ -1,7 +1,13 @@
 import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getPublicHistory, getPublicPlaylist, listHistory, setHistoryHidden } from '../songHistory';
+import {
+  getPublicHistory,
+  getPublicNowPlaying,
+  getPublicPlaylist,
+  listHistory,
+  setHistoryHidden,
+} from '../songHistory';
 
 const USER_ID = 1;
 const CHANNEL_ID = 'chan-1';
@@ -105,6 +111,35 @@ describe('songHistory', () => {
     const { prisma } = createPrisma();
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     await expect(getPublicPlaylist(prisma, 'nope')).rejects.toThrow('존재하지 않는 채널');
+  });
+
+  it('재생 바는 정지 상태면 아무것도 돌려주지 않는다', async () => {
+    const { prisma } = createPrisma([], {});
+    vi.mocked(prisma.songPlayback.findUnique).mockResolvedValue({
+      status: 'STOPPED',
+      youtubeId: 'aaaaaaaaaaa',
+    } as never);
+
+    await expect(getPublicNowPlaying(prisma, CHANNEL_ID)).resolves.toEqual({ playback: null });
+  });
+
+  it('재생 바는 현재 곡만 돌려준다 (대기열·명령어는 싣지 않는다)', async () => {
+    const { prisma } = createPrisma([], {});
+    vi.mocked(prisma.songPlayback.findUnique).mockResolvedValue({
+      status: 'PLAYING',
+      youtubeId: 'aaaaaaaaaaa',
+      title: '곡',
+      videoUploader: 'ch',
+      requester: '위즈',
+      durationSeconds: 200,
+      positionSeconds: 12,
+    } as never);
+
+    const result = await getPublicNowPlaying(prisma, CHANNEL_ID);
+
+    expect(result.playback).toMatchObject({ youtubeId: 'aaaaaaaaaaa', positionSeconds: 12 });
+    expect(prisma.song.findMany).not.toHaveBeenCalled();
+    expect(prisma.chatbotFunctionCommand.findMany).not.toHaveBeenCalled();
   });
 
   it('플레이리스트는 비활성 명령어를 빼고 조회한다', async () => {
