@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const me = await trpc.user.me.query().catch(() => null);
   if (!me) {
-    redirect('/login?error=' + encodeURIComponent('로그인 후 이용해주세요.'));
+    // 앱은 켜자마자 여기로 온다 — 첫 로그인이 오류처럼 보이지 않도록 안내 문구를 붙이지 않는다
+    redirect('/login');
   }
 
   return (

@@ -7,11 +7,15 @@ import { signJwt, verifyJwt } from './lib/jwt';
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 const loginError = '로그인 후 이용해주세요.';
 
-/** 로그인 페이지로 리다이렉트 — 요청 URL 기준 상대 경로 (env/네트워크 호출 불필요, #24) */
+/**
+ * 로그인 페이지로 리다이렉트 — 요청 URL 기준 상대 경로 (env/네트워크 호출 불필요, #24).
+ * 앱(#85)은 켜자마자 /app 을 여는 게 정상 흐름이라, 처음 로그인할 때 오류처럼 보이지 않게
+ * 안내 문구를 붙이지 않는다.
+ */
 function redirectToLogin(request: NextRequest) {
-  return NextResponse.redirect(
-    new URL(`/login?error=${encodeURIComponent(loginError)}`, request.url),
-  );
+  const fromApp = request.nextUrl.pathname.startsWith('/app');
+  const target = fromApp ? '/login' : `/login?error=${encodeURIComponent(loginError)}`;
+  return NextResponse.redirect(new URL(target, request.url));
 }
 
 export async function middleware(request: NextRequest) {

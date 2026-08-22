@@ -62,40 +62,46 @@ export function SongPlayer({
   actions?: ReactNode;
 }) {
   const playing = playback.status === 'PLAYING';
-  const position = useInterpolatedPosition(
+  const serverPosition = useInterpolatedPosition(
     playback.positionSeconds,
     playback.durationSeconds,
     playing,
   );
+  const { position, onScrub, onCommit } = useScrubbable(serverPosition, controls?.onSeek);
 
   return (
     <Card className="overflow-hidden">
-      <CardContent className="flex flex-col gap-4">
-        <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
-          {playback.youtubeId ? (
-            /* 유튜브 CDN 썸네일 — 다른 원격 이미지와 같은 방식 */
-            <img
-              src={thumbnailFor(playback.youtubeId)}
-              alt=""
-              className="size-full object-cover"
-            />
-          ) : (
-            <div className="flex size-full items-center justify-center text-muted-foreground">
-              <Music className="size-10" />
-            </div>
-          )}
-          {actions && <div className="absolute top-2 right-2">{actions}</div>}
-        </div>
+      {/* 좁으면(앱의 미니 플레이어) 썸네일이 작아지며 옆으로 눕는다 */}
+      <CardContent className="flex flex-col gap-4 max-[479px]:gap-2">
+        <div className="flex flex-col gap-4 max-[479px]:flex-row max-[479px]:items-center max-[479px]:gap-3">
+          <div className="aspect-video w-full shrink-0 overflow-hidden rounded-lg bg-muted max-[479px]:size-12 max-[479px]:aspect-square">
+            {playback.youtubeId ? (
+              /* 유튜브 CDN 썸네일 — 다른 원격 이미지와 같은 방식 */
+              <img
+                src={thumbnailFor(playback.youtubeId)}
+                alt=""
+                className="size-full object-cover"
+              />
+            ) : (
+              <div className="flex size-full items-center justify-center text-muted-foreground">
+                <Music className="size-10 max-[479px]:size-5" />
+              </div>
+            )}
+          </div>
 
-        <div className="flex min-w-0 flex-col">
-          <span className="flex items-center gap-2 truncate font-bold">
-            {playback.title ?? '재생 중인 곡이 없습니다.'}
-            {playback.status === 'PAUSED' && <Badge variant="secondary">일시정지</Badge>}
-          </span>
-          <span className="truncate text-sm text-muted-foreground">
-            {playback.videoUploader}
-            {playback.requester ? ` · 신청: ${playback.requester}` : ''}
-          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-center gap-2 truncate font-bold">
+                {playback.title ?? '재생 중인 곡이 없습니다.'}
+                {playback.status === 'PAUSED' && <Badge variant="secondary">일시정지</Badge>}
+              </span>
+              <span className="truncate text-sm text-muted-foreground">
+                {playback.videoUploader}
+                {playback.requester ? ` · 신청: ${playback.requester}` : ''}
+              </span>
+            </div>
+            {actions && <div className="flex shrink-0 items-center">{actions}</div>}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -109,7 +115,9 @@ export function SongPlayer({
             max={Math.max(1, playback.durationSeconds)}
             value={Math.min(position, playback.durationSeconds)}
             disabled={!controls || !playback.title}
-            onChange={(event) => controls?.onSeek(Number(event.target.value))}
+            onChange={(event) => onScrub(Number(event.target.value))}
+            onPointerUp={onCommit}
+            onKeyUp={onCommit}
             className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary disabled:cursor-default"
           />
           <span className="w-10 text-xs tabular-nums text-muted-foreground">
@@ -119,10 +127,10 @@ export function SongPlayer({
 
         {controls ? (
           <>
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 max-[479px]:gap-1">
               <Button
                 size="icon"
-                className="size-12 rounded-full"
+                className="size-12 rounded-full max-[479px]:size-10"
                 aria-label={playing ? '일시정지' : '재생'}
                 onClick={playing ? controls.onPause : controls.onPlay}
               >
@@ -146,7 +154,7 @@ export function SongPlayer({
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-[479px]:hidden">
               <Volume2 className="size-4 text-muted-foreground" />
               <input
                 type="range"
@@ -164,7 +172,7 @@ export function SongPlayer({
               </span>
             </div>
 
-            <div className="flex items-center justify-between gap-2 border-t pt-3">
+            <div className="flex items-center justify-between gap-2 border-t pt-3 max-[479px]:hidden">
               <Label htmlFor="player-autoplay" className="text-sm font-normal">
                 대기열이 비면 대표 즐겨찾기에서 이어 재생
               </Label>
@@ -183,6 +191,45 @@ export function SongPlayer({
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * 손잡이를 잡고 있는 동안은 사용자 입력이 우선이다.
+ *
+ * 서버 위치를 그대로 그리면, 놓은 뒤에도 송출 소스가 새 위치를 보고할 때까지(최대 5초)
+ * 손잡이가 원래 자리로 튕겨 돌아간다. 놓은 값을 잠시 붙들고 있다가
+ * 서버가 따라오면 그때 넘긴다.
+ */
+const SEEK_SETTLE_MS = 6_000;
+const SEEK_MATCH_SECONDS = 3;
+
+function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => void) {
+  const [pending, setPending] = useState<{ value: number; at: number } | null>(null);
+
+  // 서버가 내가 옮긴 위치를 따라잡았거나, 너무 오래 기다렸으면 서버 값으로 돌아간다
+  useEffect(() => {
+    if (!pending) return;
+    if (Math.abs(serverPosition - pending.value) <= SEEK_MATCH_SECONDS) setPending(null);
+  }, [serverPosition, pending]);
+
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setTimeout(() => setPending(null), SEEK_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [pending]);
+
+  const [dragging, setDragging] = useState<number | null>(null);
+
+  return {
+    position: dragging ?? pending?.value ?? serverPosition,
+    onScrub: (value: number) => setDragging(value),
+    onCommit: () => {
+      if (dragging === null) return;
+      setPending({ value: dragging, at: Date.now() });
+      setDragging(null);
+      onSeek?.(dragging);
+    },
+  };
 }
 
 /** 서버는 5초마다 위치를 받으므로 그 사이는 클라이언트에서 보간한다 */

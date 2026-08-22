@@ -127,7 +127,7 @@ export function PlayerView() {
   };
 
   return (
-    <div className="flex flex-col gap-4 py-4">
+    <div className="flex flex-col gap-4 py-4 max-[479px]:gap-2 max-[479px]:py-2">
       <SourceStatus source={source} />
 
       {/* 큰 화면은 좌측 플레이어 · 우측 대기열, 작은 화면은 플레이어가 위 */}
@@ -203,7 +203,9 @@ export function PlayerView() {
           }
         />
 
+        {/* 아주 좁은 창(앱 미니 플레이어)에서는 플레이어만 남긴다 */}
         <QueueCard
+          className="max-[479px]:hidden"
           queue={queue}
           addPending={addToQueue.isPending}
           onAdd={(query) => run(addToQueue.mutateAsync({ query }), '대기열에 추가했습니다.')}
@@ -283,12 +285,14 @@ interface QueueItem {
 function QueueCard({
   queue,
   addPending,
+  className,
   onAdd,
   onReorder,
   onPlayNow,
   onRemove,
 }: {
   queue: QueueItem[];
+  className?: string;
   addPending: boolean;
   onAdd: (query: string) => void;
   onReorder: (orderedIds: number[]) => void;
@@ -319,7 +323,7 @@ function QueueCard({
   };
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <CardTitle>대기열 {items.length > 0 && `(${items.length})`}</CardTitle>
         <CardDescription>
