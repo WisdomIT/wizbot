@@ -72,6 +72,10 @@ export const songRouter = t.router({
 
   play: streamerProcedure.mutation(({ ctx }) => playbackService.play(ctx.prisma, ctx.user.id)),
   pause: streamerProcedure.mutation(({ ctx }) => playbackService.pause(ctx.prisma, ctx.user.id)),
+  /** 단축키용 — 서버가 지금 상태를 보고 뒤집는다 (#85) */
+  togglePlay: streamerProcedure.mutation(({ ctx }) =>
+    playbackService.togglePlay(ctx.prisma, ctx.user.id),
+  ),
   stop: streamerProcedure.mutation(({ ctx }) => playbackService.stop(ctx.prisma, ctx.user.id)),
   next: streamerProcedure.mutation(({ ctx }) =>
     playbackService.skipToNext(ctx.prisma, ctx.user.id),
