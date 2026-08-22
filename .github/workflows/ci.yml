@@ -15,6 +15,9 @@ env:
   # 빌드/타입체크에만 쓰이는 더미 값 (실제 접속 없음)
   DATABASE_URL: mysql://ci:ci@localhost:3306/ci
   JWT_SECRET: ci-only-secret
+  # 앱(@wizbot/player) 때문에 install 마다 100MB 넘는 Electron 바이너리를 받게 된다.
+  # 타입체크·번들에는 필요 없다 — 실제 패키징은 player-release.yml 에서만 한다.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
   check:

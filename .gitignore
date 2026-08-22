@@ -7,3 +7,6 @@ node_modules
 .DS_Store
 *.pem
 dist
+
+# electron-builder 출력
+release

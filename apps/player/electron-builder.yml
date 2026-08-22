@@ -1,0 +1,22 @@
+appId: co.kr.wisdomit.wizbot.player
+productName: 위즈봇 플레이어
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+# 코드 서명 인증서가 없다 — 설치 시 SmartScreen/Gatekeeper 경고가 뜬다 (README 참고)
+win:
+  target: nsis
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: dmg
+  category: public.app-category.music
+  identity: null
+publish:
+  provider: github
+  owner: WisdomIT
+  repo: wizbot
