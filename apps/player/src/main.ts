@@ -217,20 +217,6 @@ function buildTrayMenu(state: PlayerState | null) {
     },
     { label: '다음 곡', accelerator: keys?.next, click: () => run(api.song.next.mutate()) },
     { label: '정지', accelerator: keys?.stop, click: () => run(api.song.stop.mutate()) },
-    { type: 'separator' },
-    {
-      label: '컴퓨터 시작 시 자동 실행',
-      type: 'checkbox',
-      checked: app.getLoginItemSettings().openAtLogin,
-      click: (item) => {
-        // 자동 실행으로 켜질 때는 창을 띄우지 않는다 — 부팅할 때마다 창이 뜨면 성가시다
-        app.setLoginItemSettings({
-          openAtLogin: item.checked,
-          openAsHidden: true,
-          args: ['--hidden'],
-        });
-      },
-    },
   ];
 
   // 숨은 재생 창을 들여다보는 메뉴는 개발 중에만
@@ -348,6 +334,13 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.on('app:set-mode', (_event, mode: Mode, queueOpen: boolean) => {
     applyMode(mode, queueOpen);
+  });
+
+  ipcMain.handle('app:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+
+  ipcMain.on('app:set-auto-launch', (_event, enabled: boolean) => {
+    // 자동 실행으로 켜질 때는 창을 띄우지 않는다 — 부팅할 때마다 창이 뜨면 성가시다
+    app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true, args: ['--hidden'] });
   });
 
   ipcMain.on('app:window', (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {

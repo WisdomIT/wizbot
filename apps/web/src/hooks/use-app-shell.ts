@@ -11,6 +11,8 @@ export type WindowMode = 'mini' | 'desktop';
 interface WizbotApp {
   platform: string;
   setMode: (mode: WindowMode, queueOpen: boolean) => void;
+  getAutoLaunch: () => Promise<boolean>;
+  setAutoLaunch: (enabled: boolean) => void;
   minimize: () => void;
   toggleMaximize: () => void;
   close: () => void;
@@ -30,6 +32,8 @@ export function useAppShell() {
   const [bridge, setBridge] = useState<WizbotApp | null>(null);
   const [mode, setModeState] = useState<WindowMode>('desktop');
   const [queueOpen, setQueueOpenState] = useState(false);
+  /** 컴퓨터 시작 시 자동 실행 — 계정이 아니라 이 기기의 설정이라 앱에서 직접 읽는다 */
+  const [autoLaunch, setAutoLaunchState] = useState(false);
 
   useEffect(() => {
     const app = window.wizbotApp;
@@ -44,6 +48,8 @@ export function useAppShell() {
     setModeState(nextMode);
     setQueueOpenState(nextQueue);
     app.setMode(nextMode, nextQueue);
+
+    void app.getAutoLaunch().then(setAutoLaunchState);
   }, []);
 
   const setMode = useCallback(
@@ -64,9 +70,19 @@ export function useAppShell() {
     [bridge],
   );
 
+  const setAutoLaunch = useCallback(
+    (next: boolean) => {
+      setAutoLaunchState(next);
+      bridge?.setAutoLaunch(next);
+    },
+    [bridge],
+  );
+
   return {
     /** 앱 안에서 열렸는가 — 웹 브라우저면 false */
     isApp: bridge !== null,
+    autoLaunch,
+    setAutoLaunch,
     /** 창 제어 — Windows 에서 버튼을 직접 그릴 때 쓴다 */
     windowControls: bridge
       ? {
