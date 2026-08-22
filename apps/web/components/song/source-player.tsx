@@ -67,7 +67,14 @@ function loadYouTubeApi(): Promise<any> {
   });
 }
 
-export function ObsPlayer({ token }: { token: string }) {
+export function SourcePlayer({
+  token,
+  source = 'OBS',
+}: {
+  token: string;
+  /** 이 창이 어떤 송출 소스인지 — 설정과 일치할 때만 재생한다 */
+  source?: 'OBS' | 'ELECTRON';
+}) {
   /** 설정이 잘못됐을 때만 보여주는 안내 — 정상 재생 중에는 자막만 나온다 */
   const [notice, setNotice] = useState<string | null>('연결 중...');
   const [now, setNow] = useState<NowPlaying | null>(null);
@@ -101,11 +108,13 @@ export function ObsPlayer({ token }: { token: string }) {
       const player = playerRef.current;
       if (!player) return;
 
-      if (state.sourceType !== 'OBS') {
+      if (state.sourceType !== source) {
         player.stopVideo?.();
         setNow(null);
         setNotice(
-          `송출 소스가 ${state.sourceType === 'NONE' ? '없음' : '앱'} 으로 설정되어 있습니다.`,
+          `송출 소스가 ${
+            state.sourceType === 'NONE' ? '없음' : state.sourceType === 'OBS' ? 'OBS' : '앱'
+          } 으로 설정되어 있습니다.`,
         );
         return;
       }
@@ -141,7 +150,7 @@ export function ObsPlayer({ token }: { token: string }) {
         status: playback.status as NowPlaying['status'],
       });
     },
-    [],
+    [source],
   );
 
   /** 서버에서 상태를 읽어와 맞춘다 — SSE 로 변화를 통보받았을 때 쓴다 */
@@ -201,7 +210,7 @@ export function ObsPlayer({ token }: { token: string }) {
   useEffect(() => {
     const beat = async () => {
       const result = await trpc.song.heartbeat
-        .mutate({ sessionId, source: 'OBS' })
+        .mutate({ sessionId, source })
         .catch(() => null);
       if (!result) return;
 
@@ -211,7 +220,7 @@ export function ObsPlayer({ token }: { token: string }) {
     void beat();
     const timer = setInterval(() => void beat(), HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [trpc, sessionId, applyState]);
+  }, [trpc, sessionId, source, applyState]);
 
   // 진행률 보고
   useEffect(() => {

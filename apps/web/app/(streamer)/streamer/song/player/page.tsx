@@ -1,4 +1,4 @@
-import { PlayerView } from './_components/player-view';
+import { PlayerView } from '@/components/song/player-view';
 
 export default function Page() {
   return (
