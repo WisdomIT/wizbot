@@ -3,7 +3,7 @@ import { ChzzkApiError, ChzzkTokenRefreshError } from 'chzzk-open-sdk';
 
 import { getChzzkAppClient } from '../services';
 import { ChabotReturn, ChatbotFunctionHandler } from '.';
-import { formatDuration, splitContent } from './lib';
+import { CHAT_MAX_LENGTH, fitChatMessage, formatDuration, splitContent } from './lib';
 
 const chzzkUnofficialClient = new ChzzkClient();
 
@@ -32,7 +32,7 @@ export const functionChzzk = {
   getChzzkTitle: async (ctx, data) =>
     withChzzkMessages('채널 설정을 가져오는 데 실패했습니다.', async () => {
       const { defaultLiveTitle } = await data.chzzk.lives.getSetting();
-      return { ok: true, message: `제목: ${defaultLiveTitle}` };
+      return { ok: true, message: fitChatMessage('제목: ', defaultLiveTitle) };
     }),
 
   getChzzkCategory: async (ctx, data) =>
@@ -41,7 +41,7 @@ export const functionChzzk = {
       if (!category) {
         return { ok: true, message: '설정된 카테고리가 없습니다.' };
       }
-      return { ok: true, message: `카테고리: ${category.categoryValue}` };
+      return { ok: true, message: fitChatMessage('카테고리: ', category.categoryValue ?? '') };
     }),
 
   updateChzzkTitle: async (ctx, data) =>
@@ -80,6 +80,13 @@ export const functionChzzk = {
 
       if (notice === '') {
         return { ok: true, message: '공지사항 내용을 입력해주세요.' };
+      }
+      if (notice.length > CHAT_MAX_LENGTH) {
+        // 공지도 100자 제한이다. 임의로 자르면 스트리머 의도와 달라지므로 알려준다
+        return {
+          ok: true,
+          message: `공지사항은 ${CHAT_MAX_LENGTH}자까지만 등록할 수 있습니다. (현재 ${notice.length}자)`,
+        };
       }
 
       await data.chzzk.chats.notice({ message: notice });

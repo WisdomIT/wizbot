@@ -40,6 +40,7 @@ export function InputsEcho({
       </Label>
       <Input
         id="echo"
+        maxLength={100}
         value={echo}
         onChange={(event) => {
           setEcho(event.target.value);

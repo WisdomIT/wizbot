@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ChzzkError } from 'chzzk-open-sdk';
 
 import chatbot from '../chatbot';
+import { clampChatMessage } from '../chatbot/lib';
 import { getChzzkClientForUser, repeatService } from '../services';
 import { internalProcedure, publicProcedure, t } from '../trpc';
 
@@ -49,7 +50,11 @@ export const chatbotRouter = t.router({
       // 응답 전송도 API 가 수행한다 — 워커는 유저 토큰을 만지지 않는다 (#30 토큰 소유 원칙)
       if (result.ok) {
         try {
-          await getChzzkClientForUser(ctx.prisma, userId).chats.send(result.message);
+          // 어떤 경로로 만들어진 메시지든 여기서 한 번 더 자른다 —
+          // 한도를 넘기면 전송이 실패해 시청자에게 아무 응답도 가지 않는다 (#115)
+          await getChzzkClientForUser(ctx.prisma, userId).chats.send(
+            clampChatMessage(result.message),
+          );
         } catch (error) {
           if (error instanceof ChzzkError) {
             return { ok: false, message: `채팅 전송 실패: ${error.message}` };
@@ -69,7 +74,9 @@ export const chatbotRouter = t.router({
     .input(z.object({ userId: z.number(), message: z.string() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        await getChzzkClientForUser(ctx.prisma, input.userId).chats.send(input.message);
+        await getChzzkClientForUser(ctx.prisma, input.userId).chats.send(
+          clampChatMessage(input.message),
+        );
         return { ok: true as const };
       } catch (error) {
         if (error instanceof ChzzkError) {

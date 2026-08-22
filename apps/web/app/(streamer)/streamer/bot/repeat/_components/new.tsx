@@ -68,6 +68,7 @@ export default function NewRepeat({ interval: intervalInitial }: { interval: num
               </Label>
               <Input
                 id="response"
+                maxLength={100}
                 value={data.response}
                 onChange={(event) => {
                   setData((prev) => ({

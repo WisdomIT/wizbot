@@ -76,6 +76,7 @@ export default function UpdateCommand({
                 </Label>
                 <Input
                   id="response"
+                maxLength={100}
                   value={data.response}
                   onChange={(event) => {
                     setData((prev) => {
