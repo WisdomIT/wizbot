@@ -10,7 +10,14 @@ import {
 
 import { api, fetchState, type PlayerState } from './api';
 import { loadTrayIcon } from './icons';
-import { isAppPath, MAIN_WINDOW, POLL_MS, PLAYER_URL, SOURCE_URL, SOURCE_WINDOW_SIZE } from './config';
+import {
+  MAIN_WINDOW,
+  POLL_MS,
+  PLAYER_URL,
+  shouldReturnToPlayer,
+  SOURCE_URL,
+  SOURCE_WINDOW_SIZE,
+} from './config';
 
 /**
  * wizbot player (#85).
@@ -54,8 +61,15 @@ function createMainWindow() {
   });
 
   // 로그인을 마치면 웹은 /streamer 로 보낸다 — 앱에서는 플레이어 화면으로 되돌린다
-  mainWindow.webContents.on('did-navigate', (_event, url) => {
-    if (!isAppPath(url)) void mainWindow?.loadURL(PLAYER_URL);
+  const keepInApp = (url: string) => {
+    if (shouldReturnToPlayer(url)) void mainWindow?.loadURL(PLAYER_URL);
+  };
+
+  mainWindow.webContents.on('did-navigate', (_event, url) => keepInApp(url));
+  // Next 의 클라이언트 라우팅(router.replace)은 실제 이동이 아니라 did-navigate 가 뜨지 않는다.
+  // /login/redirect → /streamer 가 이 경로라 in-page 도 같이 본다.
+  mainWindow.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) keepInApp(url);
   });
 
   mainWindow.on('close', (event) => {
