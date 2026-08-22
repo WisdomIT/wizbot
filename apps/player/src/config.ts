@@ -11,14 +11,27 @@ export const PLAYER_URL = `${SITE_URL}/app/player`;
 export const SOURCE_URL = `${SITE_URL}/app/source`;
 
 /**
- * 앱 창이 머물러도 되는 경로.
- * 로그인 후 웹은 /streamer 로 보내므로, 그대로 두면 앱에 콘솔이 뜬다.
- * 그 밖으로 나가면 플레이어 화면으로 되돌린다.
+ * 앱 창을 플레이어 화면으로 되돌려야 하는지.
+ *
+ * 웹은 로그인을 마치면 콘솔(/streamer)로 보낸다. 앱에서는 그게 아니라 플레이어가 떠야 한다.
+ * 콘솔이 잠깐 보였다 사라지지 않도록 `/login/redirect` 단계에서 미리 가로챈다.
  */
-export function isAppPath(url: string) {
-  if (!url.startsWith(SITE_URL)) return true; // 외부 도메인(치지직 로그인 등)은 건드리지 않는다
-  const path = url.slice(SITE_URL.length);
-  return path.startsWith('/app/') || path.startsWith('/login');
+export function shouldReturnToPlayer(url: string): boolean {
+  // 외부 도메인(치지직 로그인 등)은 건드리지 않는다
+  if (!url.startsWith(SITE_URL)) return false;
+
+  const [path, query = ''] = url.slice(SITE_URL.length).split('?');
+
+  if (path.startsWith('/app/')) return false;
+
+  // 로그인 흐름은 그대로 두되, 콘솔로 보내려는 순간 앱 화면으로 돌린다
+  if (path === '/login/redirect') {
+    const to = new URLSearchParams(query).get('to') ?? '';
+    return !to.startsWith('/app/');
+  }
+  if (path.startsWith('/login')) return false;
+
+  return true;
 }
 
 /** 앱 창 기본 크기 — 작게 띄우는 앱이다. 좁히면 미니 플레이어가 된다 */
