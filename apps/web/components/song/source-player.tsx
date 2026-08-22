@@ -75,8 +75,6 @@ export function SourcePlayer({
   /** 이 창이 어떤 송출 소스인지 — 설정과 일치할 때만 재생한다 */
   source?: 'OBS' | 'ELECTRON';
 }) {
-  /** 설정이 잘못됐을 때만 보여주는 안내 — 정상 재생 중에는 자막만 나온다 */
-  const [notice, setNotice] = useState<string | null>('연결 중...');
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [overlay, setOverlay] = useState<OverlaySetting>({ mode: 'ALWAYS', durationSeconds: 10 });
 
@@ -94,47 +92,43 @@ export function SourcePlayer({
     [token],
   );
 
-  /** 서버가 준 상태에 플레이어와 자막을 맞춘다 */
+  /**
+   * 서버가 준 상태에 자막과 재생을 맞춘다.
+   *
+   * **자막과 재생은 별개다.**
+   * - 자막: 어느 소스가 소리를 내든 항상 보여준다. 이 페이지는 시청자에게 곡을 알리는 역할이다
+   * - 소리: 이 창이 지정된 송출 소스이고 활성 세션일 때만
+   */
   const applyState = useCallback(
     (state: SourceState | null) => {
+      // 이 화면은 방송에 그대로 나간다 — 안내·경고를 띄우지 않고 조용히 비운다
       if (!state) {
-        setNotice('토큰이 유효하지 않습니다.');
         setNow(null);
         return;
       }
 
       setOverlay(state.overlay);
 
+      const playback = state.playback;
+      const hasSong = Boolean(playback.youtubeId) && playback.status !== 'STOPPED';
+
+      setNow(
+        hasSong
+          ? { title: playback.title ?? '', status: playback.status as NowPlaying['status'] }
+          : null,
+      );
+
       const player = playerRef.current;
       if (!player) return;
 
-      if (state.sourceType !== source) {
-        player.stopVideo?.();
-        setNow(null);
-        setNotice(
-          `송출 소스가 ${
-            state.sourceType === 'NONE' ? '없음' : state.sourceType === 'OBS' ? 'OBS' : '앱'
-          } 으로 설정되어 있습니다.`,
-        );
-        return;
-      }
-      if (!isActiveRef.current) {
-        player.stopVideo?.();
-        setNow(null);
-        setNotice('다른 창이 재생 중입니다. (이 창은 대기)');
-        return;
-      }
-
-      const playback = state.playback;
-      player.setVolume?.(playback.volume);
-
-      if (!playback.youtubeId || playback.status === 'STOPPED') {
+      const shouldPlay = state.sourceType === source && isActiveRef.current;
+      if (!shouldPlay || !hasSong) {
         player.stopVideo?.();
         currentVideoRef.current = null;
-        setNow(null);
-        setNotice(null);
         return;
       }
+
+      player.setVolume?.(playback.volume);
 
       if (currentVideoRef.current !== playback.youtubeId) {
         currentVideoRef.current = playback.youtubeId;
@@ -143,12 +137,6 @@ export function SourcePlayer({
 
       if (playback.status === 'PLAYING') player.playVideo?.();
       else player.pauseVideo?.();
-
-      setNotice(null);
-      setNow({
-        title: playback.title ?? '',
-        status: playback.status as NowPlaying['status'],
-      });
     },
     [source],
   );
@@ -276,23 +264,7 @@ export function SourcePlayer({
         }}
       />
 
-      {notice ? (
-        <span
-          style={{
-            position: 'absolute',
-            bottom: 4,
-            left: 4,
-            color: '#fff',
-            fontSize: 12,
-            opacity: 0.6,
-            textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-          }}
-        >
-          {notice}
-        </span>
-      ) : (
-        <SongOverlay now={now} setting={overlay} />
-      )}
+      <SongOverlay now={now} setting={overlay} />
     </div>
   );
 }

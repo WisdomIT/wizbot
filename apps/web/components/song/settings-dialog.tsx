@@ -33,7 +33,15 @@ export interface SongSettings {
   overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   autoPlay: boolean;
   historyPublic: boolean;
+  keyboardShortcut: boolean;
 }
+
+/** 데스크톱 앱이 등록하는 전역 단축키 (#85) */
+const SHORTCUTS = [
+  { keys: '⌘/Ctrl + Shift + P', label: '재생 / 일시정지' },
+  { keys: '⌘/Ctrl + Shift + S', label: '정지' },
+  { keys: '⌘/Ctrl + Shift + N', label: '다음 곡' },
+];
 
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
@@ -43,6 +51,7 @@ export function SettingsDialog({
   onChangeOverlay,
   onChangeAutoPlay,
   onChangeHistoryPublic,
+  onChangeKeyboardShortcut,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -50,6 +59,7 @@ export function SettingsDialog({
   onChangeOverlay: (overlay: SongSettings['overlay']) => void;
   onChangeAutoPlay: (enabled: boolean) => void;
   onChangeHistoryPublic: (isPublic: boolean) => void;
+  onChangeKeyboardShortcut: (enabled: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -106,6 +116,39 @@ export function SettingsDialog({
                 onCheckedChange={onChangeHistoryPublic}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col">
+                <Label htmlFor="setting-shortcut">전역 단축키</Label>
+                <span className="text-xs text-muted-foreground">
+                  위즈봇 플레이어 앱을 설치했다면, 창을 열지 않고도 다른 프로그램을 쓰는 중에
+                  조작할 수 있습니다.
+                </span>
+              </div>
+              <Switch
+                id="setting-shortcut"
+                checked={settings.keyboardShortcut}
+                onCheckedChange={onChangeKeyboardShortcut}
+              />
+            </div>
+
+            {settings.keyboardShortcut && (
+              <ul className="flex flex-col gap-1 rounded-md bg-muted/50 p-3">
+                {SHORTCUTS.map((shortcut) => (
+                  <li
+                    key={shortcut.keys}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="text-muted-foreground">{shortcut.label}</span>
+                    <code className="font-mono">{shortcut.keys}</code>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <Separator />

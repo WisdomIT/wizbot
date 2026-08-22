@@ -100,6 +100,7 @@ export function PlayerView() {
   const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
+  const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
 
   const shell = useAppShell();
 
@@ -253,6 +254,7 @@ export function PlayerView() {
                   overlay: source.overlay,
                   autoPlay,
                   historyPublic,
+                  keyboardShortcut: data.keyboardShortcut,
                 }}
                 onChangeSourceType={(sourceType) =>
                   run(setSourceType.mutateAsync({ sourceType }), '송출 소스를 변경했습니다.')
@@ -276,6 +278,14 @@ export function PlayerView() {
                   run(
                     setHistoryPublic.mutateAsync({ isPublic }),
                     isPublic ? '재생 기록을 공개합니다.' : '재생 기록을 비공개로 바꿨습니다.',
+                  )
+                }
+                onChangeKeyboardShortcut={(enabled) =>
+                  run(
+                    updateUserSetting.mutateAsync({
+                      setting: { songKeyboardShortcut: enabled },
+                    }),
+                    enabled ? '전역 단축키를 켰습니다.' : '전역 단축키를 껐습니다.',
                   )
                 }
               />
