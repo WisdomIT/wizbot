@@ -157,12 +157,34 @@ export function extractPlaylistId(input: string): string | null {
  * 곡마다 재생 가능 여부를 확인하면 수백 번 요청해야 하므로 여기서는 검사하지 않는다
  * (재생 실패는 송출 소스가 FAILED 로 보고해 자동으로 넘어간다).
  */
-export async function getPlaylistVideos(
-  input: string,
-): Promise<{ title: string; videos: YoutubeVideo[]; truncated: boolean }> {
+export interface PlaylistResult {
+  title: string;
+  videos: YoutubeVideo[];
+  truncated: boolean;
+}
+
+/**
+ * 재생목록 조회 결과 캐시.
+ * 미리보기로 한 번, 실제로 담을 때 한 번 — 같은 목록을 연달아 두 번 읽게 되는데
+ * 큰 목록은 커서를 여러 번 따라가야 해서 느리다. 짧게 재사용한다.
+ */
+const playlistCache = new Map<string, { at: number; result: PlaylistResult }>();
+const PLAYLIST_CACHE_MS = 5 * 60 * 1000;
+
+function cachePlaylist(playlistId: string, result: PlaylistResult): PlaylistResult {
+  playlistCache.set(playlistId, { at: Date.now(), result });
+  return result;
+}
+
+export async function getPlaylistVideos(input: string): Promise<PlaylistResult> {
   const playlistId = extractPlaylistId(input);
   if (!playlistId) {
     throw new ServiceError('INVALID_INPUT', '유튜브 재생목록 주소가 아닙니다.');
+  }
+
+  const cached = playlistCache.get(playlistId);
+  if (cached && Date.now() - cached.at < PLAYLIST_CACHE_MS) {
+    return cached.result;
   }
 
   let page;
@@ -189,7 +211,7 @@ export async function getPlaylistVideos(
       videos.push(video);
 
       if (videos.length >= PLAYLIST_MAX_ITEMS) {
-        return { title, videos, truncated: true };
+        return cachePlaylist(playlistId, { title, videos, truncated: true });
       }
     }
 
@@ -207,7 +229,7 @@ export async function getPlaylistVideos(
     throw new ServiceError('NOT_FOUND', '재생목록에 가져올 수 있는 영상이 없습니다.');
   }
 
-  return { title, videos, truncated };
+  return cachePlaylist(playlistId, { title, videos, truncated });
 }
 
 /** 영상 ID 로 직접 조회 */

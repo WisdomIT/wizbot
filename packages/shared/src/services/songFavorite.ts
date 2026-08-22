@@ -149,6 +149,22 @@ export async function addFavoriteItem(
   });
 }
 
+/** 담기 전에 무엇이 담기는지 확인시키기 위한 조회 — 저장하지 않는다 (#97) */
+export async function previewItem(input: string) {
+  return resolveSong(input);
+}
+
+/** 재생목록 미리보기 — 전체 목록은 무거우므로 앞부분만 돌려준다 */
+export async function previewPlaylist(url: string, sample = 5) {
+  const { title, videos, truncated } = await getPlaylistVideos(url);
+  return {
+    title,
+    total: videos.length,
+    truncated,
+    videos: videos.slice(0, sample),
+  };
+}
+
 /**
  * 유튜브 재생목록 통째로 가져오기.
  * 곡마다 재생 가능 여부는 확인하지 않는다 — 수백 번 요청해야 하고,

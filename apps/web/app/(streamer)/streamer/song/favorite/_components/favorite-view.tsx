@@ -19,13 +19,36 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GripVertical, ListPlus, Pencil, Plus, Shuffle, Star, Trash2 } from 'lucide-react';
+import {
+  GripVertical,
+  ListPlus,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Shuffle,
+  Star,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,6 +62,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useTRPC } from '@/src/utils/trpc-react';
+
+import { AddItemDialog } from './add-item-dialog';
 
 /**
  * 즐겨찾기 = 미리 담아두는 재생목록 (#5 3단계).
@@ -156,9 +181,11 @@ function FavoriteListCard({
   onSetDefault: (id: number) => void;
 }) {
   const [name, setName] = useState('');
+  const [renaming, setRenaming] = useState<FavoriteSummary | null>(null);
+  const [removing, setRemoving] = useState<FavoriteSummary | null>(null);
 
   return (
-    <Card className="md:w-72 md:shrink-0">
+    <Card className="md:w-80 md:shrink-0">
       <CardHeader>
         <CardTitle>즐겨찾기</CardTitle>
         <CardDescription>⭐ 표시가 대표입니다.</CardDescription>
@@ -197,63 +224,158 @@ function FavoriteListCard({
                     favorite.id === selectedId ? 'bg-muted' : ''
                   }`}
                 >
+                  {/* 이름과 부가정보를 두 줄로 나눈다 — 한 줄에 몰면 이름이 잘려 안 보인다 */}
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    className="flex min-w-0 flex-1 flex-col items-start text-left"
                     onClick={() => onSelect(favorite.id)}
                   >
-                    <span className="truncate">{favorite.name}</span>
-                    {favorite.isDefault && <Badge variant="secondary">대표</Badge>}
-                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                    <span className="w-full truncate">{favorite.name}</span>
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      {favorite.isDefault && (
+                        <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+                          대표
+                        </Badge>
+                      )}
                       {favorite._count.items}곡
                     </span>
                   </button>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="대표로 지정"
-                    title="대표로 지정"
-                    disabled={favorite.isDefault}
-                    onClick={() => onSetDefault(favorite.id)}
-                  >
-                    <Star className={favorite.isDefault ? 'fill-current' : ''} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="이름 바꾸기"
-                    title="이름 바꾸기"
-                    onClick={() => {
-                      const next = window.prompt('새 이름', favorite.name);
-                      if (next && next.trim() && next.trim() !== favorite.name) {
-                        onRename(favorite.id, next.trim());
-                      }
-                    }}
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="삭제"
-                    title="삭제"
-                    className="text-destructive"
-                    onClick={() => {
-                      if (window.confirm(`"${favorite.name}" 즐겨찾기를 삭제할까요?`)) {
-                        onRemove(favorite.id);
-                      }
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`${favorite.name} 관리`}
+                        className="shrink-0"
+                      >
+                        <MoreVertical />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        disabled={favorite.isDefault}
+                        onClick={() => onSetDefault(favorite.id)}
+                      >
+                        <Star /> 대표로 지정
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setRenaming(favorite)}>
+                        <Pencil /> 이름 바꾸기
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setRemoving(favorite)}
+                      >
+                        <Trash2 /> 삭제
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </li>
             ))}
           </ul>
         )}
+
+        <RenameDialog
+          favorite={renaming}
+          onClose={() => setRenaming(null)}
+          onSubmit={(name) => {
+            if (renaming) onRename(renaming.id, name);
+            setRenaming(null);
+          }}
+        />
+
+        <ConfirmDialog
+          open={removing !== null}
+          title="즐겨찾기를 삭제할까요?"
+          description={`"${removing?.name ?? ''}" 와 담긴 곡이 모두 삭제됩니다. 되돌릴 수 없습니다.`}
+          confirmLabel="삭제"
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => {
+            if (removing) onRemove(removing.id);
+            setRemoving(null);
+          }}
+        />
       </CardContent>
     </Card>
+  );
+}
+
+function RenameDialog({
+  favorite,
+  onClose,
+  onSubmit,
+}: {
+  favorite: FavoriteSummary | null;
+  onClose: () => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+
+  useEffect(() => setName(favorite?.name ?? ''), [favorite]);
+
+  return (
+    <Dialog open={favorite !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>이름 바꾸기</DialogTitle>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const trimmed = name.trim();
+            if (trimmed && trimmed !== favorite?.name) onSubmit(trimmed);
+            else onClose();
+          }}
+        >
+          <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={50} />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              취소
+            </Button>
+            <Button type="submit" disabled={!name.trim()}>
+              저장
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            취소
+          </Button>
+          <Button variant="destructive" onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -376,24 +498,28 @@ function FavoriteDetailCard({
           </Button>
         </div>
 
-        <AddItemForm
-          pending={addItem.isPending}
-          onSubmit={(query) =>
-            run(addItem.mutateAsync({ id: favoriteId, query }), '즐겨찾기에 담았습니다.')
-          }
-        />
-        <ImportPlaylistForm
-          pending={importPlaylist.isPending}
-          onSubmit={(url) =>
-            run(
-              importPlaylist.mutateAsync({ id: favoriteId, url }),
-              (result: { playlistTitle: string; added: number; skipped: number }) =>
-                `"${result.playlistTitle}"에서 ${result.added}곡을 가져왔습니다.${
-                  result.skipped > 0 ? ` (중복·제외 ${result.skipped}곡)` : ''
-                }`,
-            )
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <AddItemDialog
+            mode="video"
+            pending={addItem.isPending}
+            onConfirm={(query) =>
+              run(addItem.mutateAsync({ id: favoriteId, query }), '즐겨찾기에 담았습니다.')
+            }
+          />
+          <AddItemDialog
+            mode="playlist"
+            pending={importPlaylist.isPending}
+            onConfirm={(url) =>
+              run(
+                importPlaylist.mutateAsync({ id: favoriteId, url }),
+                (result: { playlistTitle: string; added: number; skipped: number }) =>
+                  `"${result.playlistTitle}"에서 ${result.added}곡을 가져왔습니다.${
+                    result.skipped > 0 ? ` (중복·제외 ${result.skipped}곡)` : ''
+                  }`,
+              )
+            }
+          />
+        </div>
 
         <DndContext
           sensors={sensors}
@@ -512,67 +638,5 @@ function SortableItemRow({
         </Button>
       </TableCell>
     </TableRow>
-  );
-}
-
-function AddItemForm({
-  pending,
-  onSubmit,
-}: {
-  pending: boolean;
-  onSubmit: (query: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-
-  return (
-    <form
-      className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!query.trim()) return;
-        onSubmit(query.trim());
-        setQuery('');
-      }}
-    >
-      <Input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="검색어 또는 유튜브 영상 주소"
-      />
-      <Button type="submit" disabled={pending || !query.trim()}>
-        담기
-      </Button>
-    </form>
-  );
-}
-
-function ImportPlaylistForm({
-  pending,
-  onSubmit,
-}: {
-  pending: boolean;
-  onSubmit: (url: string) => void;
-}) {
-  const [url, setUrl] = useState('');
-
-  return (
-    <form
-      className="flex items-center gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!url.trim()) return;
-        onSubmit(url.trim());
-        setUrl('');
-      }}
-    >
-      <Input
-        value={url}
-        onChange={(event) => setUrl(event.target.value)}
-        placeholder="유튜브 재생목록 주소 (…/playlist?list=…)"
-      />
-      <Button type="submit" variant="outline" disabled={pending || !url.trim()}>
-        가져오기
-      </Button>
-    </form>
   );
 }

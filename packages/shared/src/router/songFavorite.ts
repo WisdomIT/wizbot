@@ -53,6 +53,14 @@ export const songFavoriteRouter = t.router({
     }),
 
   /* ── 곡 ── */
+  /** 담기 전 확인용 조회 (#97) */
+  previewItem: streamerProcedure
+    .input(z.object({ query: z.string().min(1) }))
+    .query(({ input }) => songFavoriteService.previewItem(input.query)),
+  previewPlaylist: streamerProcedure
+    .input(z.object({ url: z.string().min(1) }))
+    .query(({ input }) => songFavoriteService.previewPlaylist(input.url)),
+
   addItem: streamerProcedure
     .input(z.object({ id: z.number(), query: z.string().min(1) }))
     .mutation(({ ctx, input }) =>
