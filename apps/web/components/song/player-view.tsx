@@ -228,10 +228,11 @@ export function PlayerView() {
       <div
         className={
           shell.isApp
-            ? 'grid min-h-0 flex-1 gap-4 overflow-hidden px-4 pt-3 pb-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
+            ? 'grid min-h-0 flex-1 grid-cols-[minmax(0,26rem)_minmax(0,1fr)] gap-4 overflow-hidden px-4 pt-3 pb-4'
             : 'grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
         }
       >
+        <div className={shell.isApp ? 'min-h-0 overflow-y-auto' : undefined}>
         <SongPlayer
           playback={playback}
           position={position}
@@ -281,6 +282,8 @@ export function PlayerView() {
             </div>
           }
         />
+
+        </div>
 
         <QueueCard
           queue={queue}
