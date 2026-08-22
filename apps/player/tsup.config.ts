@@ -6,7 +6,7 @@ import { defineConfig } from 'tsup';
  * electron 만 외부로 두고 나머지는 전부 묶는다.
  */
 export default defineConfig({
-  entry: { main: 'src/main.ts' },
+  entry: { main: 'src/main.ts', preload: 'src/preload.ts' },
   outDir: 'dist',
   format: ['cjs'],
   target: 'node20',

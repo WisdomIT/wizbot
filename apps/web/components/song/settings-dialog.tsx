@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Eye, EyeOff, RefreshCw, Settings } from 'lucide-react';
+import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -105,6 +105,20 @@ export function SettingsDialog({
                 onCheckedChange={onChangeHistoryPublic}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col">
+              <Label>로그아웃</Label>
+              <span className="text-xs text-muted-foreground">
+                이 브라우저(또는 앱)에서 로그아웃합니다.
+              </span>
+            </div>
+            <Button variant="outline" onClick={() => (location.href = '/login/logout')}>
+              <LogOut /> 로그아웃
+            </Button>
           </div>
         </div>
       </DialogContent>

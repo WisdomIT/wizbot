@@ -6,8 +6,6 @@ import { type ReactNode,useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 
 export interface PlaybackView {
   status: 'PLAYING' | 'PAUSED' | 'STOPPED';
@@ -22,7 +20,6 @@ export interface PlaybackView {
 export interface PlayerControls {
   volume: number;
   repeatOne: boolean;
-  autoPlay: boolean;
   onPlay: () => void;
   onPause: () => void;
   onNext: () => void;
@@ -30,7 +27,6 @@ export interface PlayerControls {
   onSeek: (seconds: number) => void;
   onVolume: (volume: number) => void;
   onRepeat: (enabled: boolean) => void;
-  onAutoPlay: (enabled: boolean) => void;
 }
 
 export function formatTime(seconds: number) {
@@ -50,31 +46,35 @@ function thumbnailFor(youtubeId: string) {
  * 스트리머 콘솔은 조작 가능하게, 시청자 화면은 controls 없이 상태만 보이게 쓴다.
  * 어느 쪽도 소리를 내지 않는다 — 재생은 송출 소스(OBS·앱)가 담당한다.
  */
+export interface PlayerPosition {
+  value: number;
+  onScrub: (seconds: number) => void;
+  onCommit: () => void;
+}
+
 export function SongPlayer({
   playback,
   controls,
   actions,
+  position,
 }: {
   playback: PlaybackView;
   /** 없으면 읽기 전용 */
   controls?: PlayerControls;
   /** 우상단 슬롯 (설정 버튼 등) */
   actions?: ReactNode;
+  /** usePlayerPosition 의 결과 — 미니 플레이어와 같은 값을 쓰기 위해 밖에서 만든다 */
+  position: PlayerPosition;
 }) {
   const playing = playback.status === 'PLAYING';
-  const serverPosition = useInterpolatedPosition(
-    playback.positionSeconds,
-    playback.durationSeconds,
-    playing,
-  );
-  const { position, onScrub, onCommit } = useScrubbable(serverPosition, controls?.onSeek);
+  const { value: currentPosition, onScrub, onCommit } = position;
 
   return (
     <Card className="overflow-hidden">
       {/* 좁으면(앱의 미니 플레이어) 썸네일이 작아지며 옆으로 눕는다 */}
-      <CardContent className="flex flex-col gap-4 max-[479px]:gap-2">
-        <div className="flex flex-col gap-4 max-[479px]:flex-row max-[479px]:items-center max-[479px]:gap-3">
-          <div className="aspect-video w-full shrink-0 overflow-hidden rounded-lg bg-muted max-[479px]:size-12 max-[479px]:aspect-square">
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="aspect-video w-full shrink-0 overflow-hidden rounded-lg bg-muted">
             {playback.youtubeId ? (
               /* 유튜브 CDN 썸네일 — 다른 원격 이미지와 같은 방식 */
               <img
@@ -84,7 +84,7 @@ export function SongPlayer({
               />
             ) : (
               <div className="flex size-full items-center justify-center text-muted-foreground">
-                <Music className="size-10 max-[479px]:size-5" />
+                <Music className="size-10" />
               </div>
             )}
           </div>
@@ -106,14 +106,14 @@ export function SongPlayer({
 
         <div className="flex items-center gap-2">
           <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-            {formatTime(position)}
+            {formatTime(currentPosition)}
           </span>
           <input
             type="range"
             aria-label="재생 위치"
             min={0}
             max={Math.max(1, playback.durationSeconds)}
-            value={Math.min(position, playback.durationSeconds)}
+            value={Math.min(currentPosition, playback.durationSeconds)}
             disabled={!controls || !playback.title}
             onChange={(event) => onScrub(Number(event.target.value))}
             onPointerUp={onCommit}
@@ -127,10 +127,10 @@ export function SongPlayer({
 
         {controls ? (
           <>
-            <div className="flex items-center justify-center gap-2 max-[479px]:gap-1">
+            <div className="flex items-center justify-center gap-2">
               <Button
                 size="icon"
-                className="size-12 rounded-full max-[479px]:size-10"
+                className="size-12 rounded-full"
                 aria-label={playing ? '일시정지' : '재생'}
                 onClick={playing ? controls.onPause : controls.onPlay}
               >
@@ -154,7 +154,7 @@ export function SongPlayer({
               </Button>
             </div>
 
-            <div className="flex items-center gap-2 max-[479px]:hidden">
+            <div className="flex items-center gap-2">
               <Volume2 className="size-4 text-muted-foreground" />
               <input
                 type="range"
@@ -170,17 +170,6 @@ export function SongPlayer({
               <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">
                 {controls.volume}
               </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 border-t pt-3 max-[479px]:hidden">
-              <Label htmlFor="player-autoplay" className="text-sm font-normal">
-                대기열이 비면 대표 즐겨찾기에서 이어 재생
-              </Label>
-              <Switch
-                id="player-autoplay"
-                checked={controls.autoPlay}
-                onCheckedChange={controls.onAutoPlay}
-              />
             </div>
           </>
         ) : (
@@ -203,7 +192,17 @@ export function SongPlayer({
 const SEEK_SETTLE_MS = 6_000;
 const SEEK_MATCH_SECONDS = 3;
 
-function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => void) {
+export function usePlayerPosition(
+  positionSeconds: number,
+  durationSeconds: number,
+  playing: boolean,
+  onSeek?: (seconds: number) => void,
+): PlayerPosition {
+  const serverPosition = useInterpolatedPosition(positionSeconds, durationSeconds, playing);
+  return useScrubbable(serverPosition, onSeek);
+}
+
+function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => void): PlayerPosition {
   const [pending, setPending] = useState<{ value: number; at: number } | null>(null);
 
   // 서버가 내가 옮긴 위치를 따라잡았거나, 너무 오래 기다렸으면 서버 값으로 돌아간다
@@ -221,7 +220,7 @@ function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => voi
   const [dragging, setDragging] = useState<number | null>(null);
 
   return {
-    position: dragging ?? pending?.value ?? serverPosition,
+    value: dragging ?? pending?.value ?? serverPosition,
     onScrub: (value: number) => setDragging(value),
     onCommit: () => {
       if (dragging === null) return;
