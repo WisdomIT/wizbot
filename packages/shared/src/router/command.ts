@@ -1,10 +1,20 @@
 import { z } from 'zod';
 
+import { CHAT_MAX_LENGTH } from '../chatbot/lib';
+
 import type { PrismaClient } from '@prisma/client';
 
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '../chatbot/definitions';
 import { commandService, repeatService, ServiceError } from '../services';
 import { publicProcedure, streamerProcedure, t } from '../trpc';
+
+/**
+ * 봇이 그대로 내보내는 문구는 치지직 한도(100자)를 넘으면 전송 자체가 실패한다.
+ * 저장 시점에 막아 「만들어 놨는데 반응이 없는」 상태를 없앤다 (#115).
+ */
+const chatMessage = z
+  .string()
+  .max(CHAT_MAX_LENGTH, `${CHAT_MAX_LENGTH}자까지 입력할 수 있습니다.`);
 
 const permissionSchema = z.enum(['STREAMER', 'MANAGER', 'VIEWER']);
 const commandTypeSchema = z.enum(['echo', 'function']);
@@ -68,7 +78,7 @@ export const commandRouter = t.router({
     }),
 
   createCommandEcho: streamerProcedure
-    .input(z.object({ command: z.string(), response: z.string() }))
+    .input(z.object({ command: z.string(), response: chatMessage }))
     .mutation(async ({ ctx, input }) => {
       const data = await commandService.createEchoCommand(ctx.prisma, {
         userId: ctx.user.id,
@@ -109,7 +119,7 @@ export const commandRouter = t.router({
         id: z.number(),
         type: commandTypeSchema,
         command: z.string(),
-        response: z.string().optional(),
+        response: chatMessage.optional(),
         permission: permissionSchema.optional(),
         function: z.string().optional(),
         option: z.string().optional(),
@@ -173,7 +183,7 @@ export const commandRouter = t.router({
     .query(({ ctx, input }) => repeatService.getRepeat(ctx.prisma, ctx.user.id, input.id)),
 
   createRepeat: streamerProcedure
-    .input(z.object({ response: z.string(), interval: z.number() }))
+    .input(z.object({ response: chatMessage, interval: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const data = await repeatService.createRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
       return { ok: true, data };
@@ -187,7 +197,7 @@ export const commandRouter = t.router({
     }),
 
   updateRepeat: streamerProcedure
-    .input(z.object({ id: z.number(), response: z.string(), interval: z.number() }))
+    .input(z.object({ id: z.number(), response: chatMessage, interval: z.number() }))
     .mutation(async ({ ctx, input }) => {
       await repeatService.updateRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
       return { ok: true };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDuration, splitContent } from '../lib';
+import { CHAT_MAX_LENGTH, clampChatMessage, fitChatMessage, formatDuration, splitContent } from '../lib';
 
 describe('splitContent', () => {
   it('명령어 뒤 인수를 slice 개수만큼 나누고 마지막 조각에 나머지를 합친다', () => {
@@ -50,5 +50,36 @@ describe('formatDuration', () => {
 
   it('음수는 절대값으로 처리한다', () => {
     expect(formatDuration(-61_000)).toBe('01분 01초');
+  });
+});
+
+describe('fitChatMessage', () => {
+  it('한도 안이면 그대로 둔다', () => {
+    expect(fitChatMessage('♪ ', 'LUCY - 개화', ' | !노래 목록')).toBe('♪ LUCY - 개화 | !노래 목록');
+  });
+
+  it('본문이 길면 말줄임하되 접미사는 지킨다', () => {
+    const tail = ' | !노래 목록';
+    const result = fitChatMessage('♪ ', '가'.repeat(200), tail);
+
+    expect(result.length).toBe(CHAT_MAX_LENGTH);
+    // 링크·안내가 잘리면 쓸모가 없어진다
+    expect(result.endsWith(tail)).toBe(true);
+    expect(result).toContain('…');
+  });
+
+  it('접미사만으로 한도를 넘으면 전체를 자른다', () => {
+    const result = fitChatMessage('', '본문', '나'.repeat(200));
+    expect(result.length).toBe(CHAT_MAX_LENGTH);
+  });
+});
+
+describe('clampChatMessage', () => {
+  it('한도를 넘는 메시지를 자른다', () => {
+    expect(clampChatMessage('가'.repeat(150))).toHaveLength(CHAT_MAX_LENGTH);
+  });
+
+  it('한도 안이면 건드리지 않는다', () => {
+    expect(clampChatMessage('짧은 메시지')).toBe('짧은 메시지');
   });
 });

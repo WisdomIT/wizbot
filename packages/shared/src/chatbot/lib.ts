@@ -1,4 +1,33 @@
 /**
+ * 치지직 채팅 한 건의 최대 길이 (`POST /open/v1/chats/send`).
+ * 넘기면 전송이 실패하고 시청자에게는 아무 응답도 가지 않는다 (#115).
+ */
+export const CHAT_MAX_LENGTH = 100;
+
+/**
+ * 뒤에 꼭 남겨야 할 부분(링크·안내)을 지키면서 본문을 줄인다.
+ *
+ * 그냥 뒤에서 자르면 링크가 잘려 못 쓰게 되므로, 접미사 자리를 먼저 확보하고
+ * 본문을 말줄임한다. 본문을 아무리 줄여도 안 들어가면 그때는 전체를 자른다.
+ */
+export function fitChatMessage(head: string, body: string, tail = ''): string {
+  const budget = CHAT_MAX_LENGTH - head.length - tail.length;
+  if (budget <= 0) return `${head}${body}${tail}`.slice(0, CHAT_MAX_LENGTH);
+  if (body.length <= budget) return `${head}${body}${tail}`;
+
+  // 말줄임표 한 글자까지 예산 안에 넣는다
+  const trimmed = budget > 1 ? `${body.slice(0, budget - 1)}…` : body.slice(0, budget);
+  return `${head}${trimmed}${tail}`;
+}
+
+/** 어떤 경로로 만들어진 메시지든 전송 전에 한 번 더 자른다 */
+export function clampChatMessage(message: string): string {
+  return message.length <= CHAT_MAX_LENGTH
+    ? message
+    : `${message.slice(0, CHAT_MAX_LENGTH - 1)}…`;
+}
+
+/**
  *
  * @param content 채팅 내용
  * @param command 검색된 명령어
