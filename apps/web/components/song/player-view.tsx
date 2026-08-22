@@ -218,7 +218,7 @@ export function PlayerView() {
 
       {shell.isApp ? (
         <div className="px-4 pt-3">
-          <SourceStatus source={source} expected="ELECTRON" />
+          <SourceStatus source={source} />
         </div>
       ) : (
         <SourceStatus source={source} />
@@ -321,7 +321,6 @@ const SOURCE_LABEL = {
 
 function SourceStatus({
   source,
-  expected,
 }: {
   source: {
     sourceType: 'NONE' | 'OBS' | 'ELECTRON';
@@ -329,8 +328,6 @@ function SourceStatus({
     lastSeenAt: string | Date | null;
     timeoutMs: number;
   };
-  /** 이 화면이 스스로 송출 소스인 경우(앱) — 설정이 다르면 재생되지 않는다 */
-  expected?: 'OBS' | 'ELECTRON';
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -338,17 +335,6 @@ function SourceStatus({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  // 앱에서 열었는데 송출 소스가 다른 것으로 지정돼 있으면 아무리 기다려도 연결되지 않는다
-  if (expected && source.sourceType !== expected) {
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-sm text-destructive">
-        <Badge variant="destructive">재생 안 됨</Badge>
-        송출 소스가 「{SOURCE_LABEL[source.sourceType]}」 으로 지정돼 있습니다. 설정에서 「위즈봇
-        플레이어 앱」 으로 바꿔야 이 앱에서 재생됩니다.
-      </div>
-    );
-  }
 
   if (source.sourceType === 'NONE') {
     return (

@@ -40,8 +40,8 @@ export function shouldReturnToPlayer(url: string): boolean {
  */
 export const MINI = {
   width: 380,
-  /** 대기열을 닫았을 때 — 이 크기로 고정한다 */
-  height: 176,
+  /** 대기열을 닫았을 때 — 이 크기로 고정한다 (내용 높이에 맞춘 값) */
+  height: 158,
   /** 대기열을 열었을 때 세로 하한 */
   minHeightWithQueue: 300,
 };
@@ -49,8 +49,8 @@ export const MINI = {
 export const DESKTOP = {
   width: 1100,
   height: 760,
-  minWidth: 760,
-  minHeight: 520,
+  minWidth: 960,
+  minHeight: 600,
 };
 
 /**
