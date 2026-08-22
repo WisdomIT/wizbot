@@ -286,6 +286,11 @@ export function PlayerView() {
                 onChangeShortcuts={(shortcuts) =>
                   run(setShortcuts.mutateAsync(shortcuts), '단축키를 바꿨습니다.')
                 }
+                autoLaunch={
+                  shell.isApp
+                    ? { enabled: shell.autoLaunch, onChange: shell.setAutoLaunch }
+                    : undefined
+                }
                 onChangeKeyboardShortcut={(enabled) =>
                   run(
                     updateUserSetting.mutateAsync({

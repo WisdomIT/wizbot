@@ -56,6 +56,7 @@ export function SettingsDialog({
   onChangeHistoryPublic,
   onChangeKeyboardShortcut,
   onChangeShortcuts,
+  autoLaunch,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -65,6 +66,8 @@ export function SettingsDialog({
   onChangeHistoryPublic: (isPublic: boolean) => void;
   onChangeKeyboardShortcut: (enabled: boolean) => void;
   onChangeShortcuts: (shortcuts: SongSettings['shortcuts']) => void;
+  /** 데스크톱 앱에서 열었을 때만 — 계정이 아니라 이 기기의 설정이다 */
+  autoLaunch?: { enabled: boolean; onChange: (enabled: boolean) => void };
 }) {
   const [open, setOpen] = useState(false);
 
@@ -122,6 +125,26 @@ export function SettingsDialog({
               />
             </div>
           </div>
+
+          {autoLaunch && (
+            <>
+              <Separator />
+
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col">
+                  <Label htmlFor="setting-autolaunch">컴퓨터 시작 시 자동 실행</Label>
+                  <span className="text-xs text-muted-foreground">
+                    부팅할 때 창 없이 트레이에만 올라옵니다. 이 컴퓨터에만 적용됩니다.
+                  </span>
+                </div>
+                <Switch
+                  id="setting-autolaunch"
+                  checked={autoLaunch.enabled}
+                  onCheckedChange={autoLaunch.onChange}
+                />
+              </div>
+            </>
+          )}
 
           <Separator />
 
