@@ -171,6 +171,9 @@ export function PlayerView() {
         queueOpen={shell.queueOpen}
         onToggleQueue={() => shell.setQueueOpen(!shell.queueOpen)}
         onExpand={() => shell.setMode('desktop')}
+        onPlaySong={(song) =>
+          run(playNow.mutateAsync({ id: song.id }), `${song.title} 재생을 시작합니다.`)
+        }
         platform={shell.platform}
         windowControls={shell.windowControls}
       />
@@ -191,7 +194,7 @@ export function PlayerView() {
         <AppTitleBar
           platform={shell.platform}
           controls={shell.windowControls}
-          className="-mx-4 border-b"
+          className="border-b"
         >
           <Button
             variant="ghost"
@@ -206,7 +209,7 @@ export function PlayerView() {
       )}
 
       {shell.isApp ? (
-        <div className="px-1 pt-3">
+        <div className="px-4 pt-3">
           <SourceStatus source={source} expected="ELECTRON" />
         </div>
       ) : (
@@ -217,7 +220,7 @@ export function PlayerView() {
       <div
         className={
           shell.isApp
-            ? 'grid min-h-0 flex-1 gap-4 overflow-hidden pt-3 pb-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
+            ? 'grid min-h-0 flex-1 gap-4 overflow-hidden px-4 pt-3 pb-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
             : 'grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]'
         }
       >

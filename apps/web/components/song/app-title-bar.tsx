@@ -3,8 +3,6 @@
 import { Minus, Square, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-
 import { DRAG, NO_DRAG } from './drag-region';
 
 /**
@@ -39,41 +37,57 @@ export function AppTitleBar({
   return (
     <div
       className={`flex shrink-0 items-center gap-1 ${compact ? 'h-8' : 'h-10'} ${className}`}
-      style={{ ...DRAG, paddingLeft: mac ? MAC_TRAFFIC_LIGHTS : 8 }}
+      style={{ ...DRAG, paddingLeft: mac ? MAC_TRAFFIC_LIGHTS : 0 }}
     >
       {/* 버튼은 끌기 영역에서 빼야 눌린다 */}
-      <div className="flex items-center gap-1" style={NO_DRAG}>
+      <div className="flex items-center gap-1 px-1" style={NO_DRAG}>
         {children}
       </div>
 
       <div className="flex-1" />
 
       {!mac && controls && (
-        <div className="flex items-center" style={NO_DRAG}>
-          <Button variant="ghost" size="icon" aria-label="최소화" onClick={controls.minimize}>
-            <Minus />
-          </Button>
+        // 시스템 창 버튼처럼 모서리에 딱 붙고 높이를 꽉 채운다
+        <div className="flex h-full items-stretch" style={NO_DRAG}>
+          <WindowButton label="최소화" onClick={controls.minimize}>
+            <Minus className="size-4" />
+          </WindowButton>
           {canMaximize && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="최대화"
-              onClick={controls.toggleMaximize}
-            >
-              <Square className="size-3.5" />
-            </Button>
+            <WindowButton label="최대화" onClick={controls.toggleMaximize}>
+              <Square className="size-3" />
+            </WindowButton>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="닫기"
-            className="hover:bg-destructive hover:text-white"
-            onClick={controls.close}
-          >
-            <X />
-          </Button>
+          <WindowButton label="닫기" danger onClick={controls.close}>
+            <X className="size-4" />
+          </WindowButton>
         </div>
       )}
     </div>
+  );
+}
+
+function WindowButton({
+  label,
+  danger,
+  onClick,
+  children,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={`flex w-11 items-center justify-center text-muted-foreground transition-colors ${
+        danger ? 'hover:bg-destructive hover:text-white' : 'hover:bg-muted hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

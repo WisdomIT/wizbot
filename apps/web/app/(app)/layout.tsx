@@ -18,8 +18,12 @@ export default async function AppLayout({ children }: Readonly<{ children: React
 
   return (
     <TRPCReactProvider>
-      {/* 앱은 창처럼 동작한다 — 바깥 스크롤 없이 화면 높이에 맞춘다 */}
-      <main className="h-svh overflow-hidden px-4">{children}</main>
+      {/*
+        앱은 창처럼 동작한다 — 바깥 스크롤 없이 화면 높이에 맞춘다.
+        좌우 여백을 주지 않는다: 타이틀바가 창 끝까지 닿아야 하는데,
+        여기서 패딩을 주면 음수 마진으로 되밀어야 하고 그게 overflow-hidden 에 잘린다.
+      */}
+      <main className="h-svh overflow-hidden">{children}</main>
     </TRPCReactProvider>
   );
 }
