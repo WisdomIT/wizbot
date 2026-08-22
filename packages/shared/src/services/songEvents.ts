@@ -59,21 +59,37 @@ export const SOURCE_TIMEOUT_MS = 15_000;
 const presences = new Map<number, SourcePresence>();
 
 /**
- * 하트비트 수신. 연결이 새로 생기거나 소스/세션이 바뀐 경우에만 changed 가 true 다.
- * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽게 되므로 전환 때만 알린다.
+ * 하트비트 수신.
+ *
+ * **먼저 잡은 세션이 유지된다.** 이전에는 하트비트마다 세션을 덮어써서, 두 기기가
+ * 동시에 켜져 있으면 5초마다 주인이 뒤바뀌었다. 각 창은 자기 차례가 아니면 재생을
+ * 멈추므로 어느 쪽도 제대로 재생하지 못했다.
+ *
+ * 주인이 하트비트를 멈추면 SOURCE_TIMEOUT_MS 뒤에 자리가 비고, 그때 다음 세션이 잡는다.
+ *
+ * changed 는 주인이 바뀐 경우에만 true — 매번 이벤트를 쏘면 구독자 전원이 5초마다
+ * 전체 상태를 다시 읽게 된다.
  */
 export function touchSource(
   userId: number,
   source: string,
   sessionId: string,
-): { changed: boolean } {
-  const previous = getSourcePresence(userId);
-  presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
+): { changed: boolean; active: boolean } {
+  const current = getSourcePresence(userId);
 
-  return {
-    changed:
-      previous === null || previous.sessionId !== sessionId || previous.source !== source,
-  };
+  if (current === null) {
+    presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
+    return { changed: true, active: true };
+  }
+
+  if (current.sessionId === sessionId) {
+    const changed = current.source !== source;
+    presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
+    return { changed, active: true };
+  }
+
+  // 다른 세션이 잡고 있다 — 자리를 뺏지 않는다 (이 창은 대기 상태가 된다)
+  return { changed: false, active: false };
 }
 
 export function getSourcePresence(userId: number): SourcePresence | null {

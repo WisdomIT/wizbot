@@ -18,7 +18,8 @@ export default async function AppLayout({ children }: Readonly<{ children: React
 
   return (
     <TRPCReactProvider>
-      <main className="min-h-svh px-4">{children}</main>
+      {/* 앱은 창처럼 동작한다 — 바깥 스크롤 없이 화면 높이에 맞춘다 */}
+      <main className="h-svh overflow-hidden px-4">{children}</main>
     </TRPCReactProvider>
   );
 }

@@ -11,6 +11,9 @@ export type WindowMode = 'mini' | 'desktop';
 interface WizbotApp {
   platform: string;
   setMode: (mode: WindowMode, queueOpen: boolean) => void;
+  minimize: () => void;
+  toggleMaximize: () => void;
+  close: () => void;
 }
 
 declare global {
@@ -25,7 +28,7 @@ const QUEUE_KEY = 'wizbot:mini-queue';
 export function useAppShell() {
   // 서버 렌더 결과와 어긋나지 않도록 첫 렌더는 항상 "웹"으로 둔다
   const [bridge, setBridge] = useState<WizbotApp | null>(null);
-  const [mode, setModeState] = useState<WindowMode>('mini');
+  const [mode, setModeState] = useState<WindowMode>('desktop');
   const [queueOpen, setQueueOpenState] = useState(false);
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export function useAppShell() {
 
     const savedMode = localStorage.getItem(MODE_KEY);
     const savedQueue = localStorage.getItem(QUEUE_KEY);
-    const nextMode: WindowMode = savedMode === 'desktop' ? 'desktop' : 'mini';
+    const nextMode: WindowMode = savedMode === 'mini' ? 'mini' : 'desktop';
     const nextQueue = savedQueue === '1';
 
     setBridge(app);
@@ -64,6 +67,14 @@ export function useAppShell() {
   return {
     /** 앱 안에서 열렸는가 — 웹 브라우저면 false */
     isApp: bridge !== null,
+    /** 창 제어 — Windows 에서 버튼을 직접 그릴 때 쓴다 */
+    windowControls: bridge
+      ? {
+          minimize: () => bridge.minimize(),
+          toggleMaximize: () => bridge.toggleMaximize(),
+          close: () => bridge.close(),
+        }
+      : undefined,
     platform: bridge?.platform ?? '',
     mode: bridge ? mode : ('desktop' as WindowMode),
     setMode,

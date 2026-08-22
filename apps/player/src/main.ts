@@ -46,16 +46,13 @@ let quitting = false;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: MINI.width,
-    height: MINI.height,
+    width: DESKTOP.width,
+    height: DESKTOP.height,
     title: 'wizbot player',
     backgroundColor: '#0a0a0a',
-    // 자체 타이틀바를 쓴다. macOS 는 신호등 버튼이 그대로 남고,
-    // Windows 는 titleBarOverlay 로 시스템 버튼이 우리 화면 위에 그려진다.
+    // 자체 타이틀바를 쓴다. macOS 는 시스템 신호등 버튼을 그대로 남기고,
+    // Windows 는 시스템 버튼이 어두운 사각형으로 떠 밝은 화면과 어울리지 않아 직접 그린다.
     titleBarStyle: 'hidden',
-    ...(process.platform === 'win32'
-      ? { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e5e5e5', height: 40 } }
-      : {}),
     webPreferences: {
       // 사이트를 그대로 띄우므로 렌더러에 특권을 주지 않는다 — 통로는 preload 하나뿐
       nodeIntegration: false,
@@ -65,7 +62,7 @@ function createMainWindow() {
   });
 
   void mainWindow.loadURL(PLAYER_URL);
-  applyMode('mini', false);
+  applyMode('desktop', false);
 
   // 외부 링크는 기본 브라우저로 (앱 창이 엉뚱한 페이지로 새지 않게)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -193,6 +190,13 @@ function buildTrayMenu(state: PlayerState | null) {
     { label: '정지', click: () => void api.song.stop.mutate().catch(noop) },
     { type: 'separator' },
     {
+      label: '재생 창 보기 (진단)',
+      click: () => {
+        sourceWindow?.show();
+        sourceWindow?.webContents.openDevTools({ mode: 'detach' });
+      },
+    },
+    {
       label: '종료',
       click: () => {
         quitting = true;
@@ -273,6 +277,17 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.on('app:set-mode', (_event, mode: Mode, queueOpen: boolean) => {
     applyMode(mode, queueOpen);
+  });
+
+  ipcMain.on('app:window', (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
+    const win = mainWindow;
+    if (!win) return;
+
+    if (action === 'minimize') win.minimize();
+    // 닫기는 트레이로 숨긴다 (close 핸들러가 가로챈다) — 재생은 계속돼야 한다
+    else if (action === 'close') win.close();
+    else if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
   });
 
   void app.whenReady().then(() => {
