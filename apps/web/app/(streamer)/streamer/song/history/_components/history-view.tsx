@@ -77,7 +77,6 @@ export function HistoryView() {
       }),
     );
 
-  const settings = useQuery(trpc.song.getState.queryOptions());
   const favorites = useQuery(trpc.songFavorite.list.queryOptions());
 
   const invalidate = useCallback(() => {
@@ -100,7 +99,6 @@ export function HistoryView() {
   );
 
   const setHidden = useMutation(trpc.song.setHistoryHidden.mutationOptions());
-  const setPublic = useMutation(trpc.song.setHistoryPublic.mutationOptions());
   const requeue = useMutation(trpc.song.requeueFromHistory.mutationOptions());
   const addToFavorite = useMutation(trpc.songFavorite.addItem.mutationOptions());
 
@@ -112,30 +110,6 @@ export function HistoryView() {
 
   return (
     <div className="flex max-w-4xl flex-col gap-4 py-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>시청자 공개</CardTitle>
-          <CardDescription>
-            켜면 시청자용 재생 기록 페이지에 이 목록이 공개됩니다. 개별 곡은 아래에서 따로 숨길
-            수 있습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Switch
-            id="history-public"
-            checked={settings.data?.historyPublic ?? false}
-            disabled={settings.isPending}
-            onCheckedChange={(isPublic) =>
-              run(
-                setPublic.mutateAsync({ isPublic }),
-                isPublic ? '재생 기록을 공개합니다.' : '재생 기록을 비공개로 바꿨습니다.',
-              )
-            }
-          />
-          <Label htmlFor="history-public">시청자에게 재생 기록 공개</Label>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>재생 기록</CardTitle>
