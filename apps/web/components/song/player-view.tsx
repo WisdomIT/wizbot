@@ -204,6 +204,7 @@ export function PlayerView() {
         <AppTitleBar
           platform={shell.platform}
           controls={shell.windowControls}
+          title="wizbot player"
           className="border-b"
         >
           <Button

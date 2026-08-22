@@ -10,6 +10,9 @@ files:
 extraResources:
   - from: resources
     to: .
+  # 창·작업 표시줄 아이콘으로 실행 중에 읽는다
+  - from: build/icon.png
+    to: icon.png
 # 코드 서명 인증서가 없다 — 설치 시 SmartScreen/Gatekeeper 경고가 뜬다 (README 참고)
 win:
   target: nsis

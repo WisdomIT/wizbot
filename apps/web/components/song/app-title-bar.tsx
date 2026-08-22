@@ -18,10 +18,13 @@ export function AppTitleBar({
   controls,
   canMaximize = true,
   compact = false,
+  title,
   children,
   className = '',
 }: {
   platform: string;
+  /** 가운데에 표시할 창 제목 */
+  title?: string;
   /** 창 제어 (Windows 에서만 쓴다) */
   controls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
   /** 미니 모드는 크기가 묶여 있어 최대화를 막는다 */
@@ -36,9 +39,16 @@ export function AppTitleBar({
 
   return (
     <div
-      className={`flex shrink-0 items-center gap-1 ${compact ? 'h-8' : 'h-10'} ${className}`}
+      className={`relative flex shrink-0 items-center gap-1 ${compact ? 'h-8' : 'h-10'} ${className}`}
       style={{ ...DRAG, paddingLeft: mac ? MAC_TRAFFIC_LIGHTS : 0 }}
     >
+      {title && (
+        // 버튼 배치와 무관하게 항상 가운데 오도록 띄운다
+        <span className="pointer-events-none absolute inset-x-0 text-center text-xs text-muted-foreground">
+          {title}
+        </span>
+      )}
+
       {/* 버튼은 끌기 영역에서 빼야 눌린다 */}
       <div className="flex items-center gap-1 px-1" style={NO_DRAG}>
         {children}

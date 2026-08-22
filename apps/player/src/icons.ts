@@ -18,6 +18,19 @@ function resourcePath(fileName: string) {
     : join(__dirname, '..', 'resources', fileName);
 }
 
+/**
+ * 창·작업 표시줄 아이콘.
+ * Windows 는 지정하지 않으면 Electron 기본 아이콘이 그대로 보인다.
+ */
+export function appIconPath() {
+  // 패키징하면 extraResources 로 복사되고, 개발 중에는 build/ 에서 읽는다
+  const path = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '..', 'build', 'icon.png');
+
+  return existsSync(path) ? path : undefined;
+}
+
 export function loadTrayIcon() {
   const fileName = process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png';
   const path = resourcePath(fileName);
