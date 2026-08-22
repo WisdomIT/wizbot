@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   advanceToNext,
+  setShortcuts,
   playSongNow,
   seek,
   getSourceStatus,
@@ -58,6 +59,42 @@ const QUEUE_ITEM = {
   durationSeconds: 200,
   order: 1,
 };
+
+describe('전역 단축키 (#85)', () => {
+  it('수식키 없는 조합은 거부한다', async () => {
+    const { prisma } = createPrisma();
+    await expect(
+      setShortcuts(prisma, USER_ID, { playPause: 'P', stop: 'S', next: 'N' }),
+    ).rejects.toThrow('형식이 올바르지 않습니다');
+  });
+
+  it('서로 겹치는 조합은 거부한다', async () => {
+    const { prisma } = createPrisma();
+    await expect(
+      setShortcuts(prisma, USER_ID, {
+        playPause: 'CommandOrControl+Shift+P',
+        stop: 'CommandOrControl+Shift+P',
+        next: 'CommandOrControl+Shift+N',
+      }),
+    ).rejects.toThrow('겹칩니다');
+  });
+
+  it('올바른 조합은 저장한다', async () => {
+    const { prisma } = createPrisma();
+    await expect(
+      setShortcuts(prisma, USER_ID, {
+        playPause: 'Alt+Shift+1',
+        stop: 'CommandOrControl+Alt+S',
+        next: 'Shift+Alt+N',
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(prisma.userSetting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ songShortcutPlayPause: 'Alt+Shift+1' }),
+      }),
+    );
+  });
+});
 
 describe('한 곡 반복 (#97)', () => {
   it('곡이 끝나도 다음으로 넘기지 않고 처음부터 다시 재생한다', async () => {

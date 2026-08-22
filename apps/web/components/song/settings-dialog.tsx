@@ -27,13 +27,24 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
+import { ShortcutInput } from './shortcut-input';
+
 export interface SongSettings {
   sourceType: 'NONE' | 'OBS' | 'ELECTRON';
   sourceToken: string | null;
   overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   autoPlay: boolean;
   historyPublic: boolean;
+  keyboardShortcut: boolean;
+  shortcuts: { playPause: string; stop: string; next: string };
 }
+
+/** 데스크톱 앱이 등록하는 전역 단축키 (#85) */
+const SHORTCUT_ACTIONS = [
+  { key: 'playPause', label: '재생 / 일시정지' },
+  { key: 'stop', label: '정지' },
+  { key: 'next', label: '다음 곡' },
+] as const;
 
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
@@ -43,6 +54,8 @@ export function SettingsDialog({
   onChangeOverlay,
   onChangeAutoPlay,
   onChangeHistoryPublic,
+  onChangeKeyboardShortcut,
+  onChangeShortcuts,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -50,6 +63,8 @@ export function SettingsDialog({
   onChangeOverlay: (overlay: SongSettings['overlay']) => void;
   onChangeAutoPlay: (enabled: boolean) => void;
   onChangeHistoryPublic: (isPublic: boolean) => void;
+  onChangeKeyboardShortcut: (enabled: boolean) => void;
+  onChangeShortcuts: (shortcuts: SongSettings['shortcuts']) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -106,6 +121,45 @@ export function SettingsDialog({
                 onCheckedChange={onChangeHistoryPublic}
               />
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col">
+                <Label htmlFor="setting-shortcut">전역 단축키</Label>
+                <span className="text-xs text-muted-foreground">
+                  위즈봇 플레이어 앱을 설치했다면, 창을 열지 않고도 다른 프로그램을 쓰는 중에
+                  조작할 수 있습니다.
+                </span>
+              </div>
+              <Switch
+                id="setting-shortcut"
+                checked={settings.keyboardShortcut}
+                onCheckedChange={onChangeKeyboardShortcut}
+              />
+            </div>
+
+            {settings.keyboardShortcut && (
+              <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3">
+                {SHORTCUT_ACTIONS.map((action) => (
+                  <div key={action.key} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{action.label}</span>
+                    <ShortcutInput
+                      value={settings.shortcuts[action.key]}
+                      onChange={(accelerator) =>
+                        onChangeShortcuts({ ...settings.shortcuts, [action.key]: accelerator })
+                      }
+                    />
+                  </div>
+                ))}
+                <p className="text-[11px] text-muted-foreground">
+                  버튼을 누른 뒤 원하는 조합을 입력하세요. ⌘/Ctrl · Alt · Shift 중 하나 이상을
+                  포함해야 합니다.
+                </p>
+              </div>
+            )}
           </div>
 
           <Separator />

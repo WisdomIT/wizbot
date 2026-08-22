@@ -47,6 +47,9 @@ export const songRouter = t.router({
           songHistoryPublic: true,
           songAutoPlayFromDefault: true,
           songKeyboardShortcut: true,
+          songShortcutPlayPause: true,
+          songShortcutStop: true,
+          songShortcutNext: true,
         },
       }),
     ]);
@@ -58,6 +61,12 @@ export const songRouter = t.router({
       autoPlay: setting?.songAutoPlayFromDefault ?? false,
       /** 앱의 전역 단축키 사용 여부 (#85) */
       keyboardShortcut: setting?.songKeyboardShortcut ?? true,
+      shortcuts: {
+        playPause:
+          setting?.songShortcutPlayPause ?? playbackService.DEFAULT_SONG_SHORTCUTS.playPause,
+        stop: setting?.songShortcutStop ?? playbackService.DEFAULT_SONG_SHORTCUTS.stop,
+        next: setting?.songShortcutNext ?? playbackService.DEFAULT_SONG_SHORTCUTS.next,
+      },
     };
   }),
 
@@ -67,6 +76,17 @@ export const songRouter = t.router({
   next: streamerProcedure.mutation(({ ctx }) =>
     playbackService.skipToNext(ctx.prisma, ctx.user.id),
   ),
+  /** 전역 단축키 조합 변경 (#85) */
+  setShortcuts: streamerProcedure
+    .input(
+      z.object({
+        playPause: z.string().max(64),
+        stop: z.string().max(64),
+        next: z.string().max(64),
+      }),
+    )
+    .mutation(({ ctx, input }) => playbackService.setShortcuts(ctx.prisma, ctx.user.id, input)),
+
   setRepeat: streamerProcedure
     .input(z.object({ enabled: z.boolean() }))
     .mutation(({ ctx, input }) =>
