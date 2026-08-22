@@ -18,12 +18,18 @@ const MAC_TRAFFIC_LIGHTS = 78;
 export function AppTitleBar({
   platform,
   controls,
+  canMaximize = true,
+  compact = false,
   children,
   className = '',
 }: {
   platform: string;
   /** 창 제어 (Windows 에서만 쓴다) */
   controls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
+  /** 미니 모드는 크기가 묶여 있어 최대화를 막는다 */
+  canMaximize?: boolean;
+  /** 미니 모드용 낮은 높이 */
+  compact?: boolean;
   /** 왼쪽 영역에 놓을 버튼들 (모드 전환 등) */
   children?: ReactNode;
   className?: string;
@@ -32,7 +38,7 @@ export function AppTitleBar({
 
   return (
     <div
-      className={`flex h-10 shrink-0 items-center gap-1 ${className}`}
+      className={`flex shrink-0 items-center gap-1 ${compact ? 'h-8' : 'h-10'} ${className}`}
       style={{ ...DRAG, paddingLeft: mac ? MAC_TRAFFIC_LIGHTS : 8 }}
     >
       {/* 버튼은 끌기 영역에서 빼야 눌린다 */}
@@ -47,14 +53,16 @@ export function AppTitleBar({
           <Button variant="ghost" size="icon" aria-label="최소화" onClick={controls.minimize}>
             <Minus />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="최대화"
-            onClick={controls.toggleMaximize}
-          >
-            <Square className="size-3.5" />
-          </Button>
+          {canMaximize && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="최대화"
+              onClick={controls.toggleMaximize}
+            >
+              <Square className="size-3.5" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

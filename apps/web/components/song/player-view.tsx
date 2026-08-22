@@ -171,6 +171,8 @@ export function PlayerView() {
         queueOpen={shell.queueOpen}
         onToggleQueue={() => shell.setQueueOpen(!shell.queueOpen)}
         onExpand={() => shell.setMode('desktop')}
+        platform={shell.platform}
+        windowControls={shell.windowControls}
       />
     );
   }

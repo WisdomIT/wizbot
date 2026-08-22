@@ -96,6 +96,15 @@ function createMainWindow() {
 }
 
 /**
+ * 「제한 없음」을 뜻하는 값.
+ *
+ * ⚠️ setMaximumSize 에 0 을 넘기면 안 된다. Windows 는 0 을 무제한으로 보지만
+ * macOS 는 그대로 **최대 크기 0** 으로 받아들여, 크기를 조절하면 창이 떨리다가
+ * 마우스를 떼는 순간 사라진다 (실측).
+ */
+const NO_LIMIT = 16_384;
+
+/**
  * 창 모드 적용.
  * - 미니 + 대기열 닫힘: 크기 고정
  * - 미니 + 대기열 열림: 세로만 조절 (하한 있음)
@@ -105,25 +114,30 @@ function applyMode(mode: Mode, queueOpen: boolean) {
   const win = mainWindow;
   if (!win) return;
 
-  // 이전 모드의 제한을 먼저 풀어야 새 크기가 적용된다
+  // 이전 모드의 제한을 먼저 푼다
   win.setResizable(true);
   win.setMinimumSize(1, 1);
-  win.setMaximumSize(0, 0);
+  win.setMaximumSize(NO_LIMIT, NO_LIMIT);
 
   if (mode === 'mini') {
     const height = queueOpen
       ? Math.max(MINI.minHeightWithQueue, win.getSize()[1])
       : MINI.height;
 
-    win.setSize(MINI.width, height);
+    // 제한을 크기보다 먼저 걸어야 한다 — 나중에 걸면 적용된 크기가 뒤늦게 잘려 화면이 튄다
     win.setMinimumSize(MINI.width, queueOpen ? MINI.minHeightWithQueue : MINI.height);
-    // 가로 상한을 같은 값으로 묶어 세로만 늘어나게 한다
-    win.setMaximumSize(MINI.width, queueOpen ? 0 : MINI.height);
+    // 가로를 하한·상한 같은 값으로 묶어 세로만 늘어나게 한다
+    win.setMaximumSize(MINI.width, queueOpen ? NO_LIMIT : MINI.height);
+    win.setSize(MINI.width, height);
     win.setResizable(queueOpen);
+    // 미니는 크기가 묶여 있어 최대화하면 제한과 충돌한다 — 버튼 자체를 막는다
+    win.setMaximizable(false);
     return;
   }
 
   win.setMinimumSize(DESKTOP.minWidth, DESKTOP.minHeight);
+  win.setMaximizable(true);
+
   const [width, height] = win.getSize();
   if (width < DESKTOP.minWidth || height < DESKTOP.minHeight) {
     win.setSize(DESKTOP.width, DESKTOP.height);
