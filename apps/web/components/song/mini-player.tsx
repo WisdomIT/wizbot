@@ -56,7 +56,7 @@ export function MiniPlayer({
       {/* macOS 는 신호등 버튼 자리를, Windows 는 우리 창 제어 버튼을 여기에 둔다 */}
       <AppTitleBar platform={platform} controls={windowControls} canMaximize={false} compact />
 
-      <div className="flex shrink-0 flex-col gap-2 px-4 pt-0 pb-2">
+      <div className="flex shrink-0 flex-col gap-1.5 px-4 pt-0 pb-1">
         <div className="flex items-center gap-2">
           <div className="size-11 shrink-0 overflow-hidden rounded bg-muted">
             {playback.youtubeId ? (
