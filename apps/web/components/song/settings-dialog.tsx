@@ -27,6 +27,8 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
+import { ShortcutInput } from './shortcut-input';
+
 export interface SongSettings {
   sourceType: 'NONE' | 'OBS' | 'ELECTRON';
   sourceToken: string | null;
@@ -34,14 +36,15 @@ export interface SongSettings {
   autoPlay: boolean;
   historyPublic: boolean;
   keyboardShortcut: boolean;
+  shortcuts: { playPause: string; stop: string; next: string };
 }
 
 /** 데스크톱 앱이 등록하는 전역 단축키 (#85) */
-const SHORTCUTS = [
-  { keys: '⌘/Ctrl + Shift + P', label: '재생 / 일시정지' },
-  { keys: '⌘/Ctrl + Shift + S', label: '정지' },
-  { keys: '⌘/Ctrl + Shift + N', label: '다음 곡' },
-];
+const SHORTCUT_ACTIONS = [
+  { key: 'playPause', label: '재생 / 일시정지' },
+  { key: 'stop', label: '정지' },
+  { key: 'next', label: '다음 곡' },
+] as const;
 
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
@@ -52,6 +55,7 @@ export function SettingsDialog({
   onChangeAutoPlay,
   onChangeHistoryPublic,
   onChangeKeyboardShortcut,
+  onChangeShortcuts,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -60,6 +64,7 @@ export function SettingsDialog({
   onChangeAutoPlay: (enabled: boolean) => void;
   onChangeHistoryPublic: (isPublic: boolean) => void;
   onChangeKeyboardShortcut: (enabled: boolean) => void;
+  onChangeShortcuts: (shortcuts: SongSettings['shortcuts']) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -137,17 +142,23 @@ export function SettingsDialog({
             </div>
 
             {settings.keyboardShortcut && (
-              <ul className="flex flex-col gap-1 rounded-md bg-muted/50 p-3">
-                {SHORTCUTS.map((shortcut) => (
-                  <li
-                    key={shortcut.keys}
-                    className="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span className="text-muted-foreground">{shortcut.label}</span>
-                    <code className="font-mono">{shortcut.keys}</code>
-                  </li>
+              <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3">
+                {SHORTCUT_ACTIONS.map((action) => (
+                  <div key={action.key} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{action.label}</span>
+                    <ShortcutInput
+                      value={settings.shortcuts[action.key]}
+                      onChange={(accelerator) =>
+                        onChangeShortcuts({ ...settings.shortcuts, [action.key]: accelerator })
+                      }
+                    />
+                  </div>
                 ))}
-              </ul>
+                <p className="text-[11px] text-muted-foreground">
+                  버튼을 누른 뒤 원하는 조합을 입력하세요. ⌘/Ctrl · Alt · Shift 중 하나 이상을
+                  포함해야 합니다.
+                </p>
+              </div>
             )}
           </div>
 

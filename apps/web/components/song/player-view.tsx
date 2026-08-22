@@ -101,6 +101,7 @@ export function PlayerView() {
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
+  const setShortcuts = useMutation(trpc.song.setShortcuts.mutationOptions());
 
   const shell = useAppShell();
 
@@ -255,6 +256,7 @@ export function PlayerView() {
                   autoPlay,
                   historyPublic,
                   keyboardShortcut: data.keyboardShortcut,
+                  shortcuts: data.shortcuts,
                 }}
                 onChangeSourceType={(sourceType) =>
                   run(setSourceType.mutateAsync({ sourceType }), '송출 소스를 변경했습니다.')
@@ -279,6 +281,9 @@ export function PlayerView() {
                     setHistoryPublic.mutateAsync({ isPublic }),
                     isPublic ? '재생 기록을 공개합니다.' : '재생 기록을 비공개로 바꿨습니다.',
                   )
+                }
+                onChangeShortcuts={(shortcuts) =>
+                  run(setShortcuts.mutateAsync(shortcuts), '단축키를 바꿨습니다.')
                 }
                 onChangeKeyboardShortcut={(enabled) =>
                   run(

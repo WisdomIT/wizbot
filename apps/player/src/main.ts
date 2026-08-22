@@ -38,7 +38,8 @@ type Mode = 'mini' | 'desktop';
 let mainWindow: BrowserWindow | null = null;
 let sourceWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let shortcutsRegistered = false;
+/** 지금 등록된 조합 — 값이 바뀌면 다시 등록한다 */
+let registeredSignature = '';
 /** 트레이 메뉴를 만들 때 쓰는 마지막 상태 */
 let lastState: PlayerState | null = null;
 /** 트레이에서 종료를 골랐을 때만 실제로 끝낸다 (창을 닫으면 숨기기만 한다) */
@@ -240,30 +241,41 @@ function createTray() {
 
 /* ── 전역 단축키 ── */
 
-const SHORTCUTS: Record<string, () => void> = {
-  'CommandOrControl+Shift+P': () => {
+const ACTIONS = {
+  playPause: () => {
     const playing = lastState?.playback.status === 'PLAYING';
     void (playing ? api.song.pause.mutate() : api.song.play.mutate()).catch(noop);
   },
-  'CommandOrControl+Shift+S': () => void api.song.stop.mutate().catch(noop),
-  'CommandOrControl+Shift+N': () => void api.song.next.mutate().catch(noop),
-};
+  stop: () => void api.song.stop.mutate().catch(noop),
+  next: () => void api.song.next.mutate().catch(noop),
+} as const;
 
-/** 설정(UserSetting.songKeyboardShortcut)에 따라 등록·해제한다 */
-function syncShortcuts(enabled: boolean) {
-  if (enabled === shortcutsRegistered) return;
+type Shortcuts = PlayerState['shortcuts'];
 
-  if (!enabled) {
-    globalShortcut.unregisterAll();
-    shortcutsRegistered = false;
-    return;
+/**
+ * 설정에 따라 등록·해제한다.
+ * 조합은 사용자가 콘솔에서 바꿀 수 있으므로, 값이 달라지면 다시 등록한다.
+ */
+function syncShortcuts(enabled: boolean, shortcuts: Shortcuts) {
+  const signature = enabled ? JSON.stringify(shortcuts) : '';
+  if (signature === registeredSignature) return;
+
+  globalShortcut.unregisterAll();
+  registeredSignature = signature;
+
+  if (!enabled) return;
+
+  for (const [action, handler] of Object.entries(ACTIONS)) {
+    const accelerator = shortcuts[action as keyof Shortcuts];
+    if (!accelerator) continue;
+
+    try {
+      // 다른 앱이 이미 쓰고 있으면 등록에 실패한다 — 나머지는 그대로 진행한다
+      globalShortcut.register(accelerator, handler);
+    } catch {
+      /* 형식이 잘못된 조합은 건너뛴다 */
+    }
   }
-
-  for (const [accelerator, handler] of Object.entries(SHORTCUTS)) {
-    // 다른 앱이 이미 쓰고 있으면 등록에 실패한다 — 나머지는 그대로 진행한다
-    globalShortcut.register(accelerator, handler);
-  }
-  shortcutsRegistered = true;
 }
 
 function noop() {
@@ -278,7 +290,7 @@ async function poll() {
   lastState = state;
   tray?.setToolTip(trayTooltip(state));
   tray?.setContextMenu(buildTrayMenu(state));
-  syncShortcuts(state.keyboardShortcut);
+  syncShortcuts(state.keyboardShortcut, state.shortcuts);
 }
 
 /* ── 수명주기 ── */

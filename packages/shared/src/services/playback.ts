@@ -187,6 +187,53 @@ export async function skipToNext(prisma: PrismaClient, userId: number, resolvedB
   return playback;
 }
 
+/**
+ * 전역 단축키 (#85) — Electron accelerator 형식.
+ * 데스크톱 앱이 창을 열지 않고도 조작할 수 있게 등록한다.
+ */
+export const DEFAULT_SONG_SHORTCUTS = {
+  playPause: 'CommandOrControl+Shift+P',
+  stop: 'CommandOrControl+Shift+S',
+  next: 'CommandOrControl+Shift+N',
+} as const;
+
+export type SongShortcuts = { playPause: string; stop: string; next: string };
+
+/**
+ * 최소한의 형식 검사.
+ * 수식키 하나 이상 + 일반 키 하나. 이걸 통과해도 OS/다른 앱이 선점했으면
+ * 등록에 실패할 수 있는데, 그건 앱이 조용히 넘긴다.
+ */
+const ACCELERATOR = /^(?:(?:CommandOrControl|Command|Control|Alt|Option|Shift|Super)\+){1,3}[A-Za-z0-9]{1,3}$/;
+
+export async function setShortcuts(
+  prisma: PrismaClient,
+  userId: number,
+  shortcuts: SongShortcuts,
+) {
+  for (const value of Object.values(shortcuts)) {
+    if (!ACCELERATOR.test(value)) {
+      throw new ServiceError('INVALID_INPUT', `단축키 형식이 올바르지 않습니다: ${value}`);
+    }
+  }
+
+  const used = new Set(Object.values(shortcuts));
+  if (used.size !== 3) {
+    throw new ServiceError('CONFLICT', '단축키가 서로 겹칩니다.');
+  }
+
+  await prisma.userSetting.update({
+    where: { userId },
+    data: {
+      songShortcutPlayPause: shortcuts.playPause,
+      songShortcutStop: shortcuts.stop,
+      songShortcutNext: shortcuts.next,
+    },
+  });
+
+  return { ok: true as const };
+}
+
 /** 한 곡 반복 — 곡이 끝나도 다음으로 넘기지 않고 처음부터 다시 재생한다 */
 export async function setRepeatOne(prisma: PrismaClient, userId: number, enabled: boolean) {
   await getPlayback(prisma, userId);

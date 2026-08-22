@@ -97,6 +97,10 @@ model UserSetting {
   chatbotActive         Boolean @db.TinyInt @default(true)  // 챗봇 사용 여부
   songActive            Boolean @db.TinyInt @default(true)  // 노래 기능 사용 여부
   songKeyboardShortcut  Boolean @db.TinyInt @default(true)  // 노래 단축키 사용 여부
+  /// 전역 단축키 조합 (Electron accelerator). null 이면 기본값 (#85)
+  songShortcutPlayPause String? @db.VarChar(64)
+  songShortcutStop      String? @db.VarChar(64)
+  songShortcutNext      String? @db.VarChar(64)
   chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
   songOneRequestPerUser Boolean @db.TinyInt @default(false) // 1인당 대기열 1곡 제한
   songAutoPlayFromDefault Boolean @db.TinyInt @default(false) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생
