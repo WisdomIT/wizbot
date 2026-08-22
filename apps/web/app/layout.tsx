@@ -3,6 +3,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
 
+import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 
 const suit = localFont({
@@ -20,10 +21,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
+    // suppressHydrationWarning: next-themes 가 렌더 전에 html 클래스를 바꾼다
+    <html lang="ko" suppressHydrationWarning>
       <body className={`${suit.className} antialiased`}>
-        {children}
-        <Toaster position="top-center" richColors />
+        <ThemeProvider>
+          {children}
+          <Toaster position="top-center" richColors />
+        </ThemeProvider>
       </body>
     </html>
   );

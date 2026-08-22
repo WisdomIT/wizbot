@@ -1,6 +1,7 @@
 'use client';
 
 import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -109,6 +110,10 @@ export function SettingsDialog({
 
           <Separator />
 
+          <ThemeSection />
+
+          <Separator />
+
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col">
               <Label>로그아웃</Label>
@@ -123,6 +128,31 @@ export function SettingsDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ThemeSection() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col">
+        <Label>화면 테마</Label>
+        <span className="text-xs text-muted-foreground">
+          「시스템」 은 운영체제 설정을 따라갑니다.
+        </span>
+      </div>
+      <Select value={theme ?? 'system'} onValueChange={setTheme}>
+        <SelectTrigger className="w-32">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="system">시스템</SelectItem>
+          <SelectItem value="light">라이트</SelectItem>
+          <SelectItem value="dark">다크</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

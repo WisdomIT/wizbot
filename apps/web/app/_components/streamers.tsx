@@ -28,7 +28,7 @@ export default function Streamers() {
                   <img
                     alt={`${streamer.channelName} profile`}
                     src={streamer.channelImageUrl}
-                    className="bg-white w-full aspect-square object-cover transition-all duration-200 ease-linear size-full "
+                    className="bg-muted w-full aspect-square object-cover transition-all duration-200 ease-linear size-full "
                   />
                 </div>
                 <CardTitle className="py-6 pb-4 px-6 text-2xl">{streamer.channelName}</CardTitle>
