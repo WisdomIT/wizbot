@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
  * 데스크톱 앱(#85) 안에서 열렸는지, 그리고 창 모드를 바꾸는 통로.
@@ -13,6 +13,9 @@ interface WizbotApp {
   setMode: (mode: WindowMode, queueOpen: boolean) => void;
   getAutoLaunch: () => Promise<boolean>;
   setAutoLaunch: (enabled: boolean) => void;
+  openYoutubeLogin: () => void;
+  getYoutubeLogin: () => Promise<boolean>;
+  youtubeLogout: () => Promise<void>;
   minimize: () => void;
   toggleMaximize: () => void;
   close: () => void;
@@ -34,6 +37,8 @@ export function useAppShell() {
   const [queueOpen, setQueueOpenState] = useState(false);
   /** 컴퓨터 시작 시 자동 실행 — 계정이 아니라 이 기기의 설정이라 앱에서 직접 읽는다 */
   const [autoLaunch, setAutoLaunchState] = useState(false);
+  /** 유튜브(프리미엄) 로그인 여부 — 로그인은 별도 창에서 이뤄진다 (#118) */
+  const [youtubeLoggedIn, setYoutubeLoggedIn] = useState(false);
 
   useEffect(() => {
     const app = window.wizbotApp;
@@ -50,6 +55,12 @@ export function useAppShell() {
     app.setMode(nextMode, nextQueue);
 
     void app.getAutoLaunch().then(setAutoLaunchState);
+    void app.getYoutubeLogin().then(setYoutubeLoggedIn);
+
+    // 로그인은 다른 창에서 하므로, 이 창으로 돌아왔을 때 상태를 다시 읽는다
+    const refresh = () => void app.getYoutubeLogin().then(setYoutubeLoggedIn);
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
   }, []);
 
   const setMode = useCallback(
@@ -78,11 +89,27 @@ export function useAppShell() {
     [bridge],
   );
 
+  const youtube = useMemo(
+    () =>
+      bridge
+        ? {
+            loggedIn: youtubeLoggedIn,
+            login: () => bridge.openYoutubeLogin(),
+            logout: async () => {
+              await bridge.youtubeLogout();
+              setYoutubeLoggedIn(await bridge.getYoutubeLogin());
+            },
+          }
+        : undefined,
+    [bridge, youtubeLoggedIn],
+  );
+
   return {
     /** 앱 안에서 열렸는가 — 웹 브라우저면 false */
     isApp: bridge !== null,
     autoLaunch,
     setAutoLaunch,
+    youtube,
     /** 창 제어 — Windows 에서 버튼을 직접 그릴 때 쓴다 */
     windowControls: bridge
       ? {

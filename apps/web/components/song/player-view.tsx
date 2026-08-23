@@ -293,6 +293,7 @@ export function PlayerView() {
                     ? { enabled: shell.autoLaunch, onChange: shell.setAutoLaunch }
                     : undefined
                 }
+                youtube={shell.youtube}
                 onChangeKeyboardShortcut={(enabled) =>
                   run(
                     updateUserSetting.mutateAsync({

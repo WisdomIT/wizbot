@@ -4,6 +4,7 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  session,
   shell,
   Tray,
   type MenuItemConstructorOptions,
@@ -38,9 +39,24 @@ type Mode = 'mini' | 'desktop';
 // 창 제목·작업 표시줄 등에서 「Electron」 으로 보이지 않도록
 app.setName('wizbot player');
 
+/**
+ * User-Agent 에서 앱·Electron 표식을 걷어내 평범한 Chrome 으로 보이게 한다.
+ *
+ * 구글은 UA 로 임베디드 브라우저를 판별해 축소된 로그인 플로우(WebLiteSignIn)로 보내고,
+ * 거기서 「이 브라우저 또는 앱은 보안에 취약할 수 있습니다」로 막는다 (실측 2026-08-23).
+ * Electron 버전이 올라가도 따라가도록 기본값에서 토큰만 지운다.
+ */
+app.userAgentFallback = app.userAgentFallback
+  .replace(/ wizbot player\/[\d.]+/i, '')
+  .replace(/ Electron\/[\d.]+/i, '');
+
 let mainWindow: BrowserWindow | null = null;
 let sourceWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let youtubeWindow: BrowserWindow | null = null;
+
+/** 이 중 하나라도 있으면 로그인된 것으로 본다 */
+const AUTH_COOKIES = new Set(['SID', 'SAPISID', '__Secure-3PSID', '__Secure-1PSID']);
 /** 지금 등록된 조합 — 값이 바뀌면 다시 등록한다 */
 let registeredSignature = '';
 /** 트레이 메뉴를 만들 때 쓰는 마지막 상태 */
@@ -180,6 +196,62 @@ function createSourceWindow() {
   sourceWindow.on('closed', () => {
     sourceWindow = null;
   });
+}
+
+/**
+ * 유튜브 로그인 창 (#118).
+ *
+ * 플레이어 창이 아니라 **별도 창**으로 연다. 숨은 재생 창과 쿠키를 공유해야 하므로
+ * 세션은 반드시 defaultSession 이고, 구글·유튜브 페이지에 우리 통로가 노출되지 않도록
+ * **preload 를 붙이지 않는다.**
+ */
+function openYoutubeWindow() {
+  if (youtubeWindow) {
+    if (youtubeWindow.isMinimized()) youtubeWindow.restore();
+    youtubeWindow.focus();
+    return;
+  }
+
+  youtubeWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    title: '유튜브 로그인',
+    icon: appIconPath(),
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  void youtubeWindow.loadURL('https://www.youtube.com');
+
+  youtubeWindow.on('closed', () => {
+    youtubeWindow = null;
+  });
+}
+
+/** 로그인 여부 — 인증 쿠키가 있는지로 본다 */
+async function isYoutubeLoggedIn() {
+  const cookies = await session.defaultSession.cookies.get({ url: 'https://www.youtube.com' });
+  return cookies.some((cookie) => AUTH_COOKIES.has(cookie.name));
+}
+
+/** 유튜브·구글 쿠키만 지운다 — 위즈봇 로그인은 건드리지 않는다 */
+async function youtubeLogout() {
+  const cookies = await session.defaultSession.cookies.get({});
+
+  await Promise.all(
+    cookies
+      .filter((cookie) => /(^|\.)(youtube\.com|google\.com)$/.test(cookie.domain ?? ''))
+      .map((cookie) => {
+        const host = (cookie.domain ?? '').replace(/^\./, '');
+        const url = `https://${host}${cookie.path ?? '/'}`;
+        return session.defaultSession.cookies.remove(url, cookie.name);
+      }),
+  );
+
+  youtubeWindow?.webContents.reload();
 }
 
 function showMainWindow() {
@@ -337,6 +409,10 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle('app:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+
+  ipcMain.on('app:open-youtube', () => openYoutubeWindow());
+  ipcMain.handle('app:get-youtube-login', () => isYoutubeLoggedIn());
+  ipcMain.handle('app:youtube-logout', () => youtubeLogout());
 
   ipcMain.on('app:set-auto-launch', (_event, enabled: boolean) => {
     // 자동 실행으로 켜질 때는 창을 띄우지 않는다 — 부팅할 때마다 창이 뜨면 성가시다

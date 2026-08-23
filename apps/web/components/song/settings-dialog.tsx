@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings, Youtube } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -57,6 +57,7 @@ export function SettingsDialog({
   onChangeKeyboardShortcut,
   onChangeShortcuts,
   autoLaunch,
+  youtube,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -68,6 +69,8 @@ export function SettingsDialog({
   onChangeShortcuts: (shortcuts: SongSettings['shortcuts']) => void;
   /** 데스크톱 앱에서 열었을 때만 — 계정이 아니라 이 기기의 설정이다 */
   autoLaunch?: { enabled: boolean; onChange: (enabled: boolean) => void };
+  /** 데스크톱 앱에서만 — 유튜브 로그인은 앱이 띄우는 별도 창에서 한다 */
+  youtube?: { loggedIn: boolean; login: () => void; logout: () => void };
 }) {
   const [open, setOpen] = useState(false);
 
@@ -125,6 +128,33 @@ export function SettingsDialog({
               />
             </div>
           </div>
+
+          {youtube && (
+            <>
+              <Separator />
+
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col">
+                  <Label>유튜브 로그인</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {youtube.loggedIn
+                      ? '로그인되어 있습니다. 프리미엄 계정이면 광고 없이 재생됩니다.'
+                      : '프리미엄 계정으로 로그인하면 광고 없이 재생됩니다. 별도 창이 열립니다.'}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button variant="outline" onClick={youtube.login}>
+                    <Youtube /> {youtube.loggedIn ? '유튜브 열기' : '로그인'}
+                  </Button>
+                  {youtube.loggedIn && (
+                    <Button variant="ghost" className="text-destructive" onClick={youtube.logout}>
+                      로그아웃
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {autoLaunch && (
             <>
