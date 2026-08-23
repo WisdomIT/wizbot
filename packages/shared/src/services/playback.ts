@@ -332,11 +332,23 @@ export async function seek(prisma: PrismaClient, userId: number, positionSeconds
   return updated;
 }
 
+/**
+ * 송출 소스가 5초마다 보고하는 재생 위치.
+ *
+ * **어느 곡의 위치인지 확인하고 받는다.** 곡이 바뀌는 순간과 보고 주기가 겹치면
+ * 소스의 플레이어가 아직 이전 영상의 끝(예: 210초)을 들고 있는데, 그걸 그대로 저장하면
+ * 방금 0 으로 리셋한 값을 덮어써 다음 곡이 이전 곡 시간을 이어받는다 (#122).
+ */
 export async function reportPosition(
   prisma: PrismaClient,
   userId: number,
   positionSeconds: number,
+  youtubeId: string,
 ) {
+  const playback = await prisma.songPlayback.findUnique({ where: { userId } });
+  // 이미 다음 곡으로 넘어갔다면 지난 곡의 보고다 — 버린다
+  if (!playback || playback.youtubeId !== youtubeId) return playback;
+
   // 진행률은 자주 오므로 이벤트를 쏘지 않는다 (컨트롤러는 자체 타이머로 보간)
   return prisma.songPlayback.update({
     where: { userId },

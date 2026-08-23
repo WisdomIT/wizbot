@@ -10,6 +10,7 @@ import {
   getSourceStatus,
   isSessionActive,
   reportEnded,
+  reportPosition,
   skipToNext,
   touchSourceSession,
 } from '../playback';
@@ -60,6 +61,35 @@ const QUEUE_ITEM = {
   durationSeconds: 200,
   order: 1,
 };
+
+describe('reportPosition (#122)', () => {
+  it('지난 곡의 위치 보고는 무시한다', async () => {
+    // 곡이 바뀌는 순간 소스가 이전 영상의 시간을 보내면, 방금 0 으로 리셋한 값이 덮인다
+    const { prisma, songPlayback } = createPrisma([], {
+      userId: USER_ID,
+      youtubeId: 'newnewnewne',
+      positionSeconds: 0,
+    });
+
+    await reportPosition(prisma, USER_ID, 210, 'oldoldoldol');
+
+    expect(songPlayback.update).not.toHaveBeenCalled();
+  });
+
+  it('현재 곡의 보고는 저장한다', async () => {
+    const { prisma, songPlayback } = createPrisma([], {
+      userId: USER_ID,
+      youtubeId: 'newnewnewne',
+      positionSeconds: 0,
+    });
+
+    await reportPosition(prisma, USER_ID, 12.7, 'newnewnewne');
+
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { positionSeconds: 12 } }),
+    );
+  });
+});
 
 describe('togglePlay (#85)', () => {
   it('재생 중이면 일시정지한다', async () => {
