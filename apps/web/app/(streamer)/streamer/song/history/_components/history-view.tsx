@@ -196,7 +196,15 @@ export function HistoryView() {
                         </TableCell>
                         <TableCell className="break-words whitespace-normal">
                           <div className="flex flex-col">
-                            <span>{entry.title}</span>
+                            {/* 제목을 누르면 유튜브에서 새 창으로 열린다 */}
+                            <a
+                              href={`https://www.youtube.com/watch?v=${entry.youtubeId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="hover:underline"
+                            >
+                              {entry.title}
+                            </a>
                             <span className="text-xs text-muted-foreground">
                               {entry.videoUploader}
                             </span>

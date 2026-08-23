@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('wizbotApp', {
   getAutoLaunch: (): Promise<boolean> => ipcRenderer.invoke('app:get-auto-launch'),
   setAutoLaunch: (enabled: boolean) => ipcRenderer.send('app:set-auto-launch', enabled),
 
+  /** 유튜브 로그인 — 별도 창에서 진행한다 (#118) */
+  openYoutubeLogin: () => ipcRenderer.send('app:open-youtube'),
+  getYoutubeLogin: (): Promise<boolean> => ipcRenderer.invoke('app:get-youtube-login'),
+  youtubeLogout: (): Promise<void> => ipcRenderer.invoke('app:youtube-logout'),
+
   minimize: () => ipcRenderer.send('app:window', 'minimize'),
   toggleMaximize: () => ipcRenderer.send('app:window', 'toggle-maximize'),
   close: () => ipcRenderer.send('app:window', 'close'),
