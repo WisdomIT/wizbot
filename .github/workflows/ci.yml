@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 빌드/타입체크에만 쓰이는 더미 값 (실제 접속 없음)
+  DATABASE_URL: mysql://ci:ci@localhost:3306/ci
+  JWT_SECRET: ci-only-secret
+  # 앱(@wizbot/player) 때문에 install 마다 100MB 넘는 Electron 바이너리를 받게 된다.
+  # 타입체크·번들에는 필요 없다 — 실제 패키징은 player-release.yml 에서만 한다.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+jobs:
+  check:
+    name: typecheck · lint · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        # 버전은 package.json의 packageManager 필드에서 읽음
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm --filter @wizbot/api exec prisma generate
+
+      - name: Typecheck
+        run: pnpm -r --if-present run typecheck
+
+      - name: Lint
+        run: pnpm -r --if-present run lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build web
+        run: pnpm --filter @wizbot/web build
+
+  # dev 브랜치 푸시마다 컨테이너 이미지를 ghcr.io 에 :dev 태그로 올린다 (Portainer 시험/스테이징 스택용).
+  # 정식 릴리즈 태그(vX.Y.Z)는 release.yml 이 담당한다.
+  #
+  # check 를 기다리지 않고 병렬로 돌린다 — dev 에 오는 커밋은 PR CI 를 이미 통과한 트리라
+  # 직렬화는 이미지 준비 시간만 ~90초 늘렸다 (4.5분 → ~2.7분).
+  # ⚠ 전제: dev 직접 push 금지(브랜치 보호, #14). 직접 push 하면 check 실패 커밋의 이미지가
+  #   :dev 로 올라갈 수 있다.
+  docker-dev:
+    name: image:dev ${{ matrix.app }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    # wisdomserver 셀프호스트 러너 (homelab optional/github-runner).
+    # 호스트 Docker 데몬의 레이어 캐시를 그대로 쓰므로 원격 gha 캐시가 필요 없다.
+    # 러너가 내려가 있으면 이 잡은 큐에서 대기한다(실패 아님) — check/release 는 GitHub 호스트 유지.
+    runs-on: [self-hosted, wisdomserver]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # 같은 데몬 캐시를 공유하므로 동시 3빌드보다 순차가 총시간이 짧다 (deps 레이어 1회 빌드)
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        app: [web, api, chatbot]
+    steps:
+      - uses: actions/checkout@v7
+      # ghcr 이미지 이름은 소문자만 허용 — github.repository(WisdomIT/wizbot)를 그대로 쓰면 실패한다
+      - id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
+      # driver: docker = 호스트 데몬 직접 사용 → 로컬 레이어 캐시 (docker-container 빌더 불필요)
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.app }}
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:dev
+            ${{ steps.image.outputs.name }}:dev-${{ github.sha }}
+          # docker 드라이버는 attestation 미지원 — 명시적으로 끈다
+          provenance: false
+
+  # dev 이미지가 모두 올라간 뒤 한 번만 호출한다 (matrix 안에서 부르면 3번 재배포된다).
+  # 스택이 최신 이미지를 받으려면 Portainer 쪽에서 「Re-pull image」 가 켜져 있어야 한다 (#124)
+  deploy-dev:
+    name: portainer redeploy (dev)
+    needs: docker-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Portainer dev webhook
+        env:
+          WEBHOOK: ${{ secrets.PORTAINER_DEV_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::PORTAINER_DEV_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 의 dev 스택 > Webhook 에서 URL을 발급해 등록하세요."
+            exit 0
+          fi
+          curl -fsS -X POST "$WEBHOOK"
+          echo "dev 스택 재배포 webhook 호출 완료"

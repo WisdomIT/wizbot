@@ -1,0 +1,40 @@
+name: 🔧 작업 / 리팩토링
+description: 리팩토링, 인프라, 문서, 프로세스 등 기능 외 작업입니다.
+title: "chore: "
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 종류
+      options:
+        - refactor (구조 개선)
+        - infra (빌드/배포/CI)
+        - security (보안)
+        - docs (문서)
+        - process (개발 프로세스)
+        - chore (기타)
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: 현재 상태 / 문제
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목표
+    validations:
+      required: true
+  - type: textarea
+    id: todo
+    attributes:
+      label: 할 일
+      value: |
+        - [ ] 
+  - type: textarea
+    id: related
+    attributes:
+      label: 관련 이슈 / 선행 조건
+      placeholder: "#17, #26"

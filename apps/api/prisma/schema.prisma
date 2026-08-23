@@ -25,9 +25,30 @@ enum SongStatus {
   STOPPED
 }
 
+/// 자막 표시 방식 (#5) — 계속 띄울지, 곡이 바뀔 때 잠깐만 보여줄지
+enum SongOverlayMode {
+  ALWAYS
+  TIMED
+}
+
+/// 소리를 내보내는 경로 (#5 2단계) — 지정된 소스만 재생한다
+enum SongSourceType {
+  NONE
+  OBS
+  ELECTRON
+}
+
+/// 신청된 곡의 최종 상태 (#5/#6 — 재생 여부와 무관하게 전부 기록)
+enum SongHistoryStatus {
+  PLAYED    // 끝까지 재생됨
+  SKIPPED   // 재생 중 중단됨
+  CANCELED  // 재생 전 삭제됨
+  FAILED    // 재생 시도했으나 실패
+}
+
 model Whitelist {
   id         Int    @id @default(autoincrement())
-  nickname   String @db.VarChar(10)
+  nickname   String @db.VarChar(50)
   channelId  String @unique @db.VarChar(32)
 }
 
@@ -63,6 +84,7 @@ model User {
   functionCommands  ChatbotFunctionCommand[]
   repeatCommands    ChatbotRepeat[]
   songs             Song[]
+  songHistories     SongHistory[]
   songPlayback      SongPlayback?
   playlists         SongFavorite[]
   cafeChzzks        CafeChzzk[]
@@ -74,9 +96,24 @@ model UserSetting {
   userId                Int     @unique                     // 각 유저당 한 개의 설정정보
   chatbotActive         Boolean @db.TinyInt @default(true)  // 챗봇 사용 여부
   songActive            Boolean @db.TinyInt @default(true)  // 노래 기능 사용 여부
-  songFavoriteAuto      Int?    @db.Int                     // 자동 재생될 Favorite ID
   songKeyboardShortcut  Boolean @db.TinyInt @default(true)  // 노래 단축키 사용 여부
+  /// 전역 단축키 조합 (Electron accelerator). null 이면 기본값 (#85)
+  songShortcutPlayPause String? @db.VarChar(64)
+  songShortcutStop      String? @db.VarChar(64)
+  songShortcutNext      String? @db.VarChar(64)
   chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
+  songOneRequestPerUser Boolean @db.TinyInt @default(false) // 1인당 대기열 1곡 제한
+  songAutoPlayFromDefault Boolean @db.TinyInt @default(false) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생
+  songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
+  songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
+  songMaxQueueLength    Int     @db.Int @default(30)        // 대기열 최대 곡 수
+  songSourceType        SongSourceType @default(OBS)        // 소리를 내보낼 경로
+  /// OBS 재생 페이지 토큰 (URL 에 노출되므로 재발급 가능해야 한다)
+  songSourceToken       String? @db.VarChar(64)
+  /// 읽기 전용 토큰 (현재 재생 페이지가 자막을 함께 표시하므로 미사용 — 별도 오버레이가 필요해지면 사용)
+  songOverlayToken      String? @db.VarChar(64)
+  songOverlayMode       SongOverlayMode @default(ALWAYS) // 자막 표시 방식
+  songOverlayDurationSeconds Int @db.Int @default(10)    // TIMED 일 때 표시 시간(초)
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -98,7 +135,7 @@ model OAuthCredential {
   accessToken  String   @db.Text
   refreshToken String   @db.Text
   tokenType    String   @db.VarChar(20)  // 예: "Bearer"
-  expiresIn    DateTime @db.DateTime() 
+  expiresIn    DateTime @db.DateTime(0)
 
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -108,6 +145,8 @@ model ChatbotEchoCommand {
   userId   Int
   command  String   @db.VarChar(20)
   response String   @db.Text
+  /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
+  enabled  Boolean  @default(true) @db.TinyInt
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -119,6 +158,8 @@ model ChatbotFunctionCommand {
   command    String               @db.VarChar(20)
   function   String               @db.VarChar(100)
   option     String?              @db.VarChar(20)
+  /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
+  enabled    Boolean              @default(true) @db.TinyInt
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -128,20 +169,58 @@ model ChatbotRepeat {
   userId     Int
   response   String               @db.Text
   interval   Int                  @db.Int
+  /// 꺼두면 워커가 타이머를 정리해 전송이 멈춘다 (#82)
+  enabled    Boolean              @default(true) @db.TinyInt
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Song {
-  id            Int    @id @default(autoincrement())
-  userId        Int
-  youtubeId     String @db.VarChar(11) // 유튜브 영상 ID
-  title         String @db.VarChar(150) // 영상 제목
-  videoUploader String @db.VarChar(150) // 영상 게시자
-  requester     String @db.VarChar(40) // 신청자
-  order         Int    @db.Int // 순서
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  youtubeId          String   @db.VarChar(11) // 유튜브 영상 ID
+  title              String   @db.VarChar(150) // 영상 제목
+  videoUploader      String   @db.VarChar(150) // 영상 게시자
+  requester          String   @db.VarChar(40) // 신청자 닉네임 (표시용, 신청 시점 스냅샷)
+  requesterChannelId String?  @db.VarChar(32) // 신청자 식별 (닉네임은 변경 가능하므로 판별은 이 값으로)
+  durationSeconds    Int      @default(0) @db.Int // 영상 길이(초) — 길이 제한·진행률 표시
+  thumbnailUrl       String?  @db.Text
+  order              Int      @db.Int // 대기열 순서
+  createdAt          DateTime @default(now())
 
-  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, order])
+}
+
+/// 신청 이력 — 큐에서 사라져도 남는다 (분탕 방지·기록용)
+model SongHistory {
+  id                 Int               @id @default(autoincrement())
+  userId             Int
+  youtubeId          String            @db.VarChar(11)
+  title              String            @db.VarChar(150)
+  videoUploader      String            @db.VarChar(150)
+  requester          String            @db.VarChar(40) // 표시용 닉네임
+  requesterChannelId String?           @db.VarChar(32)
+  durationSeconds    Int               @default(0) @db.Int
+  status             SongHistoryStatus
+  /// 삭제/스킵을 실행한 사람 (닉네임). 본인 취소면 신청자와 같다
+  resolvedBy         String?           @db.VarChar(40)
+  /// 스트리머가 이 항목만 시청자에게 숨김
+  hiddenFromViewers  Boolean           @default(false) @db.TinyInt
+  requestedAt        DateTime          @default(now())
+  resolvedAt         DateTime?
+
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, requestedAt])
+}
+
+/// 사이트 전역 설정 (어드민에서 변경) — 예: 신규 가입 시 대표 즐겨찾기로 import 할 유튜브 재생목록 ID
+model SiteSetting {
+  key       String   @id @db.VarChar(50)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
 }
 
 model SongPlayback {
@@ -152,28 +231,44 @@ model SongPlayback {
   title         String?    @db.VarChar(150) // 영상 제목
   videoUploader String?    @db.VarChar(150) // 영상 게시자
   requester     String?    @db.VarChar(40) // 신청자
+  durationSeconds Int      @default(0) @db.Int // 현재 곡 길이(초)
+  positionSeconds Int      @default(0) @db.Int // 재생 위치(초) — 송출 소스가 보고
+  volume        Int        @default(70) @db.Int // 0~100
+  /// 한 곡 반복 — 곡이 끝나면 다음 곡으로 넘기지 않고 처음부터 다시 재생한다
+  repeatOne     Boolean    @default(false) @db.TinyInt
+  /// 현재 곡이 큐에서 나온 시각 — 이력 기록·타임아웃 판단용
+  startedAt     DateTime?
+  updatedAt     DateTime   @updatedAt
 
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SongFavorite {
-  id       Int    @id @default(autoincrement())
-  userId   Int
-  name     String @db.VarChar(50)
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  name      String   @db.VarChar(50)
+  /// 대표 즐겨찾기 — 유저당 최대 1개 (자동 재생의 출처)
+  isDefault Boolean  @default(false) @db.TinyInt
+  createdAt DateTime @default(now())
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   items    SongFavoriteItem[]
+
+  @@index([userId, createdAt])
 }
 
 model SongFavoriteItem {
-  id            Int    @id @default(autoincrement())
-  favoriteId    Int
-  youtubeId     String     @db.VarChar(11) // 유튜브 영상 ID
-  title         String     @db.VarChar(150) // 영상 제목
-  videoUploader String     @db.VarChar(150) // 영상 게시자
-  order         Int     // 재생목록 내 순서
+  id              Int    @id @default(autoincrement())
+  favoriteId      Int
+  youtubeId       String @db.VarChar(11) // 유튜브 영상 ID
+  title           String @db.VarChar(150) // 영상 제목
+  videoUploader   String @db.VarChar(150) // 영상 게시자
+  durationSeconds Int    @default(0) @db.Int // 영상 길이(초)
+  order           Int    // 재생목록 내 순서
 
   favorite      SongFavorite   @relation(fields: [favoriteId], references: [id], onDelete: Cascade)
+
+  @@index([favoriteId, order])
 }
 
 model CafeChzzk {

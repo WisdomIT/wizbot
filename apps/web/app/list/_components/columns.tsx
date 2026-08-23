@@ -3,7 +3,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import Link from 'next/link';
 
-import { ShortcutProps, StreamerProps } from '@/app/_api/streamers';
+import { ShortcutProps, StreamerProps } from '@/app/_lib/streamers';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { Button } from '@/components/ui/button';
 
@@ -18,10 +18,7 @@ export const columns: ColumnDef<StreamerProps>[] = [
       return (
         <span className="text-sm">
           <Button variant="ghost" asChild>
-            <Link
-              href={`/${streamer.channelName}/command`}
-              className="flex items-center gap-2 py-2"
-            >
+            <Link href={`/${streamer.channelId}/command`} className="flex items-center gap-2 py-2">
               <img
                 alt={streamer.channelName}
                 src={streamer.channelImageUrl ?? ''}

@@ -6,20 +6,22 @@
   "scripts": {
     "build": "echo 'No build needed for API (ts-node runtime)'",
     "start": "ts-node src/server.ts",
-    "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts"
+    "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@prisma/client": "^6.5.0",
-    "@trpc/client": "^11.0.2",
-    "@trpc/server": "^11.0.2",
+    "@prisma/client": "^6.19.3",
+    "@trpc/client": "^11.18.0",
+    "@trpc/server": "^11.18.0",
     "@wizbot/shared": "workspace:^",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "prisma": "^6.5.0",
+    "jose": "^6.2.9",
+    "prisma": "^6.19.3",
     "ts-node": "^10.9.2",
     "zod": "^3.24.2"
   },
@@ -27,7 +29,7 @@
     "@types/express": "^5.0.1",
     "@types/node": "^20",
     "ts-node-dev": "^2.0.0",
-    "tsc-alias": "^1.8.15",
+    "tsc-alias": "^1.9.1",
     "typescript": "^5.8.2"
   }
 }

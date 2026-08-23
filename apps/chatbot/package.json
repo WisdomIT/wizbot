@@ -6,17 +6,19 @@
   "scripts": {
     "build": "echo 'No build needed for Chatbot (ts-node runtime)'",
     "start": "ts-node src/index.ts",
-    "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts"
+    "dev": "ts-node-dev --respawn --watch ../../packages/shared,src src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@trpc/client": "^11.0.2",
+    "@trpc/client": "^11.18.0",
     "@wizbot/shared": "workspace:^",
     "chalk": "^5.4.1",
-    "socket.io-client": "^2.0.3",
+    "chzzk-open-sdk": "^1.0.0",
+    "dotenv": "^17.4.2",
     "ts-node": "^10.9.2"
   },
   "devDependencies": {

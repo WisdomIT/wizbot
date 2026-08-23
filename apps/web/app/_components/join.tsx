@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { CONTACT_URL } from '@/src/data/wizbot';
 
 export default function Join() {
   return (
@@ -26,7 +27,7 @@ export default function Join() {
             <CardFooter>
               <Button asChild className="px-4 font-bold hover:gap-4">
                 <Link
-                  href="http://discord.com/users/901304044767834123/"
+                  href={CONTACT_URL}
                   target="_blank"
                   rel="noreferrer"
                 >

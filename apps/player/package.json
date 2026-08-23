@@ -1,0 +1,25 @@
+{
+  "name": "@wizbot/player",
+  "version": "1.0.0",
+  "productName": "wizbot player",
+  "private": true,
+  "description": "wizbot player — 노래 신청 송출용 데스크톱 앱",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "electron .",
+    "dev": "pnpm build && electron .",
+    "package": "pnpm build && electron-builder",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@trpc/client": "^11.18.0",
+    "@types/node": "^22.13.10",
+    "@wizbot/shared": "workspace:^",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.2"
+  },
+  "packageManager": "pnpm@10.5.2"
+}

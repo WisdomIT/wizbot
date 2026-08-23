@@ -1,3 +1,8 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  chatbotFunctionDefinitionMap,
+  isChatbotFunctionKey,
+} from '@wizbot/shared/src/chatbot/definitions';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -20,9 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import chatbotData from '@/src/chatbot';
+import { useTRPC } from '@/src/utils/trpc-react';
 
-import { CreateCommand, fetchCommandById, updateCommand } from '../_api/command';
 import { Command } from './columns';
 import { FunctionArgs, InputsEcho, InputsFunction } from './inputs';
 
@@ -33,6 +37,16 @@ export default function UpdateCommand({
   command: Command | null;
   setUpdateTarget: (command: Command | null) => void;
 }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const updateCommand = useMutation(trpc.command.updateCommand.mutationOptions());
+  const { data: getCommand } = useQuery(
+    trpc.command.getCommandById.queryOptions(
+      { id: initialCommand?.id ?? 0, type: initialCommand?.type ?? 'echo' },
+      { enabled: !!initialCommand },
+    ),
+  );
+
   const [command, setCommand] = useState(initialCommand?.command ?? '');
   const [type, setType] = useState<'echo' | 'function'>(initialCommand?.type ?? 'echo');
   const [echo, setEcho] = useState('');
@@ -43,31 +57,21 @@ export default function UpdateCommand({
   });
 
   useEffect(() => {
-    if (!initialCommand) return;
+    if (!getCommand) return;
 
-    async function fetchCommand(initialCommand: Command) {
-      const getCommand = await fetchCommandById(initialCommand.id, initialCommand.type);
-      setCommand(getCommand.command);
-      setType(getCommand.type);
-      setEcho(getCommand.type === 'echo' ? getCommand.response : '');
+    setCommand(getCommand.command);
+    setType(getCommand.type);
+    setEcho(getCommand.type === 'echo' ? getCommand.response : '');
 
-      if (getCommand.type === 'function') {
-        const thisFunction = chatbotData[getCommand.function];
-        if (!thisFunction) {
-          throw new Error('Function not found');
-        }
-
-        setFunctionArgs({
-          type: thisFunction.type,
-          func: getCommand.function,
-          permission: getCommand.permission,
-          option: getCommand.option,
-        });
-      }
+    if (getCommand.type === 'function' && isChatbotFunctionKey(getCommand.function)) {
+      setFunctionArgs({
+        type: chatbotFunctionDefinitionMap[getCommand.function].type,
+        func: getCommand.function,
+        permission: getCommand.permission,
+        option: getCommand.option ?? undefined,
+      });
     }
-
-    void fetchCommand(initialCommand);
-  }, [initialCommand]);
+  }, [getCommand]);
 
   async function handleClose() {
     setUpdateTarget(null);
@@ -85,24 +89,24 @@ export default function UpdateCommand({
     event.preventDefault();
     if (!initialCommand) return;
 
-    let data: CreateCommand;
-    if (type === 'echo') {
-      data = {
-        command,
-        type: 'echo',
-        response: echo,
-      };
-    } else {
-      data = {
-        command,
-        type: 'function',
-        function: functionArgs.func,
-        permission: functionArgs.permission,
-        option: functionArgs.option ?? undefined,
-      };
-    }
+    const promise =
+      type === 'echo'
+        ? updateCommand.mutateAsync({
+            type: 'echo',
+            id: initialCommand.id,
+            command,
+            response: echo,
+          })
+        : updateCommand.mutateAsync({
+            type: 'function',
+            id: initialCommand.id,
+            command,
+            function: functionArgs.func,
+            permission: functionArgs.permission,
+            option: functionArgs.option ?? undefined,
+          });
 
-    toast.promise(updateCommand({ id: initialCommand.id, ...data }), {
+    toast.promise(promise, {
       loading: '명령어를 수정하는 중입니다...',
       success: () => {
         setUpdateTarget(null);
@@ -115,9 +119,8 @@ export default function UpdateCommand({
           permission: 'STREAMER',
         });
 
-        setTimeout(() => {
-          location.reload();
-        }, 500);
+        void queryClient.invalidateQueries(trpc.command.getCommandList.queryFilter());
+        void queryClient.invalidateQueries(trpc.command.getCommandById.queryFilter());
 
         return '명령어가 수정되었습니다.';
       },

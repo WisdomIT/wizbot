@@ -1,12 +1,9 @@
-import { fetchCommandList } from './_api/command';
-import { DataTable } from './_components/data-table';
+import { CommandsView } from './_components/commands-view';
 
-export default async function Page() {
-  const data = await fetchCommandList();
-
+export default function Page() {
   return (
     <div>
-      <DataTable data={data} />
+      <CommandsView />
     </div>
   );
 }

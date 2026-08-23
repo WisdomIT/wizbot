@@ -1,0 +1,37 @@
+name: player release
+
+# Electron 패키징은 무겁고 OS 별 러너가 필요하다 — 태그를 붙였을 때만 돌린다.
+# 셀프호스트(Linux) 러너로는 Windows/macOS 빌드를 만들 수 없어 GitHub 호스트 러너를 쓴다.
+on:
+  push:
+    tags:
+      - 'player-v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.5.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package
+        working-directory: apps/player
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm package --publish always

@@ -1,22 +1,27 @@
 /* eslint-disable no-console */
 import { ChatbotEchoCommand, ChatbotFunctionCommand, ChatbotPermission } from '@prisma/client';
+import type { ChzzkOpenClient } from 'chzzk-open-sdk';
 
-import { getAccessToken } from '../lib/accessToken';
+import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
+import { ChatbotFunctionKey } from './definitions';
 import { functionSong } from './song';
 
 export interface ChatbotData {
   userId: number;
   senderNickname: string;
+  /** 신청자 식별용 — 닉네임은 변경 가능하므로 판별은 채널 ID 로 (#5 #6) */
+  senderChannelId?: string;
   senderRole: ChatbotPermission;
   content: string;
 }
 
 export interface ChatbotDataFunction extends ChatbotData {
   query: ChatbotFunctionCommand;
-  accessToken: string;
+  /** 해당 스트리머의 유저 토큰으로 동작하는 SDK 클라이언트 (토큰 조달은 호출 시점에 lazy) */
+  chzzk: ChzzkOpenClient;
 }
 
 export interface ChabotReturn {
@@ -24,17 +29,27 @@ export interface ChabotReturn {
   message: string;
 }
 
-export interface FunctionCommand {
-  [key: string]: (ctx: Context, data: ChatbotDataFunction) => Promise<ChabotReturn>;
-}
+export type ChatbotFunctionHandler = (
+  ctx: Context,
+  data: ChatbotDataFunction,
+) => Promise<ChabotReturn>;
 
+/**
+ * key → 실행 핸들러. definitions.ts 의 정의와 키가 1:1 이어야 하며,
+ * satisfies 가 누락(정의만 있고 핸들러 없음)과 잉여(핸들러만 있고 정의 없음)를
+ * 모두 컴파일 타임에 잡는다 (#26 26-b).
+ */
 export const functions = {
   ...functionCommand,
   ...functionSong,
   ...functionChzzk,
-};
+} satisfies Record<ChatbotFunctionKey, ChatbotFunctionHandler>;
 
-function findExactCommandMatch<T extends { command: string }>(
+export function getChatbotFunction(name: string): ChatbotFunctionHandler | undefined {
+  return (functions as Record<string, ChatbotFunctionHandler | undefined>)[name];
+}
+
+export function findExactCommandMatch<T extends { command: string }>(
   content: string,
   commands: T[],
 ): { matched: T; args: string } | null {
@@ -60,10 +75,14 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
 
   const contentWithoutPrefix = content.slice(1).trim();
 
-  const echoCommands = await ctx.prisma.chatbotEchoCommand.findMany({ where: { userId } });
+  // 비활성 명령어는 매칭 후보에서 빠진다 — 없는 명령어처럼 동작하고,
+  // 최장일치도 자연히 짧은 명령어로 폴백된다 (#82)
+  const { echo: echoCommands, function: functionCommands } = await commandService.listCommands(
+    ctx.prisma,
+    userId,
+    true,
+  );
   const matchedEcho = findExactCommandMatch(contentWithoutPrefix, echoCommands);
-
-  const functionCommands = await ctx.prisma.chatbotFunctionCommand.findMany({ where: { userId } });
   const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);
 
   if (!matchedEcho && !matchedFunction) {
@@ -107,7 +126,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const thisFunction = functions[matchedFunction.matched.function];
+  const thisFunction = getChatbotFunction(matchedFunction.matched.function);
 
   if (!thisFunction) {
     return {
@@ -116,20 +135,13 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     };
   }
 
-  const accessToken = await getAccessToken(ctx, userId);
-
-  if (!accessToken) {
-    return {
-      ok: false,
-      message: 'Access token not found',
-    };
-  }
-
   try {
+    // 토큰을 미리 조회하지 않는다 — 필요한 함수가 SDK 를 통해 lazy 하게 조달하고,
+    // 조달 실패도 아래 catch 로 떨어져 채팅 응답으로 정규화된다 (#27)
     const functionAction = await thisFunction(ctx, {
       ...data,
       query: matchedFunction.matched,
-      accessToken: accessToken,
+      chzzk: getChzzkClientForUser(ctx.prisma, userId),
     });
 
     if (!functionAction.ok) {
@@ -157,6 +169,13 @@ interface ChatbotDatabaseInitial {
   initialEcho: ChatbotEchoCommand[];
 }
 
+interface InitialFunctionSeed {
+  userId: number;
+  permission: ChatbotPermission;
+  command: string;
+  function: ChatbotFunctionKey; // 존재하지 않는 함수 키는 컴파일 에러
+}
+
 export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitial {
   const initialFunction = [
     {
@@ -176,6 +195,36 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       permission: 'MANAGER',
       command: '수정',
       function: 'updateCommandEcho',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '명령어',
+      function: 'getCommandListUrl',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래 신청',
+      function: 'requestSong',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래 삭제',
+      function: 'removeSong',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래 목록',
+      function: 'listSongs',
+    },
+    {
+      userId: userId,
+      permission: 'VIEWER',
+      command: '노래',
+      function: 'currentSong',
     },
     {
       userId: userId,
@@ -213,7 +262,7 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       command: '공지',
       function: 'setChzzkNotice',
     },
-  ] as ChatbotFunctionCommand[];
+  ] satisfies InitialFunctionSeed[] as unknown as ChatbotFunctionCommand[];
   const initialEcho = [
     {
       userId: userId,

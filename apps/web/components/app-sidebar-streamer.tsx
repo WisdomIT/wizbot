@@ -3,7 +3,6 @@
 import {
   BotMessageSquare,
   FileAudio2,
-  Headphones,
   Link,
   ListPlus,
   Play,
@@ -14,9 +13,7 @@ import {
 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
-import { useEffect, useState } from 'react';
 
-import { getCurrentUser } from '@/app/login/_apis/user';
 import {
   Sidebar,
   SidebarContent,
@@ -29,6 +26,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { StreamerPlayerBar } from './song/streamer-player-bar';
 
 const group = {
   bot: '봇',
@@ -62,11 +60,6 @@ const data = {
       name: '뮤직플레이어',
       url: '/streamer/song/player',
       icon: <Play />,
-    },
-    {
-      name: '플레이리스트',
-      url: '/streamer/song/playlist',
-      icon: <Headphones />,
     },
     {
       name: '즐겨찾기',
@@ -107,15 +100,11 @@ const data = {
 
 interface AppSidebarStreamerProps extends React.ComponentProps<typeof Sidebar> {
   children: React.ReactNode;
+  /** 레이아웃(RSC)에서 조회해 내려주는 로그인 스트리머 정보 (#22) */
+  user: { nickname: string; id: string; avatar: string };
 }
 
-export default function AppSidebarStreamer({ children, ...props }: AppSidebarStreamerProps) {
-  const [user, setUser] = useState({
-    nickname: '',
-    id: '',
-    avatar: '',
-  });
-
+export default function AppSidebarStreamer({ children, user, ...props }: AppSidebarStreamerProps) {
   const pathname = usePathname();
 
   // 경로에 해당하는 item과 group 찾기
@@ -131,23 +120,6 @@ export default function AppSidebarStreamer({ children, ...props }: AppSidebarStr
     }
   }
 
-  useEffect(() => {
-    async function fetchUser() {
-      const getUserData = await getCurrentUser();
-
-      if (getUserData?.role !== 'streamer') {
-        throw new Error('Unauthorized');
-      }
-
-      setUser({
-        nickname: getUserData.channelName,
-        id: getUserData.channelId,
-        avatar: getUserData.channelImageUrl ?? '',
-      });
-    }
-    fetchUser();
-  }, [pathname]);
-
   return (
     <>
       <Sidebar variant="inset" {...props}>
@@ -161,13 +133,14 @@ export default function AppSidebarStreamer({ children, ...props }: AppSidebarStr
           <NavMenu title="설정" items={data.setting} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
-          <NavUser user={user} />
+          <NavUser user={user} viewerUrl={`/${user.id}/command`} />
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        <StreamerPlayerBar />
       </SidebarInset>
     </>
   );

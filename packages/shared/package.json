@@ -3,22 +3,21 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "devDependencies": {
-    "@prisma/client": "^6.5.0",
-    "@trpc/server": "^11.0.2",
+    "@prisma/client": "^6.19.3",
+    "@trpc/server": "^11.18.0",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.17",
     "zod": "^3.24.2"
   },
   "dependencies": {
     "chzzk": "^1.10.4",
-    "nodemailer": "^6.10.1"
+    "chzzk-open-sdk": "^1.0.0",
+    "nodemailer": "^6.10.1",
+    "youtubei.js": "^18.0.0"
   }
 }

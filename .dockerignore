@@ -1,0 +1,21 @@
+# 의존성/빌드 산출물 (이미지 안에서 다시 설치/빌드)
+**/node_modules
+**/.next
+**/dist
+.pnpm-store
+
+# 로컬 환경/시크릿
+**/.env
+**/.env.*
+!**/.env.example
+
+# 저장소 메타
+.git
+.github
+*.md
+!README.md
+docs
+
+# 배포에 불필요한 앱 (package.json 은 lockfile 워크스페이스 검증용으로 남긴다)
+apps/cafe
+!apps/cafe/package.json

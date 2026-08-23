@@ -65,34 +65,60 @@
 
 ## Getting Started
 
-1. `.env`를 작성해야 합니다.
-
-```dotenv
-# /apps/api/.env
-
-DATABASEURL=""            # 데이터베이스 URL (MySQL)
-
-CHZZK_ID=""               # 치지직 API ClientID
-CHZZK_SECRET=""           # 치지직 API Secret
-CHZZK_BOT_CHANNEL_ID=""   # 치지직 봇 ChannelID
-
-PUBLIC_SITE_URL=""        # 퍼블릭 URL
-```
-
-```dotenv
-# /apps/web/.env
-
-JWT_SECRET=""             # JWT Secret
-```
-
-2. 명령어를 통해 실행하세요
+1. 각 앱의 `.env.example`을 복사해 `.env`를 작성합니다.
 
 ```bash
-pnpm -w install
-cd apps/api
-pnpm prisma db push       #or pnpm prisma generate
-pnpm -w dev
+cp apps/api/.env.example apps/api/.env         # DATABASE_URL, CHZZK_*, PUBLIC_SITE_URL, SMTP_*, JWT_SECRET, INTERNAL_API_TOKEN
+cp apps/web/.env.example apps/web/.env         # JWT_SECRET, API_URL
+cp apps/chatbot/.env.example apps/chatbot/.env # API_URL, INTERNAL_API_TOKEN
 ```
+
+- `JWT_SECRET`은 web(세션 발급)과 api(세션 검증)에 **같은 값**을, `INTERNAL_API_TOKEN`은 api와 chatbot에 **같은 값**을 넣어야 합니다.
+- API 인증 구조: 웹 사용자 요청은 `session-token`(JWT)을 `Authorization: Bearer`로 전달 → `streamerProcedure`, 챗봇 워커는 `x-internal-token` 헤더 → `internalProcedure`. 공개 조회는 `publicProcedure`.
+
+2. 의존성 설치 후 DB 스키마를 적용하고 실행합니다.
+
+```bash
+pnpm install
+pnpm prisma:generate      # Prisma Client 생성
+pnpm prisma:migrate       # 개발 DB에 마이그레이션 적용 (prisma migrate dev)
+pnpm dev
+```
+
+### 데이터베이스 마이그레이션
+
+스키마 변경 이력은 `apps/api/prisma/migrations`로 관리합니다. `prisma db push`는 사용하지 않습니다.
+
+| 상황 | 명령 |
+| --- | --- |
+| 스키마 변경 후 마이그레이션 생성 (개발) | `pnpm prisma:migrate` |
+| 운영 DB에 적용 (배포 시) | `pnpm prisma:deploy` |
+| 기존 운영 DB에 최초 도입 (baseline) | `pnpm --filter @wizbot/api exec prisma migrate resolve --applied 0_init` 후 `pnpm prisma:deploy` |
+
+`0_init`은 2026-08 기준 스키마 전체를 담은 baseline 마이그레이션입니다. 이미 `db push`로 만들어진 운영 DB에는 위 `migrate resolve --applied 0_init`으로 "적용됨" 표시만 해주면 됩니다.
+
+## Docker
+
+루트 `Dockerfile` 하나에 타깃 3개(`web` / `api` / `chatbot`)가 있습니다.
+
+```bash
+docker build --target web     -t wizbot/web     .
+docker build --target api     -t wizbot/api     .
+docker build --target chatbot -t wizbot/chatbot .
+```
+
+로컬에서 전체 스택(MySQL 포함)을 올려 보려면:
+
+```bash
+cp .env.docker.example .env.docker && $EDITOR .env.docker
+docker compose --env-file .env.docker up -d --build
+# http://localhost:3001
+```
+
+- `dev` 브랜치에 푸시되면 CI가 `ghcr.io/wisdomit/wizbot/{web,api,chatbot}:dev` 이미지를 올립니다 (시험/스테이징 스택용).
+- 정식 릴리즈는 `main`에 `vX.Y.Z` 태그를 푸시하면 `release.yml`이 버전 태그 이미지를 올립니다.
+- 운영 배포(Portainer 스택)는 [homelab-wisdomserver](https://github.com/WisdomIT/homelab-wisdomserver)의 `optional/wizbot`을 사용합니다.
+- `chatbot`은 채널별 소켓/타이머를 메모리에 갖는 stateful 싱글턴이므로 replica를 늘리면 안 됩니다. `web`/`api`는 stateless라 늘려도 됩니다.
 
 ## Copyright
 

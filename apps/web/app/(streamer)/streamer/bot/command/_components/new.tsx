@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -20,11 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useTRPC } from '@/src/utils/trpc-react';
 
-import { CreateCommand, createCommand } from '../_api/command';
 import { FunctionArgs, InputsEcho, InputsFunction } from './inputs';
 
 export default function NewCommand() {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const createEcho = useMutation(trpc.command.createCommandEcho.mutationOptions());
+  const createFunction = useMutation(trpc.command.createCommandFunction.mutationOptions());
+
   const [open, setOpen] = useState(false);
   const [command, setCommand] = useState('');
   const [type, setType] = useState<'echo' | 'function'>('echo');
@@ -38,24 +44,17 @@ export default function NewCommand() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    let data: CreateCommand;
-    if (type === 'echo') {
-      data = {
-        command,
-        type: 'echo',
-        response: echo,
-      };
-    } else {
-      data = {
-        command,
-        type: 'function',
-        function: functionArgs.func,
-        permission: functionArgs.permission,
-        option: functionArgs.option,
-      };
-    }
+    const promise: Promise<unknown> =
+      type === 'echo'
+        ? createEcho.mutateAsync({ command, response: echo })
+        : createFunction.mutateAsync({
+            command,
+            function: functionArgs.func,
+            permission: functionArgs.permission,
+            option: functionArgs.option,
+          });
 
-    toast.promise(createCommand(data), {
+    toast.promise(promise, {
       loading: '명령어를 추가하는 중입니다...',
       success: () => {
         setOpen(false);
@@ -68,9 +67,7 @@ export default function NewCommand() {
           permission: 'STREAMER',
         });
 
-        setTimeout(() => {
-          location.reload();
-        }, 500);
+        void queryClient.invalidateQueries(trpc.command.getCommandList.queryFilter());
 
         return '명령어가 추가되었습니다.';
       },

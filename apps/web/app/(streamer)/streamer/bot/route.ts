@@ -1,8 +1,5 @@
-import { NextResponse } from 'next/server';
+import { redirectTo } from '@/lib/request-url';
 
-import { getPublicSiteUrl } from '@/app/login/_apis/chzzk';
-
-export async function GET(request: Request) {
-  const publicSiteUrl = await getPublicSiteUrl();
-  return NextResponse.redirect(`${publicSiteUrl}/streamer/bot/command`);
+export function GET() {
+  return redirectTo('/streamer/bot/command');
 }

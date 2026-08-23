@@ -1,0 +1,32 @@
+appId: co.kr.wisdomit.wizbot.player
+productName: wizbot player
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+# 트레이 아이콘은 실행 중에 읽으므로 asar 밖(Resources/)에 둔다
+extraResources:
+  - from: resources
+    to: .
+  # 창·작업 표시줄 아이콘으로 실행 중에 읽는다
+  - from: build/icon.png
+    to: icon.png
+# 코드 서명 인증서가 없다 — 설치 시 SmartScreen/Gatekeeper 경고가 뜬다 (README 참고)
+win:
+  target: nsis
+  # ⚠️ signAndEditExecutable 을 끄면 서명뿐 아니라 **아이콘·버전 정보 기록까지** 건너뛴다.
+  # 그러면 exe 가 Electron 기본 아이콘 그대로 남는다 (실측).
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: dmg
+  category: public.app-category.music
+  identity: null
+publish:
+  provider: github
+  owner: WisdomIT
+  repo: wizbot

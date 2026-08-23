@@ -1,0 +1,33 @@
+name: ✨ 기능 제안
+description: 새 기능이나 개선을 제안합니다.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 배경 / 해결하려는 문제
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안 내용
+      description: 어떻게 동작했으면 하는지, 가능하면 사용 예시와 함께 적어주세요.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      multiple: true
+      options:
+        - web (Next.js 프론트)
+        - api (tRPC 서버)
+        - chatbot (챗봇 워커)
+        - shared (공통 로직)
+        - infra (빌드/배포/CI)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 대안 / 참고

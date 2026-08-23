@@ -1,9 +1,10 @@
 'use client';
 
 import { type ColumnDef } from '@tanstack/react-table';
+import type { UsageToken } from '@wizbot/shared/src/chatbot/definitions';
 import { ArrowUpDown, MoreHorizontal } from 'lucide-react';
-import { JSX } from 'react';
 
+import { UsageTokens } from '@/components/custom/usage-tokens';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,14 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 
 import { renderTextWithLink } from '../../../../../_components/utils';
 
 export interface Command {
   id: number;
+  enabled: boolean;
   command: string;
   type: 'echo' | 'function';
-  usage: JSX.Element;
+  usageTokens: UsageToken[];
   usageString: string;
   description: string;
   permission: 'STREAMER' | 'MANAGER' | 'VIEWER';
@@ -29,11 +32,24 @@ export interface Command {
 export function createColumns({
   onUpdate,
   onDelete,
+  onToggle,
 }: {
   onUpdate: (command: Command) => void;
   onDelete: (command: Command) => void;
+  onToggle: (command: Command, enabled: boolean) => void;
 }): ColumnDef<Command>[] {
   return [
+    {
+      id: 'enabled',
+      header: '사용',
+      cell: ({ row }) => (
+        <Switch
+          checked={row.original.enabled}
+          onCheckedChange={(next) => onToggle(row.original, next)}
+          aria-label={`${row.original.command} 명령어 사용 여부`}
+        />
+      ),
+    },
     {
       accessorKey: 'command',
       header: ({ column }) => {
@@ -71,10 +87,10 @@ export function createColumns({
       },
     },
     {
-      accessorKey: 'usage',
+      accessorKey: 'usageTokens',
       header: '사용법',
       cell: ({ getValue }) => {
-        return <span className="text-sm">{getValue<Command['usage']>()}</span>;
+        return <UsageTokens tokens={getValue<Command['usageTokens']>()} />;
       },
     },
     {
@@ -82,7 +98,9 @@ export function createColumns({
       header: '설명',
       cell: ({ getValue }) => {
         return (
-          <span className="text-sm">{renderTextWithLink(getValue<Command['description']>())}</span>
+          <span className="text-sm break-words whitespace-normal">
+            {renderTextWithLink(getValue<Command['description']>())}
+          </span>
         );
       },
     },

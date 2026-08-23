@@ -33,9 +33,10 @@ import UpdateCommand from './update';
 interface DataTableProps {
   data: Repeat[];
   interval: number;
+  onToggle: (repeat: Repeat, enabled: boolean) => void;
 }
 
-export function DataTable({ data, interval }: DataTableProps) {
+export function DataTable({ data, interval, onToggle }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [pagination, setPagination] = useState({
@@ -47,8 +48,8 @@ export function DataTable({ data, interval }: DataTableProps) {
   const [deleteTarget, setDeleteTarget] = useState<Repeat | null>(null);
 
   const columns: ColumnDef<Repeat>[] = useMemo(
-    () => createColumns({ onUpdate: setUpdateTarget, onDelete: setDeleteTarget }),
-    [],
+    () => createColumns({ onUpdate: setUpdateTarget, onDelete: setDeleteTarget, onToggle }),
+    [onToggle],
   );
 
   const table = useReactTable({
@@ -95,7 +96,11 @@ export function DataTable({ data, interval }: DataTableProps) {
             <TableBody>
               {table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && 'selected'}
+                    className={row.original.enabled ? undefined : 'opacity-50'}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

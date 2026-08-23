@@ -1,463 +1,205 @@
-import { ChatbotEchoCommand, ChatbotFunctionCommand } from '@prisma/client';
 import { z } from 'zod';
 
-import { functions } from '../chatbot';
-import { t } from '../trpc';
+import { CHAT_MAX_LENGTH } from '../chatbot/lib';
+
+import type { PrismaClient } from '@prisma/client';
+
+import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '../chatbot/definitions';
+import { commandService, repeatService, ServiceError } from '../services';
+import { publicProcedure, streamerProcedure, t } from '../trpc';
+
+/**
+ * 봇이 그대로 내보내는 문구는 치지직 한도(100자)를 넘으면 전송 자체가 실패한다.
+ * 저장 시점에 막아 「만들어 놨는데 반응이 없는」 상태를 없앤다 (#115).
+ */
+const chatMessage = z
+  .string()
+  .max(CHAT_MAX_LENGTH, `${CHAT_MAX_LENGTH}자까지 입력할 수 있습니다.`);
+
+const permissionSchema = z.enum(['STREAMER', 'MANAGER', 'VIEWER']);
+const commandTypeSchema = z.enum(['echo', 'function']);
+
+function assertKnownFunction(func: string) {
+  if (!isChatbotFunctionKey(func)) {
+    throw new ServiceError('INVALID_INPUT', `"${func}"은(는) functions에 존재하지 않습니다.`);
+  }
+}
+
+/**
+ * 함수의 option 스펙 검증 (#22 — 클라이언트가 API 를 직접 호출하므로 서버에서 확정한다)
+ * echoCommandSelect: 본인 소유 echo 명령어의 id 여야 한다
+ */
+async function assertValidOption(
+  prisma: PrismaClient,
+  userId: number,
+  func: string,
+  option: string | undefined,
+) {
+  if (!isChatbotFunctionKey(func)) return;
+  const spec = chatbotFunctionDefinitionMap[func].option;
+  if (!spec || spec.input !== 'echoCommandSelect') return;
+
+  const id = Number(option);
+  if (!option || !Number.isInteger(id)) {
+    throw new ServiceError('INVALID_INPUT', `${spec.label}을(를) 선택해주세요.`);
+  }
+  await commandService.getEchoCommand(prisma, userId, id); // 없으면 NOT_FOUND
+}
 
 export const commandRouter = t.router({
-  getCommandList: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-      }),
-    )
+  /** 시청자용 공개 명령어 목록 — 경로 식별자는 불변인 channelId (#72) */
+  getCommandListByChannelId: publicProcedure
+    .input(z.object({ channelId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const echoFind = await ctx.prisma.chatbotEchoCommand.findMany({
-        where: {
-          userId: input.userId,
-        },
+      // hidden 은 목록 노출 여부 — 직접 링크는 항상 접근 가능 (#7)
+      const user = await ctx.prisma.user.findUnique({
+        where: { channelId: input.channelId },
+        select: { id: true },
       });
-      const functionFind = await ctx.prisma.chatbotFunctionCommand.findMany({
-        where: {
-          userId: input.userId,
-        },
-      });
-      return {
-        echo: echoFind,
-        function: functionFind,
-      };
+      if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 채널입니다.');
+      // 비활성 명령어는 시청자에게 노출하지 않는다 (#82)
+      return commandService.listCommands(ctx.prisma, user.id, true);
     }),
-  getCommandById: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        id: z.number(),
-        type: z.enum(['echo', 'function']),
-      }),
-    )
+
+  getCommandList: streamerProcedure.query(({ ctx }) =>
+    commandService.listCommands(ctx.prisma, ctx.user.id),
+  ),
+
+  getCommandById: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema }))
     .query(async ({ ctx, input }) => {
-      const { userId, id, type } = input;
-
-      if (!userId || !id || !type) {
-        throw new Error('Invalid input.');
-      }
-
+      const { id, type } = input;
       if (type === 'echo') {
-        const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-          where: {
-            userId,
-            id,
-          },
-        });
-
-        if (!findCommand) {
-          throw new Error('Command not found');
-        }
-
-        return {
-          type: 'echo' as const,
-          ...findCommand,
-        };
-      } else if (type === 'function') {
-        const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
-          where: {
-            userId,
-            id,
-          },
-        });
-
-        if (!findCommand) {
-          throw new Error('Command not found');
-        }
-
-        return {
-          type: 'function' as const,
-          ...findCommand,
-        };
+        const found = await commandService.getEchoCommand(ctx.prisma, ctx.user.id, id);
+        return { type: 'echo' as const, ...found };
       }
-
-      throw new Error('Command not found');
+      const found = await commandService.getFunctionCommand(ctx.prisma, ctx.user.id, id);
+      return { type: 'function' as const, ...found };
     }),
-  createCommandEcho: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        command: z.string(),
-        response: z.string(),
-      }),
-    )
+
+  createCommandEcho: streamerProcedure
+    .input(z.object({ command: z.string(), response: chatMessage }))
     .mutation(async ({ ctx, input }) => {
-      const { userId, response } = input;
-      let { command } = input;
-
-      if (!userId || !command || !response) {
-        throw new Error('Invalid input.');
-      }
-
-      if (command.startsWith('!')) {
-        command = command.slice(1);
-      }
-
-      const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-        where: {
-          userId,
-          command,
-        },
+      const data = await commandService.createEchoCommand(ctx.prisma, {
+        userId: ctx.user.id,
+        ...input,
       });
-
-      if (findCommand) {
-        throw new Error('이미 존재하는 명령어입니다.');
-      }
-
-      const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
-        where: {
-          userId,
-          command,
-        },
-      });
-
-      if (findCommand2) {
-        throw new Error('이미 존재하는 명령어입니다.');
-      }
-
-      const create = await ctx.prisma.chatbotEchoCommand.create({
-        data: {
-          userId,
-          command,
-          response,
-        },
-      });
-
-      return {
-        ok: true,
-        data: create,
-      };
+      return { ok: true, data };
     }),
-  createCommandFunction: t.procedure
+
+  createCommandFunction: streamerProcedure
     .input(
       z.object({
-        userId: z.number(),
         command: z.string(),
-        permission: z.enum(['STREAMER', 'MANAGER', 'VIEWER']),
+        permission: permissionSchema,
         function: z.string(),
         option: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, permission, function: func, option } = input;
-      let { command } = input;
-
-      if (!userId || !command || !permission || !func) {
-        throw new Error('Invalid input.');
-      }
-
-      if (command.startsWith('!')) {
-        command = command.slice(1);
-      }
-
-      const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
-        where: {
-          userId,
-          command,
-        },
+      assertKnownFunction(input.function);
+      await assertValidOption(ctx.prisma, ctx.user.id, input.function, input.option);
+      const data = await commandService.createFunctionCommand(ctx.prisma, {
+        userId: ctx.user.id,
+        ...input,
       });
-
-      if (findCommand) {
-        throw new Error('이미 존재하는 명령어입니다.');
-      }
-
-      const findCommand2 = await ctx.prisma.chatbotEchoCommand.findFirst({
-        where: {
-          userId,
-          command,
-        },
-      });
-
-      if (findCommand2) {
-        throw new Error('이미 존재하는 명령어입니다.');
-      }
-
-      if (!(func in functions)) {
-        throw new Error(`"${func}"은(는) functions에 존재하지 않습니다.`);
-      }
-
-      const create = await ctx.prisma.chatbotFunctionCommand.create({
-        data: {
-          userId,
-          command,
-          permission,
-          function: func,
-          option,
-        },
-      });
-
-      return {
-        ok: true,
-        data: create,
-      };
+      return { ok: true, data };
     }),
-  deleteCommand: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        id: z.number(),
-        type: z.enum(['echo', 'function']),
-      }),
-    )
+
+  deleteCommand: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema }))
     .mutation(async ({ ctx, input }) => {
-      const { userId, id, type } = input;
-
-      if (!userId || !id || !type) {
-        throw new Error('Invalid input.');
-      }
-
-      if (type === 'echo') {
-        await ctx.prisma.chatbotEchoCommand.deleteMany({
-          where: {
-            userId,
-            id,
-          },
-        });
-      } else if (type === 'function') {
-        await ctx.prisma.chatbotFunctionCommand.deleteMany({
-          where: {
-            userId,
-            id,
-          },
-        });
-      }
-
-      return {
-        ok: true,
-      };
+      await commandService.deleteCommand(ctx.prisma, ctx.user.id, input.id, input.type);
+      return { ok: true };
     }),
-  updateCommand: t.procedure
+
+  updateCommand: streamerProcedure
     .input(
       z.object({
-        userId: z.number(),
         id: z.number(),
-        type: z.enum(['echo', 'function']),
+        type: commandTypeSchema,
         command: z.string(),
-        response: z.string().optional(),
-        permission: z.enum(['STREAMER', 'MANAGER', 'VIEWER']).optional(),
+        response: chatMessage.optional(),
+        permission: permissionSchema.optional(),
         function: z.string().optional(),
         option: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { userId, id, type, response, permission, function: func, option } = input;
-      let { command } = input;
-
-      if (!userId || !id || !type || !command) {
-        throw new Error('Invalid input.');
-      }
-
-      if (command.startsWith('!')) {
-        command = command.slice(1);
-      }
+      const userId = ctx.user.id;
+      const { id, type, command } = input;
 
       if (type === 'echo') {
-        if (!response) {
-          throw new Error('Invalid input.');
-        }
-
-        const findCommand = await ctx.prisma.chatbotEchoCommand.findFirst({
-          where: {
-            userId,
-            id,
-          },
-        });
-        if (!findCommand) {
-          throw new Error('Command not found');
-        }
-
-        const findCommand2 = await ctx.prisma.chatbotEchoCommand.findFirst({
-          where: {
-            userId,
-            command,
-          },
-        });
-        if (findCommand2 && findCommand2.id !== id) {
-          throw new Error('이미 존재하는 명령어입니다.');
-        }
-
-        await ctx.prisma.chatbotEchoCommand.update({
-          where: {
-            userId,
-            id,
-          },
-          data: {
-            command,
-            response,
-          },
-        });
-      } else if (type === 'function') {
-        if (!permission || !func) {
-          throw new Error('Invalid input.');
-        }
-
-        const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
-          where: {
-            userId,
-            id,
-          },
-        });
-        if (!findCommand) {
-          throw new Error('Command not found');
-        }
-
-        const findCommand2 = await ctx.prisma.chatbotFunctionCommand.findFirst({
-          where: {
-            userId,
-            command,
-          },
-        });
-        if (findCommand2 && findCommand2.id !== id) {
-          throw new Error('이미 존재하는 명령어입니다.');
-        }
-
-        await ctx.prisma.chatbotFunctionCommand.update({
-          where: {
-            userId,
-            id,
-          },
-          data: {
-            command,
-            permission,
-            function: func,
-            option,
-          },
-        });
-      }
-
-      return {
-        ok: true,
-      };
-    }),
-  getRepeatList: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const findRepeat = await ctx.prisma.chatbotRepeat.findMany({
-        where: {
-          userId: input.userId,
-        },
-      });
-
-      return findRepeat;
-    }),
-  getRepeatById: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        id: z.number(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const { userId, id } = input;
-
-      if (!userId || !id) {
-        throw new Error('Invalid input.');
-      }
-
-      const findRepeat = await ctx.prisma.chatbotRepeat.findFirst({
-        where: {
+        if (!input.response) throw new ServiceError('INVALID_INPUT', '응답을 입력해주세요.');
+        await commandService.updateEchoCommand(ctx.prisma, {
           userId,
           id,
-        },
-      });
-
-      if (!findRepeat) {
-        throw new Error('Repeat not found');
-      }
-
-      return findRepeat;
-    }),
-  createRepeat: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        response: z.string(),
-        interval: z.number(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { userId, response, interval } = input;
-
-      if (!userId || !response || !interval) {
-        throw new Error('Invalid input.');
-      }
-
-      const create = await ctx.prisma.chatbotRepeat.create({
-        data: {
-          userId,
-          response,
-          interval,
-        },
-      });
-
-      return {
-        ok: true,
-        data: create,
-      };
-    }),
-  deleteRepeat: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        id: z.number(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { userId, id } = input;
-
-      if (!userId || !id) {
-        throw new Error('Invalid input.');
-      }
-
-      await ctx.prisma.chatbotRepeat.delete({
-        where: {
+          command,
+          response: input.response,
+        });
+      } else {
+        if (!input.permission || !input.function) {
+          throw new ServiceError('INVALID_INPUT', '권한과 기능을 입력해주세요.');
+        }
+        assertKnownFunction(input.function);
+        await assertValidOption(ctx.prisma, userId, input.function, input.option);
+        await commandService.updateFunctionCommand(ctx.prisma, {
           userId,
           id,
-        },
-      });
-
-      return {
-        ok: true,
-      };
-    }),
-  updateRepeat: t.procedure
-    .input(
-      z.object({
-        userId: z.number(),
-        id: z.number(),
-        response: z.string(),
-        interval: z.number(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { userId, id, response, interval } = input;
-
-      if (!userId || !id || !response || !interval) {
-        throw new Error('Invalid input.');
+          command,
+          permission: input.permission,
+          function: input.function,
+          option: input.option,
+        });
       }
 
-      await ctx.prisma.chatbotRepeat.update({
-        where: {
-          userId,
-          id,
-        },
-        data: {
-          response,
-          interval,
-        },
-      });
+      return { ok: true };
+    }),
 
-      return {
-        ok: true,
-      };
+  getRepeatList: streamerProcedure.query(({ ctx }) =>
+    repeatService.listRepeats(ctx.prisma, ctx.user.id),
+  ),
+
+  /* ── 활성/비활성 토글 (#82) ── */
+  setEnabled: streamerProcedure
+    .input(z.object({ id: z.number(), type: commandTypeSchema, enabled: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      commandService.setCommandEnabled(
+        ctx.prisma,
+        ctx.user.id,
+        input.id,
+        input.type,
+        input.enabled,
+      ),
+    ),
+  setRepeatEnabled: streamerProcedure
+    .input(z.object({ id: z.number(), enabled: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      repeatService.setRepeatEnabled(ctx.prisma, ctx.user.id, input.id, input.enabled),
+    ),
+
+  getRepeatById: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .query(({ ctx, input }) => repeatService.getRepeat(ctx.prisma, ctx.user.id, input.id)),
+
+  createRepeat: streamerProcedure
+    .input(z.object({ response: chatMessage, interval: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const data = await repeatService.createRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
+      return { ok: true, data };
+    }),
+
+  deleteRepeat: streamerProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await repeatService.deleteRepeat(ctx.prisma, ctx.user.id, input.id);
+      return { ok: true };
+    }),
+
+  updateRepeat: streamerProcedure
+    .input(z.object({ id: z.number(), response: chatMessage, interval: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await repeatService.updateRepeat(ctx.prisma, { userId: ctx.user.id, ...input });
+      return { ok: true };
     }),
 });

@@ -1,0 +1,120 @@
+name: Release
+
+# 릴리즈 = dev → main 머지 후 main 커밋에 vX.Y.Z 태그 푸시.
+# 1) 태그가 main에 포함된 커밋인지 검증
+# 2) 루트 Dockerfile 의 타깃(web/api/chatbot)별 이미지 빌드 → ghcr.io 푸시
+# 3) GitHub Release 생성
+# 4) PORTAINER_WEBHOOK_URL 시크릿이 있으면 Portainer 스택 재배포 webhook 호출
+# (dev 브랜치의 :dev 이미지는 ci.yml 의 docker-dev 잡이 담당)
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 빌드할 ref (태그/브랜치). 비우면 현재 ref
+        required: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  verify:
+    name: verify tag is on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Ensure commit is on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::릴리즈 태그는 main에 머지된 커밋에만 붙일 수 있습니다."
+            exit 1
+          fi
+
+  build:
+    name: build & push ${{ matrix.app }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, api, chatbot]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ghcr 이미지 이름은 소문자만 허용 (metadata-action 도 소문자화하지만 명시)
+      - id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.app }}" >> "$GITHUB_OUTPUT"
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+            # 프리릴리즈(v1.3.0-alpha.1 처럼 태그에 '-' 가 있는 것)는 latest 를 덮지 않는다.
+            # 덮으면 운영 스택이 끌어가는 이미지가 알파로 바뀐다 (#124)
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.app }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  release:
+    name: github release
+    needs: [verify, build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  deploy:
+    name: portainer redeploy
+    needs: [build]
+    # 프리릴리즈는 운영에 배포하지 않는다 — 알파 시험이 운영을 갈아끼우면 안 된다 (#124)
+    if: needs.build.result == 'success' && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Portainer stack webhook
+        env:
+          WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::PORTAINER_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 스택 > Webhook 에서 URL을 발급해 등록하세요."
+            exit 0
+          fi
+          curl -fsS -X POST "$WEBHOOK"
+          echo "Portainer 재배포 webhook 호출 완료"
