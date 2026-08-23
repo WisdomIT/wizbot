@@ -305,8 +305,14 @@ export const songRouter = t.router({
     playbackService.reportFailed(ctx.prisma, ctx.songSource.userId),
   ),
   reportPosition: songSourceProcedure
-    .input(z.object({ positionSeconds: z.number().min(0) }))
+    // youtubeId 를 함께 받아 지난 곡의 보고를 걸러낸다 (#122)
+    .input(z.object({ positionSeconds: z.number().min(0), youtubeId: z.string() }))
     .mutation(({ ctx, input }) =>
-      playbackService.reportPosition(ctx.prisma, ctx.songSource.userId, input.positionSeconds),
+      playbackService.reportPosition(
+        ctx.prisma,
+        ctx.songSource.userId,
+        input.positionSeconds,
+        input.youtubeId,
+      ),
     ),
 });

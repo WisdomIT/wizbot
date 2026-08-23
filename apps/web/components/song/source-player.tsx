@@ -210,14 +210,27 @@ export function SourcePlayer({
     return () => clearInterval(timer);
   }, [trpc, sessionId, source, applyState]);
 
-  // 진행률 보고
+  /**
+   * 진행률 보고.
+   *
+   * 곡이 바뀌는 순간에는 플레이어가 아직 이전 영상을 들고 있을 수 있다.
+   * 그때 보고하면 새 곡의 위치가 이전 곡 시간으로 덮인다 (#122).
+   * 로드된 영상이 우리가 기대하는 곡일 때만 보내고, 어느 곡인지도 함께 알린다.
+   */
   useEffect(() => {
     const timer = setInterval(() => {
       const player = playerRef.current;
-      if (!isActiveRef.current || !player?.getCurrentTime) return;
+      const expected = currentVideoRef.current;
+      if (!isActiveRef.current || !player?.getCurrentTime || !expected) return;
+
+      const loaded = player.getVideoData?.()?.video_id ?? expected;
+      if (loaded !== expected) return;
+
       const position = player.getCurrentTime();
       if (typeof position === 'number' && position > 0) {
-        void trpc.song.reportPosition.mutate({ positionSeconds: position }).catch(() => null);
+        void trpc.song.reportPosition
+          .mutate({ positionSeconds: position, youtubeId: expected })
+          .catch(() => null);
       }
     }, 5_000);
     return () => clearInterval(timer);

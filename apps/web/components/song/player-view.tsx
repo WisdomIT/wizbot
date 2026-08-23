@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AppTitleBar } from '@/components/song/app-title-bar';
+import { FavoritePlayDialog } from '@/components/song/favorite-play-dialog';
 import { MiniPlayer } from '@/components/song/mini-player';
 import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
 import { Badge } from '@/components/ui/badge';
@@ -100,6 +101,7 @@ export function PlayerView() {
   const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
   const removeFromQueue = useMutation(trpc.song.removeFromQueue.mutationOptions());
   const clearQueue = useMutation(trpc.song.clearQueue.mutationOptions());
+  const enqueueFavorite = useMutation(trpc.songFavorite.enqueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
@@ -111,7 +113,8 @@ export function PlayerView() {
   const quiet = shell.isApp && shell.mode === 'mini';
 
   const run = useCallback(
-    (promise: Promise<unknown>, success: string) => {
+    // success 에 함수를 주면 결과값으로 문구를 만든다 (추가된 곡 수 등)
+    (promise: Promise<unknown>, success: string | ((result: never) => string)) => {
       if (quiet) {
         promise.then(invalidate).catch(invalidate);
         return;
@@ -119,9 +122,9 @@ export function PlayerView() {
 
       toast.promise(promise, {
         loading: '처리 중...',
-        success: () => {
+        success: (result) => {
           invalidate();
-          return success;
+          return typeof success === 'string' ? success : success(result as never);
         },
         error: (err) => `${err instanceof Error ? err.message : err}`,
       });
@@ -329,6 +332,15 @@ export function PlayerView() {
           onClear={() =>
             run(clearQueue.mutateAsync(), '대기열을 비웠습니다.')
           }
+          onEnqueueFavorite={(id, shuffle) =>
+            run(
+              enqueueFavorite.mutateAsync({ id, shuffle }),
+              (result: { added: number; skipped: number }) =>
+                `${result.added}곡을 대기열에 추가했습니다.${
+                  result.skipped > 0 ? ` (중복 ${result.skipped}곡 제외)` : ''
+                }`,
+            )
+          }
         />
       </div>
     </div>
@@ -405,6 +417,7 @@ function QueueCard({
   onPlayNow,
   onRemove,
   onClear,
+  onEnqueueFavorite,
 }: {
   queue: QueueItem[];
   /** 앱에서는 카드가 높이를 채우고 표 안에서만 스크롤한다 */
@@ -415,6 +428,7 @@ function QueueCard({
   onPlayNow: (song: QueueItem) => void;
   onRemove: (song: QueueItem) => void;
   onClear: () => void;
+  onEnqueueFavorite: (favoriteId: number, shuffle: boolean) => void;
 }) {
   // 드래그 직후 서버 응답을 기다리지 않고 바로 보여주기 위해 로컬 사본을 둔다
   const [items, setItems] = useState(queue);
@@ -454,6 +468,7 @@ function QueueCard({
       <CardContent className={fill ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}>
         <div className="mb-4 flex items-center gap-2">
           <AddSongForm pending={addPending} onSubmit={onAdd} />
+          <FavoritePlayDialog onEnqueue={onEnqueueFavorite} />
           <Button
             variant="outline"
             className="shrink-0 text-destructive"
