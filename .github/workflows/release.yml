@@ -75,7 +75,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            # 프리릴리즈(v1.3.0-alpha.1 처럼 태그에 '-' 가 있는 것)는 latest 를 덮지 않는다.
+            # 덮으면 운영 스택이 끌어가는 이미지가 알파로 바뀐다 (#124)
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
 
       - uses: docker/build-push-action@v7
         with:
@@ -96,11 +98,13 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   deploy:
     name: portainer redeploy
     needs: [build]
-    if: needs.build.result == 'success'
+    # 프리릴리즈는 운영에 배포하지 않는다 — 알파 시험이 운영을 갈아끼우면 안 된다 (#124)
+    if: needs.build.result == 'success' && !contains(github.ref_name, '-')
     runs-on: ubuntu-latest
     environment: production
     steps:

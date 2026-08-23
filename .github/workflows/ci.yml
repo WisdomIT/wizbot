@@ -101,3 +101,22 @@ jobs:
             ${{ steps.image.outputs.name }}:dev-${{ github.sha }}
           # docker 드라이버는 attestation 미지원 — 명시적으로 끈다
           provenance: false
+
+  # dev 이미지가 모두 올라간 뒤 한 번만 호출한다 (matrix 안에서 부르면 3번 재배포된다).
+  # 스택이 최신 이미지를 받으려면 Portainer 쪽에서 「Re-pull image」 가 켜져 있어야 한다 (#124)
+  deploy-dev:
+    name: portainer redeploy (dev)
+    needs: docker-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Portainer dev webhook
+        env:
+          WEBHOOK: ${{ secrets.PORTAINER_DEV_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::PORTAINER_DEV_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 의 dev 스택 > Webhook 에서 URL을 발급해 등록하세요."
+            exit 0
+          fi
+          curl -fsS -X POST "$WEBHOOK"
+          echo "dev 스택 재배포 webhook 호출 완료"
