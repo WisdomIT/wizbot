@@ -2,11 +2,11 @@
   "name": "@wizbot/api",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "build": "echo 'No build needed for API (ts-node runtime)'",
-    "start": "ts-node src/server.ts",
-    "dev": "ts-node-dev --respawn --watch ../../packages/shared src/server.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "dev": "tsx watch --clear-screen=false src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -22,14 +22,13 @@
     "express": "^4.21.2",
     "jose": "^6.2.9",
     "prisma": "^6.19.3",
-    "ts-node": "^10.9.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
     "@types/node": "^20",
-    "ts-node-dev": "^2.0.0",
-    "tsc-alias": "^1.9.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.2"
   }
 }
