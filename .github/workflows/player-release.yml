@@ -34,4 +34,21 @@ jobs:
         working-directory: apps/player
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm package --publish always
+        # 수동 실행(workflow_dispatch)은 릴리즈에 올리지 않는다 — 산출물 이름·아키텍처 확인용 (#117)
+        run: pnpm package --publish ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
+
+      - name: 산출물 목록
+        working-directory: apps/player
+        shell: bash
+        run: ls -la release/ | grep -vE '^d|\.app$' || ls -la release/
+
+      - name: Upload artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-${{ matrix.os }}
+          retention-days: 3
+          path: |
+            apps/player/release/*.dmg
+            apps/player/release/*.exe
+            apps/player/release/*.yml
