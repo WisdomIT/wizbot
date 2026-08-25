@@ -2,12 +2,7 @@
   "name": "wizbot",
   "version": "1.0.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "workspaces/*"
-  ],
   "description": "",
-  "main": "index.js",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",

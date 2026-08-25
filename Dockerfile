@@ -6,8 +6,9 @@
 #   docker build --target chatbot -t wizbot/chatbot .
 #
 # - web: Next.js standalone 산출물만 담은 슬림 이미지
-# - api / chatbot: 현재 런타임이 ts-node 라 워크스페이스 소스 + 의존성을 그대로 담는다.
-#   (#31 빌드 파이프라인 정리 후 tsup 번들 + --prod 의존성으로 슬림화 예정)
+# - api / chatbot: tsup 단일 파일 번들 + 프로덕션 의존성만 담는다 (#31).
+#   번들이 워크스페이스 소스와 npm 의존성을 모두 안고 있어서 런타임 node_modules 는
+#   Prisma(클라이언트·엔진·CLI) 를 위해서만 존재한다.
 #
 # 실행에 필요한 환경변수는 각 apps/*/.env.example 참고. 이미지에 .env 는 포함하지 않는다.
 
@@ -67,16 +68,51 @@ USER nextjs
 EXPOSE 3001
 CMD ["node", "apps/web/server.js"]
 
-# ── api: tRPC 서버 (ts-node 런타임) ─────────────────────────────────────────
-FROM deps AS api
+# ── bundle-build: api / chatbot 을 단일 파일로 번들 ─────────────────────────
+FROM deps AS bundle-build
+RUN pnpm --filter @wizbot/api --filter @wizbot/chatbot run build
+
+# ── prod-deps: 런타임 의존성만 (web 을 제외해 이미지를 크게 줄인다) ─────────
+#  번들이 npm 의존성을 이미 품고 있으므로 여기 남는 실질은 Prisma 뿐이다.
+#  다만 compose 의 migrate 서비스가 이 이미지로 `prisma migrate deploy` 를 돌리므로
+#  Prisma CLI 와 생성된 클라이언트는 반드시 있어야 한다.
+FROM base AS prod-deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/api/package.json apps/api/
+COPY apps/chatbot/package.json apps/chatbot/
+COPY apps/web/package.json apps/web/
+COPY apps/cafe/package.json apps/cafe/
+COPY packages/shared/package.json packages/shared/
+COPY packages/eslint-config/package.json packages/eslint-config/
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prod \
+      --filter @wizbot/api... --filter @wizbot/chatbot...
+COPY apps/api/prisma apps/api/prisma
+RUN pnpm --filter @wizbot/api exec prisma generate
+
+# ── api: tRPC 서버 ──────────────────────────────────────────────────────────
+FROM base AS api
 ENV NODE_ENV=production \
     PORT=3002
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=prod-deps /app/packages/shared ./packages/shared
+COPY --from=prod-deps /app/apps/api/prisma ./apps/api/prisma
+COPY apps/api/package.json ./apps/api/
+COPY package.json pnpm-workspace.yaml ./
+COPY --from=bundle-build /app/apps/api/dist ./apps/api/dist
 EXPOSE 3002
 WORKDIR /app/apps/api
-CMD ["pnpm", "start"]
+CMD ["node", "dist/server.js"]
 
-# ── chatbot: 치지직 챗봇 워커 (ts-node 런타임, stateful 싱글턴) ─────────────
-FROM deps AS chatbot
+# ── chatbot: 치지직 챗봇 워커 (stateful 싱글턴) ─────────────────────────────
+#  워커는 Prisma 도 pnpm 도 쓰지 않는다(`node dist/index.js` 로 직접 실행) — base 를 거치지 않는다.
+FROM node:${NODE_VERSION}-bookworm-slim AS chatbot
 ENV NODE_ENV=production
+WORKDIR /app
+#  번들이 자족적이라 node_modules 가 아예 필요 없다.
+COPY apps/chatbot/package.json ./apps/chatbot/
+COPY --from=bundle-build /app/apps/chatbot/dist ./apps/chatbot/dist
+EXPOSE 3003
 WORKDIR /app/apps/chatbot
-CMD ["pnpm", "start"]
+CMD ["node", "dist/index.js"]

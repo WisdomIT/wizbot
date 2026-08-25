@@ -53,6 +53,10 @@ jobs:
       - name: Build web
         run: pnpm --filter @wizbot/web build
 
+      # 번들이 깨지면(전이 의존성 해석 실패 등) 여기서 잡는다 — 이미지 빌드까지 가기 전에 (#31)
+      - name: Build api · chatbot
+        run: pnpm --filter @wizbot/api --filter @wizbot/chatbot run build
+
   # dev 브랜치 푸시마다 컨테이너 이미지를 ghcr.io 에 :dev 태그로 올린다 (Portainer 시험/스테이징 스택용).
   # 정식 릴리즈 태그(vX.Y.Z)는 release.yml 이 담당한다.
   #
