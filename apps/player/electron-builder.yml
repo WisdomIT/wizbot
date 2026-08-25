@@ -41,3 +41,8 @@ publish:
   provider: github
   owner: WisdomIT
   repo: wizbot
+  # ⚠️ 기본값은 draft 다. release.yml 이 먼저 만들어 둔 릴리즈와 타입이 다르면
+  # electron-builder 가 "existing type not compatible" 로 **에러 없이 업로드를 건너뛴다**
+  # (실측: v1.1.0-alpha.1 에서 잡은 성공했는데 자산이 하나도 올라가지 않았다).
+  # 프리릴리즈 태그일 때는 release.yml 이 -c.publish.releaseType 으로 덮는다.
+  releaseType: release
