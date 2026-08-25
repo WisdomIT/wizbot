@@ -1,28 +1,28 @@
-name: player release
+name: player package check
 
-# Electron 패키징은 무겁고 OS 별 러너가 필요하다 — 태그를 붙였을 때만 돌린다.
+# 앱 패키징이 깨지지 않는지 확인하는 **수동** 워크플로다. 릴리즈에는 올리지 않는다.
+#
+# 정식 배포는 release.yml 의 app 잡이 담당한다 — 모노레포 태그(v*.*.*)로 만든 릴리즈에
+# 설치 파일을 첨부한다. 앱 전용 태그(player-v*)는 쓰지 않는다 (#117).
+#
 # 셀프호스트(Linux) 러너로는 Windows/macOS 빌드를 만들 수 없어 GitHub 호스트 러너를 쓴다.
 on:
-  push:
-    tags:
-      - 'player-v*'
   workflow_dispatch:
 
 jobs:
   build:
+    name: package (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.5.2
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -32,10 +32,7 @@ jobs:
 
       - name: Build and package
         working-directory: apps/player
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # 수동 실행(workflow_dispatch)은 릴리즈에 올리지 않는다 — 산출물 이름·아키텍처 확인용 (#117)
-        run: pnpm package --publish ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
+        run: pnpm package --publish never
 
       - name: 산출물 목록
         working-directory: apps/player
@@ -43,7 +40,6 @@ jobs:
         run: ls -la release/ | grep -vE '^d|\.app$' || ls -la release/
 
       - name: Upload artifacts
-        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: player-${{ matrix.os }}
