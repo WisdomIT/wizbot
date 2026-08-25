@@ -3,7 +3,9 @@
     "outDir": "dist",
     "rootDir": "src",
     "module": "preserve",
-    "target": "ES2020",
+    //  런타임은 Node 22 이고 tsup 도 target: node22 로 빌드한다.
+    //  ES2020 이면 shared 가 쓰는 Array.prototype.at 같은 ES2022 API 의 타입이 없다.
+    "target": "ES2022",
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true
