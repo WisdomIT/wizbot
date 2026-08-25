@@ -174,7 +174,9 @@ jobs:
           gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name' > /tmp/assets.txt
           echo "릴리즈 자산:"; sed 's/^/  /' /tmp/assets.txt
           missing=0
-          for path in release/*.dmg release/*.exe release/*.yml; do
+          # ⚠️ release/*.yml 로 잡으면 electron-builder 가 남기는 builder-debug.yml 까지 걸린다.
+          # 그건 릴리즈에 올리는 파일이 아니다 — 업데이트 메타데이터만 본다 (v1.1.0-alpha.2 실측)
+          for path in release/*.dmg release/*.exe release/latest*.yml; do
             [ -e "$path" ] || continue
             name=$(basename "$path")
             if ! grep -qx "$name" /tmp/assets.txt; then
