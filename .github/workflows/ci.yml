@@ -112,7 +112,10 @@ jobs:
     name: portainer redeploy (dev)
     needs: docker-dev
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-latest
+    #  ⚠ 반드시 self-hosted runner 에서 호출한다. GitHub 호스티드 러너(Azure ASN 8075)에서
+    #  curl 로 호출하면 Cloudflare 의 Bot Fight Mode 가 managed_challenge 를 걸어 403 이 된다
+    #  — curl 은 챌린지를 풀 수 없다. 서버 자신이 호출하면 걸리지 않는다. (#124)
+    runs-on: [self-hosted, wisdomserver]
     steps:
       - name: Trigger Portainer dev webhook
         env:
