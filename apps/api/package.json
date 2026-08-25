@@ -20,7 +20,7 @@
     "@wizbot/shared": "workspace:^",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "jose": "^6.2.9",
+    "jose": "^6.2.10",
     "prisma": "^6.19.3",
     "zod": "^3.24.2"
   },

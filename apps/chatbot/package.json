@@ -16,7 +16,7 @@
   "dependencies": {
     "@trpc/client": "^11.18.0",
     "@wizbot/shared": "workspace:^",
-    "chalk": "^5.4.1",
+    "chalk": "^5.6.2",
     "chzzk-open-sdk": "^1.0.0",
     "dotenv": "^17.4.2"
   },
