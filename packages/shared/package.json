@@ -1,8 +1,17 @@
 {
   "name": "@wizbot/shared",
   "version": "1.0.0",
+  "exports": {
+    "./router": "./src/router/index.ts",
+    "./services": "./src/services/index.ts",
+    "./chatbot": "./src/chatbot/index.ts",
+    "./chatbot/definitions": "./src/chatbot/definitions.ts",
+    "./trpc": "./src/trpc.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "description": "",
-  "main": "index.js",
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -10,8 +19,9 @@
   "devDependencies": {
     "@prisma/client": "^6.19.3",
     "@trpc/server": "^11.18.0",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/nodemailer": "^6.4.17",
+    "typescript": "^5.8.2",
     "zod": "^3.24.2"
   },
   "dependencies": {

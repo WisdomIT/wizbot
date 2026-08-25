@@ -100,12 +100,69 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
+  # ── 플레이어 앱 (#117) ──────────────────────────────────────────────────────
+  #  앱과 웹은 버전 체계를 따로 쓰지 않는다. 릴리즈는 모노레포 전체를 대상으로 하고
+  #  앱 설치 파일은 그 릴리즈에 첨부한다 — release 잡이 릴리즈를 만든 뒤에 돌려야
+  #  electron-builder 가 새 draft 를 만들지 않고 기존 릴리즈에 올린다.
+  #
+  #  셀프호스트(Linux) 러너로는 dmg/exe 를 만들 수 없어 GitHub 호스트 러너를 쓴다.
+  #  프리릴리즈 태그에서도 빌드한다 — electron-updater 는 allowPrerelease: false 라
+  #  일반 사용자에게 내려가지 않고, 테스트 기기에서만 채널을 열어 받는다.
+  app:
+    name: player package (${{ matrix.os }})
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # apps/player/package.json 의 version 이 electron-updater 의 비교 기준이다.
+      # 태그와 어긋나면 업데이트 판단이 틀어지므로 태그 값을 그대로 새긴다.
+      # (v1.2.3 → 1.2.3, v1.3.0-alpha.1 → 1.3.0-alpha.1)
+      - name: 태그 버전을 앱에 새긴다
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e "
+            const fs = require('fs');
+            const f = 'apps/player/package.json';
+            const pkg = JSON.parse(fs.readFileSync(f, 'utf8'));
+            pkg.version = process.argv[1];
+            fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + '\n');
+            console.log('player version =', pkg.version);
+          " "$VERSION"
+
+      - name: Package and publish
+        working-directory: apps/player
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm package --publish always
+
   deploy:
     name: portainer redeploy
     needs: [build]
     # 프리릴리즈는 운영에 배포하지 않는다 — 알파 시험이 운영을 갈아끼우면 안 된다 (#124)
     if: needs.build.result == 'success' && !contains(github.ref_name, '-')
-    runs-on: ubuntu-latest
+    #  ⚠ 반드시 self-hosted runner 에서 호출한다. GitHub 호스티드 러너(Azure ASN 8075)에서
+    #  curl 로 호출하면 Cloudflare 의 Bot Fight Mode 가 managed_challenge 를 걸어 403 이 된다
+    #  — curl 은 챌린지를 풀 수 없다. 서버 자신이 호출하면 걸리지 않는다. (#124)
+    runs-on: [self-hosted, wisdomserver]
     environment: production
     steps:
       - name: Trigger Portainer stack webhook
@@ -116,5 +173,16 @@ jobs:
             echo "::notice::PORTAINER_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 스택 > Webhook 에서 URL을 발급해 등록하세요."
             exit 0
           fi
-          curl -fsS -X POST "$WEBHOOK"
-          echo "Portainer 재배포 webhook 호출 완료"
+          #  실패했을 때 원인을 남긴다 — 403 이 Cloudflare 차단인지 Portainer 거절인지
+          #  응답 헤더(server / cf-ray / cf-mitigated)와 본문으로 갈린다. (#124)
+          code=$(curl -sS -X POST "$WEBHOOK" \
+            --max-time 600 -o /tmp/webhook-body -D /tmp/webhook-headers -w '%{http_code}')
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::운영 스택 재배포 실패 — HTTP $code"
+            echo "--- 응답 헤더 ---"
+            grep -iE '^(HTTP|server|cf-ray|cf-mitigated|content-type):' /tmp/webhook-headers || true
+            echo "--- 응답 본문 ---"
+            head -c 2000 /tmp/webhook-body || true
+            exit 1
+          fi
+          echo "Portainer 재배포 webhook 호출 완료 (HTTP $code)"

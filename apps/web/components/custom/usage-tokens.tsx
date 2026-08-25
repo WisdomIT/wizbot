@@ -1,4 +1,4 @@
-import type { UsageToken } from '@wizbot/shared/src/chatbot/definitions';
+import type { UsageToken } from '@wizbot/shared/chatbot/definitions';
 
 import { Badge } from '@/components/ui/badge';
 

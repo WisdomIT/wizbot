@@ -14,10 +14,11 @@
   },
   "devDependencies": {
     "@trpc/client": "^11.18.0",
-    "@types/node": "^22.13.10",
+    "@types/node": "^26.2.0",
     "@wizbot/shared": "workspace:^",
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.6.2",
     "tsup": "^8.5.1",
     "typescript": "^5.8.2"
   },

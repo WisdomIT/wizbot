@@ -3,7 +3,7 @@ import 'server-only';
 import {
   getEchoCommandDisplay,
   getFunctionCommandDisplay,
-} from '@wizbot/shared/src/chatbot/definitions';
+} from '@wizbot/shared/chatbot/definitions';
 import { unstable_cache } from 'next/cache';
 
 import { trpc } from '@/src/utils/trpc';

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import * as trpcExpress from '@trpc/server/adapters/express';
-import { appRouter } from '@wizbot/shared/src/router';
+import { appRouter } from '@wizbot/shared/router';
 import express from 'express';
 
 import { createContext } from './context';

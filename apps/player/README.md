@@ -94,3 +94,25 @@ pnpm --filter @wizbot/player package      # 현재 OS 용 설치 파일 생성 (
 ```
 
 메인 프로세스는 `src/` 한 곳뿐입니다. 화면은 전부 사이트(`/app/player`)가 그리고, 소리는 숨은 창(`/app/source`)이 담당합니다.
+
+## 배포
+
+앱은 **모노레포 릴리즈에 함께 나갑니다.** 앱 전용 버전이나 태그를 따로 쓰지 않습니다 (#117).
+
+- `main` 에 `vX.Y.Z` 태그를 붙이면 `release.yml` 의 `app` 잡이 windows/macOS 러너에서 패키징해 **그 릴리즈에 첨부**합니다
+- `apps/player/package.json` 의 `version` 은 빌드할 때 **태그 값으로 덮어씁니다.** 이 값이 electron-updater 의 비교 기준이라 태그와 어긋나면 업데이트 판단이 틀어집니다
+- 산출물 이름은 버전 없이 고정되어 있어 다운로드 페이지가 정적 링크를 씁니다
+
+```
+https://github.com/WisdomIT/wizbot/releases/latest/download/wizbot-player-mac-arm64.dmg
+                                                            wizbot-player-mac-x64.dmg
+                                                            wizbot-player-win-x64.exe
+```
+
+패키징이 깨지지 않는지만 확인하려면 `player package check` 워크플로를 수동 실행합니다 — 릴리즈에 올리지 않고 아티팩트만 남깁니다.
+
+### 자동 업데이트
+
+`electron-updater` 가 기동 10초 뒤 한 번, 이후 6시간마다 확인해 받아둡니다. 준비되면 트레이에 **「업데이트 설치하고 다시 시작」** 이 나타나고, 그냥 종료해도 다음 실행 때 적용됩니다. 개발 실행(`app.isPackaged === false`)에서는 동작하지 않습니다.
+
+프리릴리즈(`v1.3.0-alpha.1` 등)는 `allowPrerelease: false` 기본값 때문에 일반 사용자에게 내려가지 않습니다.

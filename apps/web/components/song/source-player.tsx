@@ -1,7 +1,7 @@
 'use client';
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '@wizbot/shared/src/router';
+import type { AppRouter } from '@wizbot/shared/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSongEvents } from '@/src/hooks/use-song-events';

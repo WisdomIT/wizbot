@@ -302,6 +302,21 @@ function SourceSection({
         </Select>
       </div>
 
+      {settings.sourceType === 'ELECTRON' && (
+        <p className="text-xs text-muted-foreground">
+          위즈봇 플레이어 앱이 설치돼 있어야 소리가 납니다.{' '}
+          {/* 앱 안에서 눌러도 setWindowOpenHandler 가 외부 브라우저로 넘긴다 */}
+          <a
+            href="/download"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            앱 내려받기
+          </a>
+        </p>
+      )}
+
       {settings.sourceType === 'OBS' && (
         <div className="flex flex-col gap-2">
           <Label>브라우저 소스 주소</Label>

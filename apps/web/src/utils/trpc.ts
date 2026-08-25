@@ -1,5 +1,5 @@
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '@wizbot/shared/src/router';
+import type { AppRouter } from '@wizbot/shared/router';
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3002';
 

@@ -1,0 +1,50 @@
+name: player package check
+
+# 앱 패키징이 깨지지 않는지 확인하는 **수동** 워크플로다. 릴리즈에는 올리지 않는다.
+#
+# 정식 배포는 release.yml 의 app 잡이 담당한다 — 모노레포 태그(v*.*.*)로 만든 릴리즈에
+# 설치 파일을 첨부한다. 앱 전용 태그(player-v*)는 쓰지 않는다 (#117).
+#
+# 셀프호스트(Linux) 러너로는 Windows/macOS 빌드를 만들 수 없어 GitHub 호스트 러너를 쓴다.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package
+        working-directory: apps/player
+        run: pnpm package --publish never
+
+      - name: 산출물 목록
+        working-directory: apps/player
+        shell: bash
+        run: ls -la release/ | grep -vE '^d|\.app$' || ls -la release/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-${{ matrix.os }}
+          retention-days: 3
+          path: |
+            apps/player/release/*.dmg
+            apps/player/release/*.exe
+            apps/player/release/*.yml

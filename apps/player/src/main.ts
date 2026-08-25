@@ -22,6 +22,7 @@ import {
   SOURCE_WINDOW_SIZE,
 } from './config';
 import { appIconPath, loadTrayIcon } from './icons';
+import { initUpdater, installUpdateNow, isUpdateReady, stopUpdater } from './updater';
 
 /**
  * wizbot player (#85).
@@ -302,6 +303,14 @@ function buildTrayMenu(state: PlayerState | null) {
     });
   }
 
+  //  받아둔 업데이트가 있을 때만 나타난다 — 종료할 때 자동 설치되지만, 지금 적용하고 싶은 사용자를 위해
+  if (isUpdateReady()) {
+    items.push(
+      { type: 'separator' },
+      { label: '업데이트 설치하고 다시 시작', click: installUpdateNow },
+    );
+  }
+
   items.push(
     { type: 'separator' },
     {
@@ -444,6 +453,9 @@ if (!app.requestSingleInstanceLock()) {
     void poll();
     setInterval(() => void poll(), POLL_MS);
 
+    //  업데이트가 준비되면 다음 poll 을 기다리지 않고 트레이 메뉴를 바로 갱신한다
+    initUpdater(() => tray?.setContextMenu(buildTrayMenu(lastState)));
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
       else showMainWindow();
@@ -462,5 +474,6 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
+    stopUpdater();
   });
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { type ColumnDef } from '@tanstack/react-table';
-import type { UsageToken } from '@wizbot/shared/src/chatbot/definitions';
+import type { UsageToken } from '@wizbot/shared/chatbot/definitions';
 import { ArrowUpDown } from 'lucide-react';
 
 import { renderTextWithLink } from '@/app/_components/utils';
