@@ -148,11 +148,42 @@ jobs:
             console.log('player version =', pkg.version);
           " "$VERSION"
 
+      # electron-builder 는 이미 있는 릴리즈와 releaseType 이 같아야 자산을 올린다.
+      # 다르면 "existing type not compatible with publishing type" 으로 **조용히 건너뛴다** —
+      # 잡은 성공으로 끝나므로 릴리즈 자산을 눈으로 확인해야 알 수 있다 (v1.1.0-alpha.1 실측).
       - name: Package and publish
         working-directory: apps/player
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm package --publish always
+        run: |
+          # 태그에 '-' 가 있으면 프리릴리즈 (v1.3.0-alpha.1) — release.yml 의 prerelease 판정과 같은 규칙
+          TYPE=release
+          case "$GITHUB_REF_NAME" in *-*) TYPE=prerelease ;; esac
+          echo "releaseType=$TYPE (tag=$GITHUB_REF_NAME)"
+          pnpm package --publish always -c.publish.releaseType="$TYPE"
+
+      # electron-builder 의 업로드 실패는 잡을 실패시키지 않는다(위 주석 참고).
+      # 이 러너가 만든 파일이 릴리즈에 실제로 붙었는지 눈이 아니라 CI 가 확인한다.
+      - name: 릴리즈에 자산이 붙었는지 확인
+        working-directory: apps/player
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name' > /tmp/assets.txt
+          echo "릴리즈 자산:"; sed 's/^/  /' /tmp/assets.txt
+          missing=0
+          for path in release/*.dmg release/*.exe release/*.yml; do
+            [ -e "$path" ] || continue
+            name=$(basename "$path")
+            if ! grep -qx "$name" /tmp/assets.txt; then
+              echo "::error::$name 이 릴리즈에 올라가지 않았습니다"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] && echo "✅ 이 러너의 산출물이 모두 릴리즈에 있습니다"
+          exit $missing
 
   deploy:
     name: portainer redeploy
