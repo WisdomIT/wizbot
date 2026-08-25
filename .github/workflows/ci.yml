@@ -122,5 +122,16 @@ jobs:
             echo "::notice::PORTAINER_DEV_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 의 dev 스택 > Webhook 에서 URL을 발급해 등록하세요."
             exit 0
           fi
-          curl -fsS -X POST "$WEBHOOK"
-          echo "dev 스택 재배포 webhook 호출 완료"
+          #  실패했을 때 원인을 남긴다 — 403 이 Cloudflare 차단인지 Portainer 거절인지
+          #  응답 헤더(server / cf-ray / cf-mitigated)와 본문으로 갈린다. (#124)
+          code=$(curl -sS -X POST "$WEBHOOK" \
+            --max-time 600 -o /tmp/webhook-body -D /tmp/webhook-headers -w '%{http_code}')
+          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+            echo "::error::dev 스택 재배포 실패 — HTTP $code"
+            echo "--- 응답 헤더 ---"
+            grep -iE '^(HTTP|server|cf-ray|cf-mitigated|content-type):' /tmp/webhook-headers || true
+            echo "--- 응답 본문 ---"
+            head -c 2000 /tmp/webhook-body || true
+            exit 1
+          fi
+          echo "dev 스택 재배포 webhook 호출 완료 (HTTP $code)"
