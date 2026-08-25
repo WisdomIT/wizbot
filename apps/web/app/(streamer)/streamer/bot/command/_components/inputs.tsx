@@ -3,7 +3,7 @@ import {
   ChatbotFunctionDefinition,
   chatbotFunctionDefinitionMap,
   ChatbotFunctionKey,
-} from '@wizbot/shared/src/chatbot/definitions';
+} from '@wizbot/shared/chatbot/definitions';
 import { Terminal } from 'lucide-react';
 import { Dispatch, SetStateAction } from 'react';
 

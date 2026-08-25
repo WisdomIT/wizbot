@@ -1,5 +1,5 @@
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
-import type { AuthUser, Context } from '@wizbot/shared/src/trpc';
+import type { AuthUser, Context } from '@wizbot/shared/trpc';
 import { jwtVerify } from 'jose';
 
 import { prisma } from './db';

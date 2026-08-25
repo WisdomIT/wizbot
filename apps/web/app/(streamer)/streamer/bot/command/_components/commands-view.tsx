@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getEchoCommandDisplay,
   getFunctionCommandDisplay,
-} from '@wizbot/shared/src/chatbot/definitions';
+} from '@wizbot/shared/chatbot/definitions';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 

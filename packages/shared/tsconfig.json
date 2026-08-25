@@ -3,7 +3,14 @@
     "lib": ["ESNext"],
     "module": "ESNext",
     "target": "ESNext",
-    "moduleResolution": "Node",
+    //  exports 필드를 해석하려면 node10(="Node") 이 아니어야 한다
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    //  비공식 chzzk 라이브러리의 .d.ts 오류를 건너뛴다 (#31)
+    "skipLibCheck": true,
+    "noEmit": true,
     "types": ["node"]
-  }
+  },
+  "include": ["src"]
 }

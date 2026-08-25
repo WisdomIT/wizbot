@@ -12,7 +12,11 @@ function createCaller(overrides: Partial<Context> = {}) {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),
     },
-    user: { findMany: vi.fn().mockResolvedValue([]), findFirst: vi.fn().mockResolvedValue(null) },
+    user: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };
@@ -77,9 +81,10 @@ describe('ServiceError → TRPCError 매핑', () => {
 
   it('공개 명령어 조회: 없는 채널은 NOT_FOUND', async () => {
     const { caller } = createCaller();
-    await expectTrpcCode(
-      caller.command.getCommandListByChannelName({ channelName: 'nobody' }),
-      'NOT_FOUND',
-    );
+    const promise = caller.command.getCommandListByChannelId({ channelId: 'nobody' });
+    await expectTrpcCode(promise, 'NOT_FOUND');
+    //  코드만 보면 안 된다 — tRPC 는 없는 프로시저 경로에도 NOT_FOUND 를 던진다.
+    //  실제로 #72 로 이름이 바뀐 뒤에도 이 테스트가 그대로 통과하고 있었다.
+    await expect(promise).rejects.toMatchObject({ message: '존재하지 않는 채널입니다.' });
   });
 });

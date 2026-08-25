@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { createTRPCContext } from '@trpc/tanstack-react-query';
-import type { AppRouter } from '@wizbot/shared/src/router';
+import type { AppRouter } from '@wizbot/shared/router';
 import { useState } from 'react';
 
 /**

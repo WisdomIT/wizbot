@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { subscribeSongEvents } from '@wizbot/shared/src/services';
+import { subscribeSongEvents } from '@wizbot/shared/services';
 import type { Request, Response } from 'express';
 import { jwtVerify } from 'jose';
 
