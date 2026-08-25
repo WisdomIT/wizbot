@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   chatbotFunctionDefinitionMap,
   isChatbotFunctionKey,
-} from '@wizbot/shared/src/chatbot/definitions';
+} from '@wizbot/shared/chatbot/definitions';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 

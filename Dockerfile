@@ -37,9 +37,6 @@ COPY apps/chatbot/package.json apps/chatbot/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
 COPY packages/eslint-config/package.json packages/eslint-config/
-# apps/cafe 는 소스를 싣지 않지만 lockfile 워크스페이스 검증을 위해 package.json 만 둔다.
-# (puppeteer 의 브라우저 다운로드 등 postinstall 은 pnpm 10 기본 정책으로 실행되지 않는다)
-COPY apps/cafe/package.json apps/cafe/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 COPY . .
@@ -81,7 +78,6 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/chatbot/package.json apps/chatbot/
 COPY apps/web/package.json apps/web/
-COPY apps/cafe/package.json apps/cafe/
 COPY packages/shared/package.json packages/shared/
 COPY packages/eslint-config/package.json packages/eslint-config/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
