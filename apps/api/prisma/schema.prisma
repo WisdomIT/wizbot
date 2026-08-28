@@ -53,6 +53,13 @@ enum SignupStatus {
   REJECTED
 }
 
+/// 스트리머 테마의 라이트/다크 (#77)
+enum ThemeScheme {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
 model Whitelist {
   id         Int    @id @default(autoincrement())
   nickname   String @db.VarChar(50)
@@ -117,6 +124,7 @@ model User {
 
   // Relations
   userSetting       UserSetting?
+  userTheme         UserTheme?
   userShortcuts     UserShortcut[]
   echoCommands      ChatbotEchoCommand[]
   functionCommands  ChatbotFunctionCommand[]
@@ -127,6 +135,21 @@ model User {
   playlists         SongFavorite[]
   cafeChzzks        CafeChzzk[]
   cafeYoutubes      CafeYoutube[]
+}
+
+/// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
+model UserTheme {
+  id              Int         @id @default(autoincrement())
+  userId          Int         @unique
+  /// #rrggbb. null 이면 서비스 기본색
+  primaryColor    String?     @db.VarChar(7)
+  backgroundColor String?     @db.VarChar(7)
+  colorScheme     ThemeScheme @default(SYSTEM)
+  /// packages/shared/src/lib/theme.ts 의 THEME_FONTS 키
+  fontKey         String      @default("suit") @db.VarChar(32)
+  updatedAt       DateTime    @updatedAt @db.DateTime(6)
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserSetting {
