@@ -6,7 +6,8 @@
     "./services": "./src/services/index.ts",
     "./chatbot": "./src/chatbot/index.ts",
     "./chatbot/definitions": "./src/chatbot/definitions.ts",
-    "./trpc": "./src/trpc.ts"
+    "./trpc": "./src/trpc.ts",
+    "./lib/theme": "./src/lib/theme.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

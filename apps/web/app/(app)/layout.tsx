@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 
+import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
+import { FONT_CLASS } from '@/lib/fonts';
 import { trpc } from '@/src/utils/trpc';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
@@ -23,7 +25,9 @@ export default async function AppLayout({ children }: Readonly<{ children: React
         좌우 여백을 주지 않는다: 타이틀바가 창 끝까지 닿아야 하는데,
         여기서 패딩을 주면 음수 마진으로 되밀어야 하고 그게 overflow-hidden 에 잘린다.
       */}
-      <main className="h-svh overflow-hidden">{children}</main>
+      <StreamerThemeScope theme={me.theme} fontClass={FONT_CLASS[me.theme.fontKey]}>
+        <main className="h-svh overflow-hidden">{children}</main>
+      </StreamerThemeScope>
     </TRPCReactProvider>
   );
 }

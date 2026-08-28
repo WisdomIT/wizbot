@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { ThemeInput } from '@wizbot/shared/lib/theme';
 import { unstable_cache } from 'next/cache';
 
 import { trpc } from '@/src/utils/trpc';
@@ -9,6 +10,8 @@ export interface StreamerProps {
   channelImageUrl: string;
   channelId: string;
   shortcuts: ShortcutProps[];
+  /** 스트리머 테마 (#77). null 이면 서비스 기본 */
+  theme?: ThemeInput | null;
 }
 
 export interface ShortcutProps {
@@ -69,6 +72,7 @@ export const getStreamerByChannelId = unstable_cache(
         url: shortcut.url,
         popup: true,
       })),
+      theme: request.theme,
     };
   },
   ['streamer-by-channel-id'],

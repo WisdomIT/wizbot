@@ -11,6 +11,7 @@ export * as signupService from './signup';
 export * as songService from './song';
 export * as songFavoriteService from './songFavorite';
 export * as songHistoryService from './songHistory';
+export * as themeService from './theme';
 export * from './songEvents';
 export * as userSettingService from './userSetting';
 export * as youtubeService from './youtube';

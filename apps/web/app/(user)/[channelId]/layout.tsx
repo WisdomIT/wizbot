@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation';
 import { getStreamerByChannelId } from '@/app/_lib/streamers';
 import { AppSidebarUser } from '@/components/app-sidebar-user';
 import { DynamicIcon } from '@/components/custom/dynamic-icon';
+import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { FONT_CLASS } from '@/lib/fonts';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
 export default async function RootLayout({
@@ -37,11 +39,18 @@ export default async function RootLayout({
   return (
     // 플레이리스트·재생 기록은 클라이언트에서 조회한다 (#5 4단계)
     <TRPCReactProvider>
-      <SidebarProvider>
-        <AppSidebarUser channel={channel} shortcuts={shortcuts}>
-          {children}
-        </AppSidebarUser>
-      </SidebarProvider>
+      {/* 스트리머 테마 — 사이드바까지 시청자 페이지 전체 (#77) */}
+      <StreamerThemeScope
+        theme={channelData.theme}
+        fontClass={FONT_CLASS[channelData.theme?.fontKey ?? 'suit']}
+        className="min-h-svh"
+      >
+        <SidebarProvider>
+          <AppSidebarUser channel={channel} shortcuts={shortcuts}>
+            {children}
+          </AppSidebarUser>
+        </SidebarProvider>
+      </StreamerThemeScope>
     </TRPCReactProvider>
   );
 }

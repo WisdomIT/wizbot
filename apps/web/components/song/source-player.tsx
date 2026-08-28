@@ -70,10 +70,13 @@ function loadYouTubeApi(): Promise<any> {
 export function SourcePlayer({
   token,
   source = 'OBS',
+  fontClass,
 }: {
   token: string;
   /** 이 창이 어떤 송출 소스인지 — 설정과 일치할 때만 재생한다 */
   source?: 'OBS' | 'ELECTRON';
+  /** 자막 폰트 — 스트리머 테마 (#77). next/font className */
+  fontClass?: string;
 }) {
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [overlay, setOverlay] = useState<OverlaySetting>({ mode: 'ALWAYS', durationSeconds: 10 });
@@ -277,7 +280,7 @@ export function SourcePlayer({
         }}
       />
 
-      <SongOverlay now={now} setting={overlay} />
+      <SongOverlay now={now} setting={overlay} fontClass={fontClass} />
     </div>
   );
 }
@@ -286,7 +289,15 @@ export function SourcePlayer({
  * 현재 곡 자막.
  * 글자 크기는 브라우저 소스 높이를 따라가고(최대 120px), 제목이 가로를 넘치면 옆으로 흐른다.
  */
-function SongOverlay({ now, setting }: { now: NowPlaying | null; setting: OverlaySetting }) {
+function SongOverlay({
+  now,
+  setting,
+  fontClass,
+}: {
+  now: NowPlaying | null;
+  setting: OverlaySetting;
+  fontClass?: string;
+}) {
   const [visible, setVisible] = useState(true);
 
   // TIMED 면 곡이 바뀔 때만 잠깐 보여준다 (일시정지/재개로는 다시 뜨지 않는다)
@@ -306,6 +317,7 @@ function SongOverlay({ now, setting }: { now: NowPlaying | null; setting: Overla
 
   return (
     <div
+      className={fontClass}
       style={{
         position: 'absolute',
         inset: 0,

@@ -1,4 +1,6 @@
 import { SourcePlayer } from '@/components/song/source-player';
+import { FONT_CLASS } from '@/lib/fonts';
+import { trpc } from '@/src/utils/trpc';
 
 /**
  * OBS 브라우저 소스용 재생 페이지 (#5 2단계).
@@ -7,5 +9,7 @@ import { SourcePlayer } from '@/components/song/source-player';
  */
 export default async function Page({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  return <SourcePlayer token={token} />;
+  // 자막이 스트리머 폰트를 따라간다 (#77). 색은 방송 화면 위에서 읽혀야 하므로 흰색 그대로
+  const theme = await trpc.user.getThemeBySourceToken.query({ token }).catch(() => null);
+  return <SourcePlayer token={token} fontClass={FONT_CLASS[theme?.fontKey ?? 'suit']} />;
 }

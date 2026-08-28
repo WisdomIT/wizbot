@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
+import { themeInputSchema } from '../lib/theme';
 import {
   accountService,
   adminUsersService,
@@ -9,6 +10,7 @@ import {
   getChzzkClientForUser,
   provisionService,
   signupService,
+  themeService,
   userSettingService,
 } from '../services';
 import { internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
@@ -28,10 +30,14 @@ export const userRouter = t.router({
   }),
   /** 로그인한 스트리머 본인 정보 */
   me: streamerProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.user.findFirst({
+    const user = await ctx.prisma.user.findFirst({
       where: { id: ctx.user.id },
       select: { id: true, channelId: true, channelName: true, channelImageUrl: true },
     });
+    if (!user) return null;
+    // 콘솔·앱 레이아웃이 테마 래퍼를 그린다 (#77)
+    const theme = await themeService.getTheme(ctx.prisma, user.id);
+    return { ...user, theme };
   }),
   getUsersPublic: publicProcedure.query(async ({ ctx }) => {
     const users = await ctx.prisma.user.findMany({
@@ -83,11 +89,27 @@ export const userRouter = t.router({
               order: 'asc',
             },
           },
+          userTheme: true,
         },
       });
+      if (!user) return null;
 
-      return user;
+      // 시청자 페이지 전체에 스트리머 테마 (#77)
+      const { userTheme, ...rest } = user;
+      return { ...rest, theme: userTheme ? themeService.toInput(userTheme) : null };
     }),
+  /** OBS 오버레이가 스트리머 폰트를 따라가기 위해 — 토큰으로만 조회 (#77) */
+  getThemeBySourceToken: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(({ ctx, input }) => themeService.getThemeBySourceToken(ctx.prisma, input.token)),
+  /* ── 스트리머 테마 (#77) ── */
+  getTheme: streamerProcedure.query(({ ctx }) => themeService.getTheme(ctx.prisma, ctx.user.id)),
+  updateTheme: streamerProcedure
+    .input(themeInputSchema)
+    .mutation(({ ctx, input }) => themeService.updateTheme(ctx.prisma, ctx.user.id, input)),
+  resetTheme: streamerProcedure.mutation(({ ctx }) =>
+    themeService.resetTheme(ctx.prisma, ctx.user.id),
+  ),
   /** 인가 코드 교환 + 사용자/토큰 upsert — 부수효과가 있으므로 mutation (#19) */
   getChzzkTokenInterlock: publicProcedure
     .input(z.object({ code: z.string(), state: z.string() }))
