@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { sendMail } from '../lib/nodemailer';
 import { signupService } from '../services';
-import { applicantProcedure, t } from '../trpc';
+import { applicantProcedure, internalProcedure, t } from '../trpc';
 import type { PrismaClient, SignupApplication } from '@prisma/client';
 
 /**
@@ -35,6 +35,11 @@ export async function notifyAdminsOfApplication(
 
 /** 사용 신청자(applicant 세션) 전용 (#96) */
 export const signupRouter = t.router({
+  /** 워커 폴링이 부른다 — 대기 중 신청의 토큰 갱신 (#151). 실제 갱신은 만료 임박한 것만 */
+  refreshPendingTokens: internalProcedure.mutation(({ ctx }) =>
+    signupService.refreshPendingTokens(ctx.prisma),
+  ),
+
   /** 내 신청 상태. whitelisted 가 false 인데 APPROVED 면 승인 뒤 해제된 채널이다 */
   me: applicantProcedure.query(({ ctx }) => signupService.getMine(ctx.prisma, ctx.user.id)),
 

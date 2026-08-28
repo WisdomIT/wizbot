@@ -1,6 +1,13 @@
 import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const refreshMock = vi.fn();
+const setTokensMock = vi.fn();
+vi.mock('../chzzkClient', () => ({
+  createChzzkClientWithStore: vi.fn(() => ({ auth: { refresh: refreshMock } })),
+  getChzzkClientForUser: vi.fn(() => ({ auth: { setTokens: setTokensMock } })),
+}));
+
 import {
   approve,
   ASK_REASON_KEY,
@@ -9,10 +16,16 @@ import {
   getAutoApprove,
   getSettings,
   listApplications,
+  PENDING_MAX_AGE_MS,
+  refreshPendingTokens,
   reject,
   submitReason,
   upsertOnLogin,
 } from '../signup';
+
+const TOKENS = { accessToken: 'at', refreshToken: 'rt', tokenType: 'Bearer', expiresIn: 86400, obtainedAt: Date.now() };
+const TOKEN_ROW = { accessToken: 'at', refreshToken: 'rt', tokenType: 'Bearer', tokenExpiresAt: new Date(Date.now() + 86400_000) };
+const initialCommands = () => ({ initialFunction: [], initialEcho: [] });
 
 const IDENTITY = { channelId: 'c'.repeat(32), channelName: '테스터', channelImageUrl: null };
 
@@ -33,14 +46,22 @@ function createPrisma() {
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn().mockResolvedValue({}),
   };
+  const user = { upsert: vi.fn().mockResolvedValue({ id: 42, ...IDENTITY }) };
+  const userSetting = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), create: vi.fn() };
+  const chatbotFunctionCommand = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), createMany: vi.fn() };
+  const chatbotEchoCommand = { createMany: vi.fn() };
   const prisma = {
     signupApplication,
     whitelist,
     siteSetting,
+    user,
+    userSetting,
+    chatbotFunctionCommand,
+    chatbotEchoCommand,
     // 트랜잭션은 같은 mock 을 그대로 넘긴다
     $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
-  return { prisma: prisma as unknown as PrismaClient, signupApplication, whitelist, siteSetting };
+  return { prisma: prisma as unknown as PrismaClient, signupApplication, whitelist, siteSetting, user };
 }
 
 describe('자동 승인 설정', () => {
@@ -70,29 +91,33 @@ describe('자동 승인 설정', () => {
 describe('upsertOnLogin — 로그인 콜백', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('첫 방문이면 PENDING 으로 만들고 created=true', async () => {
+  it('첫 방문이면 PENDING 으로 만들고 토큰을 함께 저장한다 (#151)', async () => {
     const { prisma, signupApplication } = createPrisma();
-    const result = await upsertOnLogin(prisma, IDENTITY);
+    const result = await upsertOnLogin(prisma, IDENTITY, TOKENS);
     expect(result.created).toBe(true);
-    expect(signupApplication.create).toHaveBeenCalledWith({ data: IDENTITY });
+    const data = signupApplication.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ ...IDENTITY, accessToken: 'at', refreshToken: 'rt', tokenType: 'Bearer' });
+    expect(data.tokenExpiresAt.getTime()).toBeCloseTo(TOKENS.obtainedAt + 86400_000, -3);
   });
 
-  it('재방문이면 채널 정보만 갱신하고 상태는 건드리지 않는다 (거절된 채널이 로그인해도 REJECTED 유지)', async () => {
+  it('재방문이면 채널 정보·토큰만 갱신하고 상태는 건드리지 않는다 (거절된 채널이 로그인해도 REJECTED 유지)', async () => {
     const { prisma, signupApplication } = createPrisma();
     signupApplication.findUnique.mockResolvedValue({ id: 3, ...IDENTITY, status: 'REJECTED' });
-    const result = await upsertOnLogin(prisma, { ...IDENTITY, channelName: '새이름' });
+    const result = await upsertOnLogin(prisma, { ...IDENTITY, channelName: '새이름' }, TOKENS);
     expect(result.created).toBe(false);
     const data = signupApplication.update.mock.calls[0][0].data;
-    expect(data).toEqual({ channelName: '새이름', channelImageUrl: null });
+    expect(data).toMatchObject({ channelName: '새이름', channelImageUrl: null, refreshToken: 'rt' });
     expect(data).not.toHaveProperty('status');
   });
 });
 
 describe('autoApprove — 신청·승인·화이트리스트를 한 번에', () => {
-  it('APPROVED 로 upsert 하고 화이트리스트에 넣는다', async () => {
+  it('APPROVED 로 upsert 하고 화이트리스트에 넣는다 — 로그인 중이므로 acknowledgedAt 도 찍는다', async () => {
     const { prisma, signupApplication, whitelist } = createPrisma();
     await autoApprove(prisma, IDENTITY);
-    expect(signupApplication.upsert.mock.calls[0][0].create).toMatchObject({ status: 'APPROVED' });
+    const create = signupApplication.upsert.mock.calls[0][0].create;
+    expect(create).toMatchObject({ status: 'APPROVED' });
+    expect(create.acknowledgedAt).toBeInstanceOf(Date);
     expect(whitelist.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: { channelId: IDENTITY.channelId, nickname: IDENTITY.channelName } }),
     );
@@ -148,34 +173,49 @@ describe('submitReason — 신청자', () => {
 describe('approve / reject — 어드민', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('승인하면 화이트리스트에 등록된다 — 치지직 재조회 없이 저장된 채널명으로', async () => {
-    const { prisma, signupApplication, whitelist } = createPrisma();
+  it('승인하면 화이트리스트 등록 + 계정 프로비저닝 + 토큰 이동 — 치지직 재조회 없이 (#151)', async () => {
+    const { prisma, signupApplication, whitelist, user } = createPrisma();
+    signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING', ...TOKEN_ROW });
+    const result = await approve(prisma, 7, 1, { initialCommands });
+    const data = signupApplication.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: 'APPROVED', processedById: 1, rejectReason: null, acknowledgedAt: null });
+    // 토큰은 신청 행에서 지우고 OAuthCredential 로 옮긴다
+    expect(data).toMatchObject({ accessToken: null, refreshToken: null });
+    expect(whitelist.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { channelId: IDENTITY.channelId } }));
+    expect(user.upsert).toHaveBeenCalled();
+    expect(setTokensMock).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'at', refreshToken: 'rt' }));
+    expect(result.botConnects).toBe(true);
+  });
+
+  it('토큰이 없는 신청을 승인하면 계정만 만들고 botConnects=false (재로그인 후 봇이 붙는다)', async () => {
+    const { prisma, signupApplication, user } = createPrisma();
     signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING' });
-    await approve(prisma, 7, 1);
-    expect(signupApplication.update.mock.calls[0][0].data).toMatchObject({ status: 'APPROVED', processedById: 1, rejectReason: null });
-    expect(whitelist.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { channelId: IDENTITY.channelId } }),
-    );
+    const result = await approve(prisma, 7, 1, { initialCommands });
+    expect(user.upsert).toHaveBeenCalled();
+    expect(setTokensMock).not.toHaveBeenCalled();
+    expect(result.botConnects).toBe(false);
   });
 
   it('이미 화이트리스트에 있어도 승인은 실패하지 않는다 (upsert)', async () => {
     const { prisma, signupApplication, whitelist } = createPrisma();
     signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'REJECTED' });
     whitelist.findUnique.mockResolvedValue({ id: 1 });
-    await expect(approve(prisma, 7, 1)).resolves.toMatchObject({ status: 'APPROVED' });
+    await expect(approve(prisma, 7, 1, { initialCommands })).resolves.toMatchObject({ status: 'APPROVED' });
   });
 
   it('없는 신청은 NOT_FOUND', async () => {
     const { prisma } = createPrisma();
-    await expect(approve(prisma, 99, 1)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(approve(prisma, 99, 1, { initialCommands })).rejects.toMatchObject({ code: 'NOT_FOUND' });
     await expect(reject(prisma, 99, 1)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('거절 사유는 선택이고 화이트리스트는 건드리지 않는다', async () => {
+  it('거절은 사유가 선택이고 화이트리스트는 건드리지 않으며 토큰을 지운다', async () => {
     const { prisma, signupApplication, whitelist } = createPrisma();
-    signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING' });
+    signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING', ...TOKEN_ROW });
     await reject(prisma, 7, 1);
-    expect(signupApplication.update.mock.calls[0][0].data).toMatchObject({ status: 'REJECTED', rejectReason: null, processedById: 1 });
+    expect(signupApplication.update.mock.calls[0][0].data).toMatchObject({
+      status: 'REJECTED', rejectReason: null, processedById: 1, accessToken: null, refreshToken: null,
+    });
     expect(whitelist.upsert).not.toHaveBeenCalled();
   });
 
@@ -188,5 +228,44 @@ describe('approve / reject — 어드민', () => {
     expect(args.where).toEqual({ status: { in: ['PENDING', 'REJECTED'] } });
     expect(args.orderBy).toEqual([{ status: 'asc' }, { createdAt: 'desc' }]);
     expect(rows[0].whitelisted).toBe(true);
+  });
+});
+
+describe('refreshPendingTokens — 대기자 토큰 갱신 (#151)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function pendingRow(overrides: Record<string, unknown>) {
+    return { id: 7, channelName: '테스터', createdAt: new Date(), tokenExpiresAt: new Date(Date.now() + 86400_000), ...overrides };
+  }
+
+  it('만료가 6시간 넘게 남았으면 건드리지 않는다', async () => {
+    const { prisma, signupApplication } = createPrisma();
+    signupApplication.findMany.mockResolvedValue([pendingRow({})]);
+    await expect(refreshPendingTokens(prisma)).resolves.toEqual({ refreshed: 0, cleared: 0, candidates: 1 });
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('만료 임박이면 갱신한다', async () => {
+    const { prisma, signupApplication } = createPrisma();
+    signupApplication.findMany.mockResolvedValue([pendingRow({ tokenExpiresAt: new Date(Date.now() + 60_000) })]);
+    refreshMock.mockResolvedValue(TOKENS);
+    await expect(refreshPendingTokens(prisma)).resolves.toMatchObject({ refreshed: 1, cleared: 0 });
+  });
+
+  it('갱신에 실패하면 토큰을 지운다 (재로그인 외에 방법이 없다)', async () => {
+    const { prisma, signupApplication } = createPrisma();
+    signupApplication.findMany.mockResolvedValue([pendingRow({ tokenExpiresAt: new Date(Date.now() + 60_000) })]);
+    refreshMock.mockRejectedValue(new Error('invalid_grant'));
+    await expect(refreshPendingTokens(prisma)).resolves.toMatchObject({ refreshed: 0, cleared: 1 });
+    expect(signupApplication.update).toHaveBeenCalledWith({ where: { id: 7 }, data: expect.objectContaining({ refreshToken: null }) });
+  });
+
+  it('30일 넘게 대기한 신청은 갱신하지 않고 토큰을 지운다', async () => {
+    const { prisma, signupApplication } = createPrisma();
+    signupApplication.findMany.mockResolvedValue([
+      pendingRow({ createdAt: new Date(Date.now() - PENDING_MAX_AGE_MS - 1000), tokenExpiresAt: new Date(Date.now() + 60_000) }),
+    ]);
+    await expect(refreshPendingTokens(prisma)).resolves.toMatchObject({ refreshed: 0, cleared: 1 });
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

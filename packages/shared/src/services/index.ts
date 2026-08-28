@@ -4,6 +4,7 @@ export * from './chzzkClient';
 export * as commandService from './command';
 export * from './errors';
 export * as playbackService from './playback';
+export * as provisionService from './provision';
 export * as repeatService from './repeat';
 export * as shortcutService from './shortcut';
 export * as signupService from './signup';

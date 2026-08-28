@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 
 import { z } from 'zod';
 
+import { getChatbotDatabaseInitial } from '../chatbot';
 import { sendMail } from '../lib/nodemailer';
 import { adminUsersService, ServiceError, signupService, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
@@ -109,7 +110,11 @@ export const adminRouter = t.router({
   ),
   approveApplication: adminProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(({ ctx, input }) => signupService.approve(ctx.prisma, input.id, ctx.user.id)),
+    .mutation(({ ctx, input }) =>
+      signupService.approve(ctx.prisma, input.id, ctx.user.id, {
+        initialCommands: getChatbotDatabaseInitial,
+      }),
+    ),
   rejectApplication: adminProcedure
     .input(z.object({ id: z.number(), reason: z.string().max(500).optional() }))
     .mutation(({ ctx, input }) =>

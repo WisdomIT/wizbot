@@ -25,6 +25,8 @@ interface Application {
   whitelisted: boolean;
   /** 어드민 설정 — 사유 입력칸을 보일지 */
   askReason: boolean;
+  /** 신청 시점 토큰이 살아 있는지 — 아니면 승인돼도 재로그인해야 봇이 붙는다 (#151) */
+  tokenAlive: boolean;
 }
 
 export function ApplyForm({ application: initial }: { application: Application }) {
@@ -65,6 +67,9 @@ export function ApplyForm({ application: initial }: { application: Application }
       <CardContent className="flex flex-col gap-5">
         <StatusBanner application={application} revoked={revoked} />
 
+        {isPending && !application.tokenAlive && (
+          <ChzzkLoginButton>치지직으로 다시 로그인</ChzzkLoginButton>
+        )}
         {application.status === 'APPROVED' && !revoked ? (
           <ChzzkLoginButton>로그인하러 가기</ChzzkLoginButton>
         ) : (
@@ -111,7 +116,9 @@ function StatusBanner({ application, revoked }: { application: Application; revo
     case 'PENDING':
       return (
         <Banner icon={<Clock className="text-amber-500" />} title="검토 대기 중">
-          관리자가 확인하면 승인됩니다. 승인 후 같은 치지직 계정으로 로그인하면 바로 쓸 수 있습니다.
+          {application.tokenAlive
+            ? '승인되면 봇이 채널에 바로 연결되고 채팅으로 알려드립니다. 설정은 로그인 후 콘솔에서 할 수 있습니다.'
+            : '연동이 만료됐습니다. 치지직으로 다시 로그인해 두면 승인 즉시 봇이 연결됩니다.'}
         </Banner>
       );
     case 'APPROVED':
