@@ -115,6 +115,21 @@ async function syncApprovalNotices(): Promise<void> {
   }
 }
 
+/** 채널명·프로필 이미지 동기화 주기 (#77). 치지직 조회는 20개씩이라 전체를 훑어도 가볍다 */
+const PROFILE_REFRESH_MS = 30 * 60 * 1000;
+let lastProfileRefreshAt = 0;
+
+async function refreshChannelProfiles(): Promise<void> {
+  if (Date.now() - lastProfileRefreshAt < PROFILE_REFRESH_MS) return;
+  lastProfileRefreshAt = Date.now();
+  try {
+    const { checked, updated } = await trpc.user.refreshChannelProfiles.mutate();
+    if (updated) console.log(`🖼️ 채널 정보 갱신: ${updated}/${checked}`);
+  } catch (error) {
+    console.error('❌ 채널 정보 갱신 실패:', error);
+  }
+}
+
 /** 신청 대기자 토큰 갱신 — 실제 갱신 여부는 API 가 만료 임박 기준으로 정한다 (#151) */
 async function refreshPendingTokens(): Promise<void> {
   try {
@@ -137,6 +152,7 @@ async function poll(): Promise<void> {
     await syncRepeats();
     await syncApprovalNotices();
     await refreshPendingTokens();
+    await refreshChannelProfiles();
     lastPollAt = new Date();
   } catch (error) {
     console.error('❌ 폴링 실패:', error);
