@@ -108,7 +108,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
               </div>
               <div className="text-center text-sm">
                 위즈봇을 이용하고 싶으신가요?{' '}
-                <Link href="#" className="underline underline-offset-4">
+                <Link href="/apply" className="underline underline-offset-4">
                   신청하기
                 </Link>
               </div>

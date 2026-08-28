@@ -4,7 +4,7 @@ import { jwtVerify, SignJWT } from 'jose';
 
 export interface JwtPayload {
   id: number;
-  role: 'admin' | 'streamer';
+  role: 'admin' | 'streamer' | 'applicant';
   iat?: number;
   exp?: number;
 }
@@ -19,11 +19,14 @@ if (!JWT_SECRET) {
 const secretKey = new TextEncoder().encode(JWT_SECRET);
 
 // JWT 발급
-export async function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<string> {
+export async function signJwt(
+  payload: Omit<JwtPayload, 'iat' | 'exp'>,
+  expiresIn = '7d',
+): Promise<string> {
   const jwt = await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('7d')
+    .setExpirationTime(expiresIn)
     .sign(secretKey);
 
   return jwt;

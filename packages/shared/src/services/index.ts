@@ -6,6 +6,7 @@ export * from './errors';
 export * as playbackService from './playback';
 export * as repeatService from './repeat';
 export * as shortcutService from './shortcut';
+export * as signupService from './signup';
 export * as songService from './song';
 export * as songFavoriteService from './songFavorite';
 export * as songHistoryService from './songHistory';

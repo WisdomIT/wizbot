@@ -3,7 +3,11 @@ import { initTRPC, TRPCError } from '@trpc/server';
 
 import { isServiceError, ServiceErrorCode } from './services/errors';
 
-export type UserRole = 'streamer' | 'admin';
+/**
+ * applicant — 치지직 OAuth 는 통과했지만 화이트리스트에 없는 채널 (#96).
+ * id 는 SignupApplication.id 다. 신청 상태 조회·사유 제출만 할 수 있다.
+ */
+export type UserRole = 'streamer' | 'admin' | 'applicant';
 
 export interface AuthUser {
   id: number;
@@ -64,6 +68,14 @@ export const publicProcedure = t.procedure.use(mapServiceErrors);
 export const streamerProcedure = publicProcedure.use(({ ctx, next }) => {
   if (!ctx.user || ctx.user.role !== 'streamer') {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' });
+  }
+  return next({ ctx: { ...ctx, user: ctx.user } });
+});
+
+/** 사용 신청자 전용 (#96) — ctx.user.id 가 신청 레코드 id */
+export const applicantProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ctx.user || ctx.user.role !== 'applicant') {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: '치지직 로그인이 필요합니다.' });
   }
   return next({ ctx: { ...ctx, user: ctx.user } });
 });

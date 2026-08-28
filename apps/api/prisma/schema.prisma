@@ -46,10 +46,37 @@ enum SongHistoryStatus {
   FAILED    // 재생 시도했으나 실패
 }
 
+/// 사용 신청 처리 상태 (#96)
+enum SignupStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Whitelist {
   id         Int    @id @default(autoincrement())
   nickname   String @db.VarChar(50)
   channelId  String @unique @db.VarChar(32)
+}
+
+/// 사이트 내 사용 신청 (#96). 치지직 OAuth 로 본인 확인된 채널만 만들어진다.
+/// 화이트리스트와 독립이다 — 승인이 화이트리스트 등록을 일으키지만, 해제해도 이 레코드는 남는다.
+model SignupApplication {
+  id              Int          @id @default(autoincrement())
+  channelId       String       @unique @db.VarChar(32)
+  channelName     String       @db.VarChar(50)
+  channelImageUrl String?      @db.Text
+  /// 신청자가 적는 사유 (선택)
+  reason          String?      @db.VarChar(500)
+  status          SignupStatus @default(PENDING)
+  rejectReason    String?      @db.VarChar(500)
+  createdAt       DateTime     @default(now()) @db.DateTime(6)
+  updatedAt       DateTime     @updatedAt @db.DateTime(6)
+  processedAt     DateTime?    @db.DateTime(6)
+  processedById   Int?
+  processedBy     Admin?       @relation(fields: [processedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
 }
 
 model Admin {
@@ -57,6 +84,7 @@ model Admin {
   email    String @unique @db.VarChar(250)
 
   passcode AdminLogin?
+  processedApplications SignupApplication[]
 }
 
 model AdminLogin {
