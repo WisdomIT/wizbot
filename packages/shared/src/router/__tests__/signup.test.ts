@@ -16,6 +16,7 @@ function createCaller(overrides: Partial<Context> = {}) {
       update: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ ...APP, ...data })),
     },
     whitelist: { findUnique: vi.fn().mockResolvedValue(null) },
+    siteSetting: { findMany: vi.fn().mockResolvedValue([]) },
     admin: { findMany: vi.fn().mockResolvedValue([{ email: 'a@b.c' }, { email: 'd@e.f' }]) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;

@@ -28,6 +28,7 @@ function createCaller(overrides: Partial<Context> = {}) {
       findUnique: vi.fn().mockResolvedValue(null),
     },
     user: { findMany: vi.fn().mockResolvedValue([]) },
+    signupApplication: { findMany: vi.fn().mockResolvedValue([]) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };

@@ -12,6 +12,14 @@ import { ServiceError } from './errors';
 
 /** SiteSetting 키. 값은 'true' | 'false' */
 export const AUTO_APPROVE_KEY = 'signup.autoApprove';
+export const ASK_REASON_KEY = 'signup.askReason';
+
+export type SignupSettings = {
+  /** 켜면 신청 즉시 화이트리스트 등록. 기본 꺼짐 */
+  autoApprove: boolean;
+  /** 신청 화면에 사유 입력칸을 보일지. 기본 켜짐 */
+  askReason: boolean;
+};
 
 export type ChannelIdentity = {
   channelId: string;
@@ -19,22 +27,37 @@ export type ChannelIdentity = {
   channelImageUrl: string | null;
 };
 
-/* ── 자동 승인 (사이트 전역 설정) ── */
+/* ── 사이트 전역 설정 ── */
 
-export async function getAutoApprove(prisma: PrismaClient): Promise<boolean> {
-  const row = await prisma.siteSetting.findUnique({ where: { key: AUTO_APPROVE_KEY } });
-  //  기본값은 꺼짐 — 켜두면 사실상 누구나 가입되고, 챗봇은 채널마다 실시간 연결을 유지하므로
-  //  무분별한 가입이 그대로 리소스 부담이 된다
-  return row?.value === 'true';
+export async function getSettings(prisma: PrismaClient): Promise<SignupSettings> {
+  const rows = await prisma.siteSetting.findMany({
+    where: { key: { in: [AUTO_APPROVE_KEY, ASK_REASON_KEY] } },
+  });
+  const value = (key: string) => rows.find((row) => row.key === key)?.value;
+  return {
+    //  기본값은 꺼짐 — 켜두면 사실상 누구나 가입되고, 챗봇은 채널마다 실시간 연결을 유지하므로
+    //  무분별한 가입이 그대로 리소스 부담이 된다
+    autoApprove: value(AUTO_APPROVE_KEY) === 'true',
+    //  설정이 없으면 보인다
+    askReason: value(ASK_REASON_KEY) !== 'false',
+  };
 }
 
-export function setAutoApprove(prisma: PrismaClient, enabled: boolean) {
-  const value = enabled ? 'true' : 'false';
-  return prisma.siteSetting.upsert({
-    where: { key: AUTO_APPROVE_KEY },
-    update: { value },
-    create: { key: AUTO_APPROVE_KEY, value },
-  });
+export async function getAutoApprove(prisma: PrismaClient): Promise<boolean> {
+  return (await getSettings(prisma)).autoApprove;
+}
+
+export async function setSettings(prisma: PrismaClient, patch: Partial<SignupSettings>) {
+  const entries: [string, boolean | undefined][] = [
+    [AUTO_APPROVE_KEY, patch.autoApprove],
+    [ASK_REASON_KEY, patch.askReason],
+  ];
+  for (const [key, enabled] of entries) {
+    if (enabled === undefined) continue;
+    const value = enabled ? 'true' : 'false';
+    await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+  return getSettings(prisma);
 }
 
 /* ── 로그인 콜백 ── */
@@ -86,7 +109,8 @@ export async function getMine(prisma: PrismaClient, id: number) {
     where: { channelId: application.channelId },
     select: { id: true },
   }));
-  return { ...application, whitelisted };
+  const { askReason } = await getSettings(prisma);
+  return { ...application, whitelisted, askReason };
 }
 
 /**
@@ -124,9 +148,14 @@ export async function submitReason(prisma: PrismaClient, id: number, reasonInput
 
 /* ── 어드민 ── */
 
+/**
+ * 어드민 목록 — 대기·거절만. 승인된 신청은 화이트리스트로 "이동"한 것으로 보고 여기서 뺀다
+ * (레코드는 남는다: 승인 이력과 #151 의 승인 후 첫 로그인 판정에 쓴다).
+ */
 export async function listApplications(prisma: PrismaClient) {
   const [applications, whitelist] = await Promise.all([
     prisma.signupApplication.findMany({
+      where: { status: { in: ['PENDING', 'REJECTED'] } },
       include: { processedBy: { select: { email: true } } },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     }),

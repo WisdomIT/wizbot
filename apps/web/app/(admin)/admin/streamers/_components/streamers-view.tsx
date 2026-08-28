@@ -18,7 +18,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -72,7 +74,7 @@ export function StreamersView() {
       <p className="text-sm text-muted-foreground">
         가입(로그인)한 스트리머 목록입니다. 숨김 처리하면 메인/스트리머 목록에 노출되지 않습니다
         (직접 링크로 여는 시청자 페이지는 계속 열립니다). 탈퇴 처리는 명령어·설정·연동 토큰을 모두
-        삭제하며, 화이트리스트는 별도로 관리됩니다.
+        삭제하며, 화이트리스트는 남길지 함께 지울지 고를 수 있습니다.
       </p>
       <div className="rounded-md border">
         <Table>
@@ -161,15 +163,19 @@ function DeleteStreamerDialog({
   const deleteStreamer = useMutation(trpc.admin.deleteStreamer.mutationOptions());
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  const [removeWhitelist, setRemoveWhitelist] = useState(false);
 
   function handleDelete() {
-    toast.promise(deleteStreamer.mutateAsync({ userId }), {
+    toast.promise(deleteStreamer.mutateAsync({ userId, removeWhitelist }), {
       loading: '탈퇴 처리 중...',
       success: () => {
         setOpen(false);
         setConfirmText('');
+        setRemoveWhitelist(false);
         onDone();
-        return `${name} 채널이 탈퇴 처리되었습니다.`;
+        return removeWhitelist
+          ? `${name} 채널을 탈퇴 처리하고 화이트리스트에서도 삭제했습니다.`
+          : `${name} 채널이 탈퇴 처리되었습니다.`;
       },
       error: (err) => `탈퇴 처리에 실패했습니다. ${err instanceof Error ? err.message : err}`,
     });
@@ -180,7 +186,10 @@ function DeleteStreamerDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setConfirmText('');
+        if (!next) {
+          setConfirmText('');
+          setRemoveWhitelist(false);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -201,6 +210,21 @@ function DeleteStreamerDialog({
           onChange={(event) => setConfirmText(event.target.value)}
           placeholder={name}
         />
+        <div className="flex items-center justify-between rounded-md border p-3">
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor="remove-whitelist" className="text-sm">
+              화이트리스트에서도 삭제
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              끄면 입장권은 남아 같은 계정으로 다시 로그인하면 재가입됩니다.
+            </p>
+          </div>
+          <Switch
+            id="remove-whitelist"
+            checked={removeWhitelist}
+            onCheckedChange={setRemoveWhitelist}
+          />
+        </div>
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="outline">취소</Button>

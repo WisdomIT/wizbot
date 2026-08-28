@@ -6,16 +6,24 @@ import { ServiceError } from './errors';
 /** 화이트리스트 = 입장권. 삭제해도 기존 User/데이터는 유지되고 재로그인만 차단된다 (#10 기획) */
 
 export async function listWhitelist(prisma: PrismaClient) {
-  const [entries, users] = await Promise.all([
+  const [entries, users, approved] = await Promise.all([
     prisma.whitelist.findMany({ orderBy: { id: 'asc' } }),
     prisma.user.findMany({ select: { channelId: true, channelName: true, channelImageUrl: true } }),
+    // 사용 신청을 거쳐 들어온 채널 — 승인 시각을 함께 보여준다 (#96)
+    prisma.signupApplication.findMany({
+      where: { status: 'APPROVED' },
+      select: { channelId: true, processedAt: true },
+    }),
   ]);
   const userByChannelId = new Map(users.map((user) => [user.channelId, user]));
+  const approvedAtByChannelId = new Map(approved.map((a) => [a.channelId, a.processedAt]));
 
   return entries.map((entry) => ({
     ...entry,
     /** 이 채널로 실제 가입(로그인)한 유저 — 없으면 아직 미가입 */
     user: userByChannelId.get(entry.channelId) ?? null,
+    /** 사용 신청 승인으로 등록된 경우 승인 시각. 어드민이 직접 등록했으면 null */
+    approvedAt: approvedAtByChannelId.get(entry.channelId) ?? null,
   }));
 }
 
