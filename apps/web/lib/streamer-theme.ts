@@ -58,15 +58,14 @@ export type ThemeVars = Record<string, string>;
  */
 export function deriveVars(theme: ThemeInput, dark: boolean): ThemeVars {
   const vars: ThemeVars = {};
-  const bgHex = theme.backgroundColor;
-  const primaryHex = theme.primaryColor;
-  if (!bgHex && !primaryHex) return vars;
+  const { backgroundColor, sidebarColor, primaryColor } = theme;
+  if (!backgroundColor && !sidebarColor && !primaryColor) return vars;
 
   //  배경이 정해지지 않았어도 파생색 계산의 기준은 필요하다 — 스킴 기본 배경을 쓴다
-  const bg = bgHex ? hexToRgb(bgHex) : DEFAULT_BG[dark ? 'dark' : 'light'];
+  const bg = backgroundColor ? hexToRgb(backgroundColor) : DEFAULT_BG[dark ? 'dark' : 'light'];
   const fg = foregroundFor(bg);
 
-  if (bgHex) {
+  if (backgroundColor) {
     const lifted = mix(bg, fg, 0.04);
     Object.assign(vars, {
       '--background': css(bg),
@@ -79,27 +78,39 @@ export function deriveVars(theme: ThemeInput, dark: boolean): ThemeVars {
       '--secondary-foreground': css(fg),
       '--muted': css(mix(bg, fg, 0.06)),
       '--muted-foreground': css(mix(bg, fg, 0.6)),
+      '--accent': css(mix(bg, fg, 0.06)),
+      '--accent-foreground': css(fg),
       '--border': css(mix(bg, fg, 0.12)),
       '--input': css(mix(bg, fg, 0.14)),
-      '--sidebar': css(mix(bg, fg, 0.02)),
-      '--sidebar-foreground': css(fg),
-      '--sidebar-border': css(mix(bg, fg, 0.1)),
     });
   }
 
-  if (primaryHex) {
-    const primary = hexToRgb(primaryHex);
-    const accent = mix(bg, primary, 0.14);
+  //  사이드바: 직접 고른 색, 아니면 페이지 배경에서 살짝 띄운 색
+  if (sidebarColor || backgroundColor) {
+    const sidebar = sidebarColor ? hexToRgb(sidebarColor) : mix(bg, fg, 0.02);
+    const sidebarFg = foregroundFor(sidebar);
+    Object.assign(vars, {
+      '--sidebar': css(sidebar),
+      '--sidebar-foreground': css(sidebarFg),
+      //  hover — 활성(--sidebar-active)과 달리 은은하게
+      '--sidebar-accent': css(mix(sidebar, sidebarFg, 0.08)),
+      '--sidebar-accent-foreground': css(sidebarFg),
+      '--sidebar-border': css(mix(sidebar, sidebarFg, 0.1)),
+    });
+  }
+
+  //  강조 색: 버튼·활성 메뉴(solid)·명령어 배경
+  if (primaryColor) {
+    const primary = hexToRgb(primaryColor);
+    const onPrimary = foregroundFor(primary);
     Object.assign(vars, {
       '--primary': css(primary),
-      '--primary-foreground': css(foregroundFor(primary)),
+      '--primary-foreground': css(onPrimary),
       '--ring': css(primary),
-      '--accent': css(accent),
-      '--accent-foreground': css(fg),
       '--sidebar-primary': css(primary),
-      '--sidebar-primary-foreground': css(foregroundFor(primary)),
-      '--sidebar-accent': css(accent),
-      '--sidebar-accent-foreground': css(fg),
+      '--sidebar-primary-foreground': css(onPrimary),
+      '--sidebar-active': css(primary),
+      '--sidebar-active-foreground': css(onPrimary),
       '--sidebar-ring': css(primary),
     });
   }
@@ -131,14 +142,8 @@ export function buildThemeCss(theme: ThemeInput, scopeId: string): string {
   return rules.join('\n');
 }
 
-/** 스트리머가 고른 배경과 파생 전경의 대비 — 설정 화면이 경고를 띄우는 기준 */
-export function backgroundContrast(backgroundColor: string): number {
-  const bg = hexToRgb(backgroundColor);
-  return contrastRatio(bg, foregroundFor(bg));
-}
-
-/** 메인 색 위에 글자(primary-foreground)를 올렸을 때의 대비 */
-export function primaryContrast(primaryColor: string): number {
-  const primary = hexToRgb(primaryColor);
-  return contrastRatio(primary, foregroundFor(primary));
+/** 고른 색 위에 파생 글자색(검정/흰색)을 올렸을 때의 대비 — 설정 화면이 경고를 띄우는 기준 */
+export function surfaceContrast(color: string): number {
+  const rgb = hexToRgb(color);
+  return contrastRatio(rgb, foregroundFor(rgb));
 }

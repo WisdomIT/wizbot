@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  backgroundContrast,
   buildThemeCss,
   contrastRatio,
   deriveVars,
   hexToRgb,
   luminance,
+  surfaceContrast,
 } from '../streamer-theme';
 
-const base = { primaryColor: null, backgroundColor: null, colorScheme: 'SYSTEM' as const, fontKey: 'suit' as const };
+const base = {
+  primaryColor: null,
+  backgroundColor: null,
+  sidebarColor: null,
+  colorScheme: 'SYSTEM' as const,
+  fontKey: 'suit' as const,
+};
 
 describe('색 계산', () => {
   it('hex → rgb', () => {
@@ -29,11 +35,23 @@ describe('deriveVars — 고른 것만 덮는다', () => {
   it('아무것도 안 골랐으면 빈 객체 (globals.css 기본값 유지)', () => {
     expect(deriveVars(base, false)).toEqual({});
   });
-  it('메인 색만 고르면 primary 계열만, 배경 계열은 없다', () => {
+  it('강조 색만 고르면 primary 계열 + 활성 메뉴(solid)만, 배경·사이드바 계열은 없다', () => {
     const vars = deriveVars({ ...base, primaryColor: '#1e90ff' }, false);
     expect(vars['--primary']).toBe('rgb(30 144 255)');
+    expect(vars['--sidebar-active']).toBe('rgb(30 144 255)');
     expect(vars).toHaveProperty('--ring');
     expect(vars).not.toHaveProperty('--background');
+    expect(vars).not.toHaveProperty('--sidebar');
+  });
+  it('사이드바 색을 직접 고르면 그 색, 아니면 배경에서 살짝 띄운 색', () => {
+    expect(deriveVars({ ...base, sidebarColor: '#112233' }, false)['--sidebar']).toBe('rgb(17 34 51)');
+    const derived = deriveVars({ ...base, backgroundColor: '#ffffff' }, false);
+    expect(derived['--sidebar']).toBe('rgb(250 250 250)');
+  });
+  it('사이드바 hover(accent)는 활성(active)보다 은은하다 — 같은 토큰을 쓰지 않는다', () => {
+    const vars = deriveVars({ ...base, sidebarColor: '#ffffff', primaryColor: '#ff0000' }, false);
+    expect(vars['--sidebar-active']).toBe('rgb(255 0 0)');
+    expect(vars['--sidebar-accent']).not.toBe(vars['--sidebar-active']);
   });
   it('어두운 배경이면 전경이 밝게, 밝은 배경이면 어둡게', () => {
     expect(deriveVars({ ...base, backgroundColor: '#101010' }, false)['--foreground']).toBe('rgb(250 250 250)');
@@ -71,8 +89,8 @@ describe('buildThemeCss — 스킴별 선택자', () => {
 });
 
 describe('경고 기준', () => {
-  it('중간 회색 배경은 어느 전경이든 대비가 낮다', () => {
-    expect(backgroundContrast('#808080')).toBeLessThan(4.5);
-    expect(backgroundContrast('#ffffff')).toBeGreaterThan(4.5);
+  it('중간 회색은 어느 글자색을 올려도 대비가 낮다', () => {
+    expect(surfaceContrast('#808080')).toBeLessThan(4.5);
+    expect(surfaceContrast('#ffffff')).toBeGreaterThan(4.5);
   });
 });

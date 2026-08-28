@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FONT_FAMILY } from '@/lib/fonts';
-import { backgroundContrast, primaryContrast } from '@/lib/streamer-theme';
+import { surfaceContrast } from '@/lib/streamer-theme';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 const SCHEME_LABEL = { SYSTEM: '방문자 설정 따름', LIGHT: '라이트 고정', DARK: '다크 고정' } as const;
@@ -66,8 +66,13 @@ export function ThemeSettingsView() {
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(data);
-  const bgContrast = draft.backgroundColor ? backgroundContrast(draft.backgroundColor) : null;
-  const primaryCr = draft.primaryColor ? primaryContrast(draft.primaryColor) : null;
+  const warn = (color: string | null, what: string) => {
+    if (!color) return undefined;
+    const ratio = surfaceContrast(color);
+    return ratio < MIN_CONTRAST
+      ? `${what} 글자와의 대비가 낮습니다 (${ratio.toFixed(1)}:1). 더 진하거나 연한 색이 읽기 쉽습니다.`
+      : undefined;
+  };
 
   function handleSave() {
     toast.promise(update.mutateAsync(draft), {
@@ -97,34 +102,37 @@ export function ThemeSettingsView() {
       <CardHeader>
         <CardTitle>테마</CardTitle>
         <CardDescription>
-          시청자 페이지·콘솔·플레이어 앱·OBS 자막(폰트)에 적용됩니다. 저장하면 바로 반영됩니다.
+          시청자 페이지·콘솔·플레이어 앱·OBS 자막(폰트)에 적용됩니다. 아래 미리보기가 저장 전 모습입니다.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <ColorField
-            id="primary"
-            label="메인 색상"
-            value={draft.primaryColor}
-            fallback="#343434"
-            onChange={(primaryColor) => setDraft((d) => ({ ...d, primaryColor }))}
-            hint={
-              primaryCr !== null && primaryCr < MIN_CONTRAST
-                ? `버튼 글자와의 대비가 낮습니다 (${primaryCr.toFixed(1)}:1). 더 진하거나 연한 색이 읽기 쉽습니다.`
-                : undefined
-            }
-          />
-          <ColorField
             id="background"
             label="배경 색상"
+            description="페이지 배경. 글자색은 자동으로 맞춥니다"
             value={draft.backgroundColor}
             fallback="#ffffff"
             onChange={(backgroundColor) => setDraft((d) => ({ ...d, backgroundColor }))}
-            hint={
-              bgContrast !== null && bgContrast < MIN_CONTRAST
-                ? `글자와의 대비가 낮습니다 (${bgContrast.toFixed(1)}:1). 아주 밝거나 아주 어두운 배경이 읽기 쉽습니다.`
-                : undefined
-            }
+            hint={warn(draft.backgroundColor, '배경 위')}
+          />
+          <ColorField
+            id="sidebar"
+            label="사이드바 색상"
+            description="비우면 배경에서 살짝 띄운 색"
+            value={draft.sidebarColor}
+            fallback="#fafafa"
+            onChange={(sidebarColor) => setDraft((d) => ({ ...d, sidebarColor }))}
+            hint={warn(draft.sidebarColor, '사이드바 위')}
+          />
+          <ColorField
+            id="primary"
+            label="강조 색상"
+            description="활성 메뉴 · 버튼 · 신청 명령어 배경"
+            value={draft.primaryColor}
+            fallback="#343434"
+            onChange={(primaryColor) => setDraft((d) => ({ ...d, primaryColor }))}
+            hint={warn(draft.primaryColor, '강조 색 위')}
           />
           <div className="flex flex-col gap-2">
             <Label>라이트 / 다크</Label>
@@ -168,20 +176,36 @@ export function ThemeSettingsView() {
 
         <div className="flex flex-col gap-2">
           <Label>미리보기</Label>
-          <StreamerThemeScope theme={draft} scopeId="preview" className="rounded-md border p-4">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-lg font-bold">노래 신청 목록</span>
-                <Badge>대기 3곡</Badge>
+          <StreamerThemeScope theme={draft} scopeId="preview" className="overflow-hidden rounded-md border">
+            <div className="flex min-h-44">
+              <div className="flex w-36 shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-2 text-sidebar-foreground">
+                <span className="px-2 py-1 text-xs font-semibold">사이드바</span>
+                <span className="rounded-md bg-sidebar-active px-2 py-1.5 text-sm font-medium text-sidebar-active-foreground">
+                  플레이리스트
+                </span>
+                <span className="rounded-md px-2 py-1.5 text-sm">재생 기록</span>
+                <span className="rounded-md bg-sidebar-accent px-2 py-1.5 text-sm text-sidebar-accent-foreground">
+                  명령어 (hover)
+                </span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                시청자가 보는 페이지의 글자와 버튼이 이렇게 보입니다. 가나다라마바사 ABC 123
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm">신청하기</Button>
-                <Button size="sm" variant="outline">
-                  재생 기록
-                </Button>
+              <div className="flex flex-1 flex-col gap-3 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-lg font-bold">노래 신청 목록</span>
+                  <Badge>대기 3곡</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  채팅에{' '}
+                  <code className="rounded bg-primary px-2 py-1 font-mono text-sm text-primary-foreground">
+                    !노래 제목
+                  </code>{' '}
+                  을 입력하면 신청됩니다. 가나다라 ABC 123
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm">신청하기</Button>
+                  <Button size="sm" variant="outline">
+                    재생 기록
+                  </Button>
+                </div>
               </div>
             </div>
           </StreamerThemeScope>
@@ -208,6 +232,7 @@ export function ThemeSettingsView() {
 function ColorField({
   id,
   label,
+  description,
   value,
   fallback,
   onChange,
@@ -215,14 +240,16 @@ function ColorField({
 }: {
   id: string;
   label: string;
+  description: string;
   value: string | null;
   fallback: string;
   onChange: (value: string | null) => void;
   hint?: string;
 }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
+      <p className="text-xs text-muted-foreground">{description}</p>
       <div className="flex items-center gap-2">
         <Input
           id={id}
