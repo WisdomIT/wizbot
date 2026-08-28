@@ -77,7 +77,7 @@ export function ApplicationsView() {
             </>
           )}
         </p>
-        <AutoApproveToggle />
+        <SignupSettings />
       </div>
       <div className="rounded-md border">
         <Table>
@@ -174,37 +174,58 @@ function StatusBadge({
   return <Badge variant="secondary">대기</Badge>;
 }
 
-function AutoApproveToggle() {
+function SignupSettings() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data: enabled } = useQuery(trpc.admin.getAutoApprove.queryOptions());
-  const setAutoApprove = useMutation(trpc.admin.setAutoApprove.mutationOptions());
+  const { data: settings } = useQuery(trpc.admin.getSignupSettings.queryOptions());
+  const setSettings = useMutation(trpc.admin.setSignupSettings.mutationOptions());
 
-  function handleChange(next: boolean) {
-    toast.promise(setAutoApprove.mutateAsync({ enabled: next }), {
+  function update(patch: { autoApprove?: boolean; askReason?: boolean }, label: string) {
+    toast.promise(setSettings.mutateAsync(patch), {
       loading: '저장 중...',
       success: () => {
-        void queryClient.invalidateQueries(trpc.admin.getAutoApprove.queryFilter());
-        return next
-          ? '자동 승인을 켰습니다. 이제 신청 즉시 화이트리스트에 등록됩니다.'
-          : '자동 승인을 껐습니다.';
+        void queryClient.invalidateQueries(trpc.admin.getSignupSettings.queryFilter());
+        return label;
       },
       error: (error) => `저장에 실패했습니다. ${error instanceof Error ? error.message : error}`,
     });
   }
 
+  const busy = !settings || setSettings.isPending;
+
   return (
-    <div className="flex items-center gap-2 shrink-0">
-      <Label htmlFor="auto-approve" className="text-sm">
-        자동 승인
-      </Label>
-      <Switch
-        id="auto-approve"
-        checked={enabled ?? false}
-        disabled={enabled === undefined || setAutoApprove.isPending}
-        onCheckedChange={handleChange}
-        aria-label="신청 즉시 자동 승인"
-      />
+    <div className="flex items-center gap-5 shrink-0">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="ask-reason" className="text-sm">
+          사유 입력칸
+        </Label>
+        <Switch
+          id="ask-reason"
+          checked={settings?.askReason ?? true}
+          disabled={busy}
+          onCheckedChange={(next) =>
+            update({ askReason: next }, next ? '신청 화면에 사유 입력칸을 보입니다.' : '사유 입력칸을 숨겼습니다.')
+          }
+          aria-label="신청 화면에 사유 입력칸 표시"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Label htmlFor="auto-approve" className="text-sm">
+          자동 승인
+        </Label>
+        <Switch
+          id="auto-approve"
+          checked={settings?.autoApprove ?? false}
+          disabled={busy}
+          onCheckedChange={(next) =>
+            update(
+              { autoApprove: next },
+              next ? '자동 승인을 켰습니다. 이제 신청 즉시 화이트리스트에 등록됩니다.' : '자동 승인을 껐습니다.',
+            )
+          }
+          aria-label="신청 즉시 자동 승인"
+        />
+      </div>
     </div>
   );
 }

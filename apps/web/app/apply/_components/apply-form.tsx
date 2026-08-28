@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 
 import { submitApplication } from '../actions';
 import { ChzzkLoginButton } from './chzzk-login-button';
+import { LogoutButton } from './logout-button';
 
 type Status = 'PENDING' | 'APPROVED' | 'REJECTED';
 
@@ -22,6 +23,8 @@ interface Application {
   rejectReason: string | null;
   /** APPROVED 인데 false 면 승인 뒤 화이트리스트에서 해제된 채널 */
   whitelisted: boolean;
+  /** 어드민 설정 — 사유 입력칸을 보일지 */
+  askReason: boolean;
 }
 
 export function ApplyForm({ application: initial }: { application: Application }) {
@@ -66,6 +69,7 @@ export function ApplyForm({ application: initial }: { application: Application }
           <ChzzkLoginButton>로그인하러 가기</ChzzkLoginButton>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            {application.askReason && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="reason">
                 신청 사유 <span className="text-muted-foreground font-normal">(선택)</span>
@@ -80,15 +84,16 @@ export function ApplyForm({ application: initial }: { application: Application }
               />
               <p className="text-xs text-muted-foreground text-right">{reason.length}/500</p>
             </div>
-            <Button type="submit" className="w-full" disabled={pending}>
-              {canReapply ? '다시 신청하기' : isPending ? '사유 저장' : '신청하기'}
-            </Button>
+            )}
+            {(application.askReason || canReapply) && (
+              <Button type="submit" className="w-full" disabled={pending}>
+                {canReapply ? '다시 신청하기' : '사유 저장'}
+              </Button>
+            )}
           </form>
         )}
 
-        <p className="text-xs text-muted-foreground text-center">
-          처리 결과는 따로 알려드릴 수단이 없습니다. 다시 로그인하면 이 화면에서 확인할 수 있습니다.
-        </p>
+        <LogoutButton />
       </CardContent>
     </Card>
   );

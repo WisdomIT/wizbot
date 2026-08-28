@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   approve,
+  ASK_REASON_KEY,
   AUTO_APPROVE_KEY,
   autoApprove,
   getAutoApprove,
+  getSettings,
   listApplications,
   reject,
   submitReason,
@@ -28,7 +30,7 @@ function createPrisma() {
     upsert: vi.fn().mockResolvedValue({}),
   };
   const siteSetting = {
-    findUnique: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn().mockResolvedValue({}),
   };
   const prisma = {
@@ -51,10 +53,17 @@ describe('자동 승인 설정', () => {
 
   it("'true' 문자열일 때만 켜짐", async () => {
     const { prisma, siteSetting } = createPrisma();
-    siteSetting.findUnique.mockResolvedValue({ key: AUTO_APPROVE_KEY, value: 'true' });
+    siteSetting.findMany.mockResolvedValue([{ key: AUTO_APPROVE_KEY, value: 'true' }]);
     await expect(getAutoApprove(prisma)).resolves.toBe(true);
-    siteSetting.findUnique.mockResolvedValue({ key: AUTO_APPROVE_KEY, value: '1' });
+    siteSetting.findMany.mockResolvedValue([{ key: AUTO_APPROVE_KEY, value: '1' }]);
     await expect(getAutoApprove(prisma)).resolves.toBe(false);
+  });
+
+  it('사유 입력칸은 설정이 없으면 보이고, false 일 때만 숨긴다', async () => {
+    const { prisma, siteSetting } = createPrisma();
+    await expect(getSettings(prisma)).resolves.toEqual({ autoApprove: false, askReason: true });
+    siteSetting.findMany.mockResolvedValue([{ key: ASK_REASON_KEY, value: 'false' }]);
+    await expect(getSettings(prisma)).resolves.toMatchObject({ askReason: false });
   });
 });
 

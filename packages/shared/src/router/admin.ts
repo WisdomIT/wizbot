@@ -115,13 +115,10 @@ export const adminRouter = t.router({
     .mutation(({ ctx, input }) =>
       signupService.reject(ctx.prisma, input.id, ctx.user.id, input.reason),
     ),
-  getAutoApprove: adminProcedure.query(({ ctx }) => signupService.getAutoApprove(ctx.prisma)),
-  setAutoApprove: adminProcedure
-    .input(z.object({ enabled: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      await signupService.setAutoApprove(ctx.prisma, input.enabled);
-      return input.enabled;
-    }),
+  getSignupSettings: adminProcedure.query(({ ctx }) => signupService.getSettings(ctx.prisma)),
+  setSignupSettings: adminProcedure
+    .input(z.object({ autoApprove: z.boolean().optional(), askReason: z.boolean().optional() }))
+    .mutation(({ ctx, input }) => signupService.setSettings(ctx.prisma, input)),
 
   /* ── 스트리머 관리 (#10 PR B) ── */
   listStreamers: adminProcedure.query(({ ctx }) => adminUsersService.listStreamers(ctx.prisma)),
