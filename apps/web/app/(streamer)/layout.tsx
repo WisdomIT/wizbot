@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import AppSidebarStreamer from '@/components/app-sidebar-streamer';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { FONT_CLASS } from '@/lib/fonts';
 import { trpc } from '@/src/utils/trpc';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
@@ -33,7 +32,7 @@ export default async function RootLayout({
   return (
     <TRPCReactProvider>
       {/* 콘솔도 스트리머 본인 테마를 따른다 — 시청자가 보는 것과 같은 모습으로 (#77) */}
-      <StreamerThemeScope theme={me.theme} fontClass={FONT_CLASS[me.theme.fontKey]} className="min-h-svh">
+      <StreamerThemeScope theme={me.theme} className="min-h-svh">
         <SidebarProvider>
           <AppSidebarStreamer user={user}>{children}</AppSidebarStreamer>
         </SidebarProvider>

@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FONT_FAMILY } from '@/lib/fonts';
 import { backgroundContrast, primaryContrast } from '@/lib/streamer-theme';
 import { useTRPC } from '@/src/utils/trpc-react';
 
@@ -37,7 +38,7 @@ const MIN_CONTRAST = 4.5;
  * 스트리머 테마 설정 (#77). 저장 전에 아래 미리보기가 같은 코드(StreamerThemeScope)로 그려진다.
  * 폰트 목록은 각 항목을 해당 폰트로 그린다 — 이름만 보고 고를 수 없어서.
  */
-export function ThemeSettingsView({ fontClasses }: { fontClasses: Record<ThemeFontKey, string> }) {
+export function ThemeSettingsView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(trpc.user.getTheme.queryOptions());
@@ -151,12 +152,12 @@ export function ThemeSettingsView({ fontClasses }: { fontClasses: Record<ThemeFo
               value={draft.fontKey}
               onValueChange={(fontKey) => setDraft((d) => ({ ...d, fontKey: fontKey as ThemeFontKey }))}
             >
-              <SelectTrigger className={`w-full ${fontClasses[draft.fontKey]}`}>
+              <SelectTrigger className="w-full" style={{ fontFamily: FONT_FAMILY[draft.fontKey] ?? undefined }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {THEME_FONTS.map((font) => (
-                  <SelectItem key={font.key} value={font.key} className={fontClasses[font.key]}>
+                  <SelectItem key={font.key} value={font.key} style={{ fontFamily: FONT_FAMILY[font.key] ?? undefined }}>
                     {font.label}
                   </SelectItem>
                 ))}
@@ -167,12 +168,7 @@ export function ThemeSettingsView({ fontClasses }: { fontClasses: Record<ThemeFo
 
         <div className="flex flex-col gap-2">
           <Label>미리보기</Label>
-          <StreamerThemeScope
-            theme={draft}
-            fontClass={fontClasses[draft.fontKey]}
-            scopeId="preview"
-            className="rounded-md border p-4"
-          >
+          <StreamerThemeScope theme={draft} scopeId="preview" className="rounded-md border p-4">
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-lg font-bold">노래 신청 목록</span>

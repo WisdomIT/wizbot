@@ -1,5 +1,6 @@
 import { SourcePlayer } from '@/components/song/source-player';
-import { FONT_CLASS } from '@/lib/fonts';
+import { FontLink } from '@/components/theme/font-link';
+import { FONT_FAMILY } from '@/lib/fonts';
 import { trpc } from '@/src/utils/trpc';
 
 /**
@@ -11,5 +12,11 @@ export default async function Page({ params }: { params: Promise<{ token: string
   const { token } = await params;
   // 자막이 스트리머 폰트를 따라간다 (#77). 색은 방송 화면 위에서 읽혀야 하므로 흰색 그대로
   const theme = await trpc.user.getThemeBySourceToken.query({ token }).catch(() => null);
-  return <SourcePlayer token={token} fontClass={FONT_CLASS[theme?.fontKey ?? 'suit']} />;
+  const fontKey = theme?.fontKey ?? 'suit';
+  return (
+    <>
+      <FontLink keys={[fontKey]} />
+      <SourcePlayer token={token} fontFamily={FONT_FAMILY[fontKey] ?? undefined} />
+    </>
+  );
 }

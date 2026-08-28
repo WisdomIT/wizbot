@@ -70,13 +70,13 @@ function loadYouTubeApi(): Promise<any> {
 export function SourcePlayer({
   token,
   source = 'OBS',
-  fontClass,
+  fontFamily,
 }: {
   token: string;
   /** 이 창이 어떤 송출 소스인지 — 설정과 일치할 때만 재생한다 */
   source?: 'OBS' | 'ELECTRON';
-  /** 자막 폰트 — 스트리머 테마 (#77). next/font className */
-  fontClass?: string;
+  /** 자막 폰트 — 스트리머 테마 (#77). CSS font-family */
+  fontFamily?: string;
 }) {
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [overlay, setOverlay] = useState<OverlaySetting>({ mode: 'ALWAYS', durationSeconds: 10 });
@@ -280,7 +280,7 @@ export function SourcePlayer({
         }}
       />
 
-      <SongOverlay now={now} setting={overlay} fontClass={fontClass} />
+      <SongOverlay now={now} setting={overlay} fontFamily={fontFamily} />
     </div>
   );
 }
@@ -292,11 +292,11 @@ export function SourcePlayer({
 function SongOverlay({
   now,
   setting,
-  fontClass,
+  fontFamily,
 }: {
   now: NowPlaying | null;
   setting: OverlaySetting;
-  fontClass?: string;
+  fontFamily?: string;
 }) {
   const [visible, setVisible] = useState(true);
 
@@ -317,8 +317,8 @@ function SongOverlay({
 
   return (
     <div
-      className={fontClass}
       style={{
+        fontFamily,
         position: 'absolute',
         inset: 0,
         display: 'flex',
