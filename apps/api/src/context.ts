@@ -44,7 +44,8 @@ async function verifySession(token: string): Promise<AuthUser | null> {
     const { payload } = await jwtVerify(token, getSecrets().jwtKey);
     const id = payload.id;
     const role = payload.role;
-    if (typeof id !== 'number' || (role !== 'streamer' && role !== 'admin')) return null;
+    if (typeof id !== 'number') return null;
+    if (role !== 'streamer' && role !== 'admin' && role !== 'applicant') return null;
     return { id, role };
   } catch {
     // 만료/위조 토큰은 비로그인으로 취급 (streamerProcedure에서 UNAUTHORIZED)

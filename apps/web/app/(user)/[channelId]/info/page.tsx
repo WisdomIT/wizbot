@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CONTACT_URL, functionsList } from '@/src/data/wizbot';
+import { functionsList } from '@/src/data/wizbot';
 
 /** 시청자용 사이트 정보 — 위즈봇이 어떤 서비스인지와 도입 안내 */
 export default function Page() {
@@ -60,13 +60,13 @@ export default function Page() {
         <CardHeader>
           <CardTitle>내 방송에도 쓰고 싶다면</CardTitle>
           <CardDescription>
-            위즈봇은 신청을 받아 등록해 드리고 있습니다. 아래로 문의해주세요.
+            치지직 계정으로 로그인하면 바로 신청할 수 있습니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link href={CONTACT_URL} target="_blank" rel="noreferrer">
-              도입 문의하기 <ArrowRight />
+            <Link href="/apply">
+              사용 신청하기 <ArrowRight />
             </Link>
           </Button>
         </CardContent>

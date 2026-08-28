@@ -7,9 +7,11 @@ import {
   createChzzkLoginClient,
   getChzzkAppClient,
   getChzzkClientForUser,
+  signupService,
   userSettingService,
 } from '../services';
 import { internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
+import { notifyAdminsOfApplication } from './signup';
 
 export const userRouter = t.router({
   getChzzkId: publicProcedure.query(() => {
@@ -97,22 +99,30 @@ export const userRouter = t.router({
 
       const { channelId } = await loginClient.users.me();
 
-      const findMe = await ctx.prisma.whitelist.findFirst({
-        where: {
-          channelId,
-        },
-      });
-      if (!findMe) {
-        throw new Error(
-          '화이트리스트에 등록되지 않은 채널입니다. 하단 신청하기를 통해 신청해주세요.',
-        );
-      }
-
       const channels = await getChzzkAppClient().channels.get([channelId]);
       if (channels.length === 0) {
         throw new Error('치지직 채널 정보를 가져오지 못했습니다.');
       }
       const { channelName, channelImageUrl } = channels[0];
+
+      // 화이트리스트에 없으면 에러로 끝내지 않는다 — OAuth 로 본인이 확인된 상태이므로
+      // 신청 레코드를 만들고 신청자 세션으로 보낸다 (#96)
+      const whitelisted = await ctx.prisma.whitelist.findUnique({ where: { channelId } });
+      if (!whitelisted) {
+        const identity = { channelId, channelName, channelImageUrl: channelImageUrl ?? null };
+        if (await signupService.getAutoApprove(ctx.prisma)) {
+          // 자동 승인 — 등록하고 아래 일반 로그인 경로를 그대로 탄다
+          await signupService.autoApprove(ctx.prisma, identity);
+        } else {
+          const { application, created } = await signupService.upsertOnLogin(ctx.prisma, identity);
+          if (created) void notifyAdminsOfApplication(ctx.prisma, application);
+          return {
+            kind: 'applicant' as const,
+            applicationId: application.id,
+            status: application.status,
+          };
+        }
+      }
 
       const user = await ctx.prisma.user.upsert({
         where: { channelId },
@@ -162,6 +172,7 @@ export const userRouter = t.router({
       }
 
       return {
+        kind: 'streamer' as const,
         userId: user.id,
         channelId,
         channelName,

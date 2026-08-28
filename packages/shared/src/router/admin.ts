@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 
 import { sendMail } from '../lib/nodemailer';
-import { adminUsersService, ServiceError, whitelistService } from '../services';
+import { adminUsersService, ServiceError, signupService, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
 
 /** 패스코드 유효시간 — 넘으면 소모 전이라도 무효 (#20) */
@@ -102,6 +102,26 @@ export const adminRouter = t.router({
   removeFromWhitelist: adminProcedure
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => whitelistService.removeFromWhitelist(ctx.prisma, input.id)),
+
+  /* ── 사용 신청 관리 (#96) ── */
+  listApplications: adminProcedure.query(({ ctx }) =>
+    signupService.listApplications(ctx.prisma),
+  ),
+  approveApplication: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) => signupService.approve(ctx.prisma, input.id, ctx.user.id)),
+  rejectApplication: adminProcedure
+    .input(z.object({ id: z.number(), reason: z.string().max(500).optional() }))
+    .mutation(({ ctx, input }) =>
+      signupService.reject(ctx.prisma, input.id, ctx.user.id, input.reason),
+    ),
+  getAutoApprove: adminProcedure.query(({ ctx }) => signupService.getAutoApprove(ctx.prisma)),
+  setAutoApprove: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await signupService.setAutoApprove(ctx.prisma, input.enabled);
+      return input.enabled;
+    }),
 
   /* ── 스트리머 관리 (#10 PR B) ── */
   listStreamers: adminProcedure.query(({ ctx }) => adminUsersService.listStreamers(ctx.prisma)),

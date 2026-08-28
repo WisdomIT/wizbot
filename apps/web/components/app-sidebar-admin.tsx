@@ -1,6 +1,6 @@
 'use client';
 
-import { ClipboardList, ShieldCheck, Users } from 'lucide-react';
+import { ClipboardList, Inbox, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -25,6 +25,11 @@ const title = {
 };
 
 const menu = [
+  {
+    name: '사용 신청',
+    url: '/admin/applications',
+    icon: <Inbox />,
+  },
   {
     name: '화이트리스트',
     url: '/admin/whitelist',

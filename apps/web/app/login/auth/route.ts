@@ -38,6 +38,21 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await getChzzkTokenInterlock({ code, state });
 
+    // 화이트리스트에 없는 채널 — 신청 화면으로. OAuth 로 본인이 확인됐으므로 신청 레코드
+    // id 를 담은 짧은 세션(1시간)을 준다. 상태 조회·사유 제출만 할 수 있는 역할이다 (#96)
+    if (auth.kind === 'applicant') {
+      const token = await signJwt({ id: auth.applicationId, role: 'applicant' }, '1h');
+      const response = redirectTo('/apply');
+      response.headers.append(
+        'Set-Cookie',
+        `session-token=${token}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict${
+          isProduction ? '; Secure' : ''
+        }`,
+      );
+      response.headers.append('Set-Cookie', clearStateCookie);
+      return response;
+    }
+
     const { userId } = auth;
 
     const token = await signJwt({ id: userId, role: 'streamer' });

@@ -10,7 +10,7 @@ import { LoginErrorToast } from './_components/loginErrorToast';
 import { LoginForm } from './_components/loginForm';
 
 /** 이미 로그인된 세션이면 콘솔로 (기존: 클라이언트에서 서버 액션 호출 + 비로그인 시 throw 로그) */
-async function getSessionRole(): Promise<'admin' | 'streamer' | null> {
+async function getSessionRole(): Promise<'admin' | 'streamer' | 'applicant' | null> {
   const token = (await cookies()).get('session-token')?.value;
   if (!token) return null;
   try {
@@ -25,6 +25,7 @@ export default async function LoginPage() {
   const role = await getSessionRole();
   if (role === 'admin') redirect('/admin');
   if (role === 'streamer') redirect('/streamer');
+  if (role === 'applicant') redirect('/apply');
 
   return (
     <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
