@@ -1,7 +1,8 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import { getMe } from '@/app/_lib/me';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
-import { trpc } from '@/src/utils/trpc';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
 /**
@@ -10,8 +11,13 @@ import { TRPCReactProvider } from '@/src/utils/trpc-react';
  */
 export const dynamic = 'force-dynamic';
 
+export async function generateMetadata(): Promise<Metadata> {
+  const me = await getMe();
+  return me?.channelImageUrl ? { icons: { icon: me.channelImageUrl } } : {};
+}
+
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const me = await trpc.user.me.query().catch(() => null);
+  const me = await getMe();
   if (!me) {
     // 앱은 켜자마자 여기로 온다 — 첫 로그인이 오류처럼 보이지 않도록 안내 문구를 붙이지 않는다
     redirect('/login');

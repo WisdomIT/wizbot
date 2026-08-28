@@ -102,6 +102,10 @@ export const userRouter = t.router({
   getThemeBySourceToken: publicProcedure
     .input(z.object({ token: z.string() }))
     .query(({ ctx, input }) => themeService.getThemeBySourceToken(ctx.prisma, input.token)),
+  /** 워커가 30분마다 — 전체 채널명·프로필 이미지를 치지직과 맞춘다 (#77) */
+  refreshChannelProfiles: internalProcedure.mutation(({ ctx }) =>
+    accountService.refreshAllChannelInfo(ctx.prisma),
+  ),
   /* ── 스트리머 테마 (#77) ── */
   getTheme: streamerProcedure.query(({ ctx }) => themeService.getTheme(ctx.prisma, ctx.user.id)),
   updateTheme: streamerProcedure

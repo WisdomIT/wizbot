@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { getStreamerByChannelId } from '@/app/_lib/streamers';
@@ -6,6 +7,21 @@ import { DynamicIcon } from '@/components/custom/dynamic-icon';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
+
+/** 탭 제목·파비콘을 스트리머 프로필로 (#77). 이미지 URL 은 30분마다 치지직과 맞춰진다 */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ channelId: string }>;
+}): Promise<Metadata> {
+  const { channelId } = await params;
+  const channel = await getStreamerByChannelId(channelId);
+  if (!channel) return {};
+  return {
+    title: `${channel.channelName} · 위즈봇`,
+    icons: channel.channelImageUrl ? { icon: channel.channelImageUrl } : undefined,
+  };
+}
 
 export default async function RootLayout({
   children,

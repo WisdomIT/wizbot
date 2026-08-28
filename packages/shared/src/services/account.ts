@@ -68,3 +68,34 @@ export async function setChatbotActive(prisma: PrismaClient, userId: number, act
     data: { chatbotActive: active },
   });
 }
+
+/** 치지직 채널 조회 API 의 한 번 최대 개수 */
+const CHANNEL_BATCH = 20;
+
+/**
+ * 전체 스트리머의 채널명·프로필 이미지를 치지직과 맞춘다 (#77).
+ * 워커가 30분마다 부른다. 바뀐 것만 쓴다 — 매번 update 하면 updatedAt 만 흔들린다.
+ * 치지직이 돌려주지 않은 채널(삭제·비공개)은 건드리지 않는다.
+ */
+export async function refreshAllChannelInfo(prisma: PrismaClient) {
+  const users = await prisma.user.findMany({
+    select: { id: true, channelId: true, channelName: true, channelImageUrl: true },
+  });
+  let updated = 0;
+  for (let i = 0; i < users.length; i += CHANNEL_BATCH) {
+    const batch = users.slice(i, i + CHANNEL_BATCH);
+    const channels = await getChzzkAppClient().channels.get(batch.map((u) => u.channelId));
+    for (const channel of channels) {
+      const user = batch.find((u) => u.channelId === channel.channelId);
+      if (!user) continue;
+      const imageUrl = channel.channelImageUrl ?? null;
+      if (user.channelName === channel.channelName && user.channelImageUrl === imageUrl) continue;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { channelName: channel.channelName, channelImageUrl: imageUrl },
+      });
+      updated++;
+    }
+  }
+  return { checked: users.length, updated };
+}
