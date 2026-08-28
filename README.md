@@ -115,8 +115,9 @@ docker compose --env-file .env.docker up -d --build
 # http://localhost:3001
 ```
 
-- `dev` 브랜치에 푸시되면 CI가 `ghcr.io/wisdomit/wizbot/{web,api,chatbot}:dev` 이미지를 올립니다 (시험/스테이징 스택용).
-- 정식 릴리즈는 `main`에 `vX.Y.Z` 태그를 푸시하면 `release.yml`이 버전 태그 이미지를 올립니다.
+- `dev` 브랜치에 머지되면 CI가 `ghcr.io/wisdomit/wizbot/{web,api,chatbot}:dev` 이미지를 올리고 개발 스택(botdev)을 자동 재배포합니다.
+- 정식 릴리즈는 `main`에 `vX.Y.Z` 태그를 푸시하면 `release.yml`이 버전 태그 이미지와 플레이어 앱을 올리고 운영 스택을 재배포합니다.
+- 브랜치 전략·커밋 규칙·릴리즈 절차는 [CONTRIBUTING.md](CONTRIBUTING.md) 를 참고하세요.
 - 운영 배포(Portainer 스택)는 [homelab-wisdomserver](https://github.com/WisdomIT/homelab-wisdomserver)의 `optional/wizbot`을 사용합니다.
 - `chatbot`은 채널별 소켓/타이머를 메모리에 갖는 stateful 싱글턴이므로 replica를 늘리면 안 됩니다. `web`/`api`는 stateless라 늘려도 됩니다.
 
