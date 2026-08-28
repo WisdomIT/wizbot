@@ -179,12 +179,14 @@ describe('approve / reject — 어드민', () => {
     expect(whitelist.upsert).not.toHaveBeenCalled();
   });
 
-  it('목록은 대기 우선 정렬을 요청하고 화이트리스트 여부를 붙인다', async () => {
+  it('목록은 대기·거절만, 대기 우선 정렬 — 승인된 신청은 화이트리스트로 이동한 것으로 보고 뺀다', async () => {
     const { prisma, signupApplication, whitelist } = createPrisma();
-    signupApplication.findMany.mockResolvedValue([{ id: 1, ...IDENTITY, status: 'APPROVED' }]);
+    signupApplication.findMany.mockResolvedValue([{ id: 1, ...IDENTITY, status: 'PENDING' }]);
     whitelist.findMany.mockResolvedValue([{ channelId: IDENTITY.channelId }]);
     const rows = await listApplications(prisma);
-    expect(signupApplication.findMany.mock.calls[0][0].orderBy).toEqual([{ status: 'asc' }, { createdAt: 'desc' }]);
+    const args = signupApplication.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ status: { in: ['PENDING', 'REJECTED'] } });
+    expect(args.orderBy).toEqual([{ status: 'asc' }, { createdAt: 'desc' }]);
     expect(rows[0].whitelisted).toBe(true);
   });
 });

@@ -148,9 +148,14 @@ export async function submitReason(prisma: PrismaClient, id: number, reasonInput
 
 /* ── 어드민 ── */
 
+/**
+ * 어드민 목록 — 대기·거절만. 승인된 신청은 화이트리스트로 "이동"한 것으로 보고 여기서 뺀다
+ * (레코드는 남는다: 승인 이력과 #151 의 승인 후 첫 로그인 판정에 쓴다).
+ */
 export async function listApplications(prisma: PrismaClient) {
   const [applications, whitelist] = await Promise.all([
     prisma.signupApplication.findMany({
+      where: { status: { in: ['PENDING', 'REJECTED'] } },
       include: { processedBy: { select: { email: true } } },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     }),

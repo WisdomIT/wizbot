@@ -68,8 +68,8 @@ export function ApplicationsView() {
     <div className="flex flex-col gap-4 py-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          치지직 로그인으로 본인이 확인된 채널만 신청할 수 있습니다. 승인하면 화이트리스트에 바로
-          등록됩니다.
+          치지직 로그인으로 본인이 확인된 채널만 신청할 수 있습니다. 승인하면 화이트리스트로
+          이동합니다.
           {pendingCount > 0 && (
             <>
               {' '}
@@ -127,19 +127,12 @@ export function ApplicationsView() {
                     <StatusBadge application={application} />
                   </TableCell>
                   <TableCell className="text-right">
-                    {application.status === 'PENDING' ||
-                    (application.status === 'APPROVED' && !application.whitelisted) ? (
-                      <div className="flex justify-end gap-1">
-                        <ApproveButton id={application.id} name={application.channelName} onDone={invalidate} />
-                        <RejectDialog id={application.id} name={application.channelName} onDone={invalidate} />
-                      </div>
-                    ) : application.status === 'REJECTED' ? (
+                    <div className="flex justify-end gap-1">
                       <ApproveButton id={application.id} name={application.channelName} onDone={invalidate} />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {application.processedBy?.email ?? ''}
-                      </span>
-                    )}
+                      {application.status === 'PENDING' && (
+                        <RejectDialog id={application.id} name={application.channelName} onDone={invalidate} />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -154,16 +147,9 @@ export function ApplicationsView() {
 function StatusBadge({
   application,
 }: {
-  application: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; whitelisted: boolean; rejectReason: string | null };
+  application: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; rejectReason: string | null };
 }) {
-  if (application.status === 'APPROVED') {
-    //  승인됐는데 화이트리스트에 없다 = 어드민이 해제한 것
-    return application.whitelisted ? (
-      <Badge>승인</Badge>
-    ) : (
-      <Badge variant="outline">승인 후 해제</Badge>
-    );
-  }
+  //  승인된 신청은 목록에 오지 않는다 — 화이트리스트로 이동
   if (application.status === 'REJECTED') {
     return (
       <Badge variant="destructive" title={application.rejectReason ?? undefined}>

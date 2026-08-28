@@ -48,10 +48,18 @@ export async function setStreamerHidden(prisma: PrismaClient, userId: number, hi
  * 화이트리스트 항목은 별개(입장권)라 남는다 — 재가입을 막으려면 화이트리스트에서도 삭제할 것.
  * 챗봇 워커는 다음 폴링(≤60초)에서 채널 연결을 정리한다.
  */
-export async function deleteStreamer(prisma: PrismaClient, userId: number) {
+export async function deleteStreamer(
+  prisma: PrismaClient,
+  userId: number,
+  options: { removeWhitelist?: boolean } = {},
+) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 스트리머입니다.');
   await prisma.user.delete({ where: { id: userId } });
+  // 화이트리스트 = 입장권. 기본은 남긴다(다시 로그인하면 재가입). 같이 지우면 재로그인도 막힌다 (#96)
+  if (options.removeWhitelist) {
+    await prisma.whitelist.deleteMany({ where: { channelId: user.channelId } });
+  }
   return user;
 }
 

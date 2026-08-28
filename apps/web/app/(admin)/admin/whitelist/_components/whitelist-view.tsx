@@ -74,6 +74,7 @@ export function WhitelistView() {
             <TableRow>
               <TableHead>채널</TableHead>
               <TableHead>채널 ID</TableHead>
+              <TableHead>등록</TableHead>
               <TableHead>가입 상태</TableHead>
               <TableHead className="w-24 text-right">관리</TableHead>
             </TableRow>
@@ -81,7 +82,7 @@ export function WhitelistView() {
           <TableBody>
             {data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   등록된 채널이 없습니다.
                 </TableCell>
               </TableRow>
@@ -101,6 +102,11 @@ export function WhitelistView() {
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {entry.channelId}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                    {entry.approvedAt
+                      ? `신청 승인 · ${new Date(entry.approvedAt).toLocaleDateString('ko-KR')}`
+                      : '직접 등록'}
                   </TableCell>
                   <TableCell>
                     {entry.user ? <Badge>가입됨</Badge> : <Badge variant="outline">미가입</Badge>}

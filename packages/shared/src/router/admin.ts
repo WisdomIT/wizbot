@@ -128,8 +128,12 @@ export const adminRouter = t.router({
       adminUsersService.setStreamerHidden(ctx.prisma, input.userId, input.hidden),
     ),
   deleteStreamer: adminProcedure
-    .input(z.object({ userId: z.number() }))
-    .mutation(({ ctx, input }) => adminUsersService.deleteStreamer(ctx.prisma, input.userId)),
+    .input(z.object({ userId: z.number(), removeWhitelist: z.boolean().optional() }))
+    .mutation(({ ctx, input }) =>
+      adminUsersService.deleteStreamer(ctx.prisma, input.userId, {
+        removeWhitelist: input.removeWhitelist,
+      }),
+    ),
 
   /* ── 관리자 계정 관리 (#10 PR B) ── */
   listAdmins: adminProcedure.query(({ ctx }) => adminUsersService.listAdmins(ctx.prisma)),
