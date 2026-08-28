@@ -36,12 +36,14 @@ export async function getThemeBySourceToken(prisma: PrismaClient, token: string)
 export function toInput(row: {
   primaryColor: string | null;
   backgroundColor: string | null;
+  sidebarColor: string | null;
   colorScheme: ThemeInput['colorScheme'];
   fontKey: string;
 }): ThemeInput {
   return {
     primaryColor: row.primaryColor,
     backgroundColor: row.backgroundColor,
+    sidebarColor: row.sidebarColor,
     colorScheme: row.colorScheme,
     fontKey: isFontKey(row.fontKey) ? row.fontKey : 'suit',
   };

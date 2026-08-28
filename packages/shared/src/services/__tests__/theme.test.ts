@@ -38,7 +38,7 @@ describe('themeService', () => {
     expect(userTheme.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 1 } }));
   });
   it('DB 에 남은 폰트 키가 목록에서 빠졌으면 기본 폰트로', () => {
-    expect(toInput({ primaryColor: null, backgroundColor: null, colorScheme: 'SYSTEM', fontKey: 'removed' }).fontKey).toBe('suit');
+    expect(toInput({ primaryColor: null, backgroundColor: null, sidebarColor: null, colorScheme: 'SYSTEM', fontKey: 'removed' }).fontKey).toBe('suit');
   });
   it('송출 토큰으로 조회 — 토큰이 없으면 null', async () => {
     const { prisma } = createPrisma();

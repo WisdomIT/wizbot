@@ -142,8 +142,10 @@ model UserTheme {
   id              Int         @id @default(autoincrement())
   userId          Int         @unique
   /// #rrggbb. null 이면 서비스 기본색
+  /// 강조 색 — 활성 메뉴·버튼·명령어 배경. 컬럼명은 토큰명(--primary)을 따른다
   primaryColor    String?     @db.VarChar(7)
   backgroundColor String?     @db.VarChar(7)
+  sidebarColor    String?     @db.VarChar(7)
   colorScheme     ThemeScheme @default(SYSTEM)
   /// packages/shared/src/lib/theme.ts 의 THEME_FONTS 키
   fontKey         String      @default("suit") @db.VarChar(32)

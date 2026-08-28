@@ -34,9 +34,12 @@ const hexColor = z
   .transform((value) => value.toLowerCase());
 
 export const themeInputSchema = z.object({
-  /** null = 서비스 기본색 */
+  /** 강조 색 — 활성 메뉴·버튼·명령어 배경 (토큰 --primary). null = 서비스 기본 */
   primaryColor: hexColor.nullable(),
+  /** 페이지 배경 */
   backgroundColor: hexColor.nullable(),
+  /** 사이드바 배경. null 이면 페이지 배경에서 파생 */
+  sidebarColor: hexColor.nullable(),
   colorScheme: z.enum(THEME_SCHEMES),
   fontKey: z.enum(THEME_FONT_KEYS),
 });
@@ -46,6 +49,7 @@ export type ThemeInput = z.infer<typeof themeInputSchema>;
 export const DEFAULT_THEME: ThemeInput = {
   primaryColor: null,
   backgroundColor: null,
+  sidebarColor: null,
   colorScheme: 'SYSTEM',
   fontKey: 'suit',
 };
@@ -56,6 +60,7 @@ export function isDefaultTheme(theme: ThemeInput | null | undefined): boolean {
   return (
     theme.primaryColor === null &&
     theme.backgroundColor === null &&
+    theme.sidebarColor === null &&
     theme.colorScheme === 'SYSTEM' &&
     theme.fontKey === 'suit'
   );
