@@ -76,6 +76,16 @@ model SignupApplication {
   processedById   Int?
   processedBy     Admin?       @relation(fields: [processedById], references: [id], onDelete: SetNull)
 
+  /// 신청 시점의 OAuth 토큰 (#151). 대기 중에도 갱신해 승인 즉시 봇이 붙게 한다.
+  /// 거절·30일 경과·갱신 실패 시 지운다. 승인 시 OAuthCredential 로 옮기고 지운다.
+  accessToken      String?   @db.Text
+  refreshToken     String?   @db.Text
+  tokenType        String?   @db.VarChar(20)
+  tokenExpiresAt   DateTime? @db.DateTime(0)
+  tokenRefreshedAt DateTime? @db.DateTime(0)
+  /// 승인 후 스트리머가 처음 로그인한 시각 — 찍히면 채팅 안내를 멈춘다
+  acknowledgedAt   DateTime? @db.DateTime(6)
+
   @@index([status, createdAt])
 }
 

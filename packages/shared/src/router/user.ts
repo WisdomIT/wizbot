@@ -7,6 +7,7 @@ import {
   createChzzkLoginClient,
   getChzzkAppClient,
   getChzzkClientForUser,
+  provisionService,
   signupService,
   userSettingService,
 } from '../services';
@@ -107,14 +108,19 @@ export const userRouter = t.router({
 
       // 화이트리스트에 없으면 에러로 끝내지 않는다 — OAuth 로 본인이 확인된 상태이므로
       // 신청 레코드를 만들고 신청자 세션으로 보낸다 (#96)
+      const identity = { channelId, channelName, channelImageUrl: channelImageUrl ?? null };
       const whitelisted = await ctx.prisma.whitelist.findUnique({ where: { channelId } });
       if (!whitelisted) {
-        const identity = { channelId, channelName, channelImageUrl: channelImageUrl ?? null };
         if (await signupService.getAutoApprove(ctx.prisma)) {
           // 자동 승인 — 등록하고 아래 일반 로그인 경로를 그대로 탄다
           await signupService.autoApprove(ctx.prisma, identity);
         } else {
-          const { application, created } = await signupService.upsertOnLogin(ctx.prisma, identity);
+          // 토큰도 함께 맡긴다 — 대기 중 갱신해 두면 승인 즉시 봇이 붙는다 (#151)
+          const { application, created } = await signupService.upsertOnLogin(
+            ctx.prisma,
+            identity,
+            tokenSet,
+          );
           if (created) void notifyAdminsOfApplication(ctx.prisma, application);
           return {
             kind: 'applicant' as const,
@@ -124,52 +130,13 @@ export const userRouter = t.router({
         }
       }
 
-      const user = await ctx.prisma.user.upsert({
-        where: { channelId },
-        update: {
-          channelName,
-          channelImageUrl,
-        },
-        create: {
-          channelId,
-          channelName,
-          channelImageUrl,
-        },
+      // User·UserSetting·토큰·기본 명령어 — 신청 승인 경로와 같은 함수 (#151)
+      const user = await provisionService.provisionStreamer(ctx.prisma, identity, {
+        tokens: tokenSet,
+        initialCommands: getChatbotDatabaseInitial,
       });
-
-      const findSetting = await ctx.prisma.userSetting.findFirst({
-        where: {
-          userId: user.id,
-        },
-      });
-      if (!findSetting) {
-        await ctx.prisma.userSetting.create({
-          data: {
-            userId: user.id,
-          },
-        });
-      }
-
-      // 발급받은 토큰을 해당 유저의 DB TokenStore 로 영속화
-      await getChzzkClientForUser(ctx.prisma, user.id).auth.setTokens(tokenSet);
-
-      //functionCommand에 데이터가 하나도 없다면 기본값 세팅 (첫 로그인 시)
-      const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
-        where: {
-          userId: user.id,
-        },
-      });
-
-      const { initialFunction, initialEcho } = getChatbotDatabaseInitial(user.id);
-
-      if (!findCommand) {
-        await ctx.prisma.chatbotFunctionCommand.createMany({
-          data: initialFunction,
-        });
-        await ctx.prisma.chatbotEchoCommand.createMany({
-          data: initialEcho,
-        });
-      }
+      // 승인 후 첫 로그인이면 채팅 안내를 멈춘다
+      await signupService.acknowledge(ctx.prisma, channelId);
 
       return {
         kind: 'streamer' as const,

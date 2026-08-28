@@ -96,6 +96,11 @@ export function getChzzkAppClient(): ChzzkOpenClient {
   return appClient;
 }
 
+/** 임의 TokenStore 를 붙인 클라이언트 — 신청 대기자 토큰 갱신처럼 userId 가 없는 경우 (#151) */
+export function createChzzkClientWithStore(tokenStore: TokenStore): ChzzkOpenClient {
+  return new ChzzkOpenClient({ ...getCredentials(), tokenStore });
+}
+
 /** 로그인 인터락용 일회성 클라이언트 — userId 를 알기 전이므로 메모리 스토어를 쓴다 */
 export function createChzzkLoginClient(): ChzzkOpenClient {
   return new ChzzkOpenClient(getCredentials());

@@ -124,7 +124,14 @@ export function ApplicationsView() {
                     })}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge application={application} />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusBadge application={application} />
+                      {application.status === 'PENDING' && !application.tokenAlive && (
+                        <Badge variant="outline" title="연동이 만료돼 승인해도 스트리머가 로그인해야 봇이 붙습니다">
+                          재로그인 필요
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -223,9 +230,11 @@ function ApproveButton({ id, name, onDone }: { id: number; name: string; onDone:
   function handleApprove() {
     toast.promise(approve.mutateAsync({ id }), {
       loading: '승인 중...',
-      success: () => {
+      success: (result) => {
         onDone();
-        return `${name} 채널을 승인하고 화이트리스트에 등록했습니다.`;
+        return result.botConnects
+          ? `${name} 채널을 승인했습니다. 1분 안에 봇이 연결되고 채팅으로 안내합니다.`
+          : `${name} 채널을 승인했습니다. 연동이 만료돼 스트리머가 로그인하면 봇이 연결됩니다.`;
       },
       error: (error) => `승인에 실패했습니다. ${error instanceof Error ? error.message : error}`,
     });
