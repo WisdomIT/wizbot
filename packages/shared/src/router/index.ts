@@ -1,5 +1,6 @@
 import { publicProcedure, t } from '../trpc';
 import { adminRouter } from './admin';
+import { cafeRouter } from './cafe';
 import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
 import { shortcutRouter } from './shortcut';
@@ -10,6 +11,7 @@ import { userRouter } from './user';
 
 export const appRouter = t.router({
   admin: adminRouter,
+  cafe: cafeRouter,
   chatbot: chatbotRouter,
   command: commandRouter,
   shortcut: shortcutRouter,

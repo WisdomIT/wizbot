@@ -4,6 +4,7 @@
 #   docker build --target web     -t wizbot/web     .
 #   docker build --target api     -t wizbot/api     .
 #   docker build --target chatbot -t wizbot/chatbot .
+#   docker build --target cafe    -t wizbot/cafe    .
 #
 # - web: Next.js standalone 산출물만 담은 슬림 이미지
 # - api / chatbot: tsup 단일 파일 번들 + 프로덕션 의존성만 담는다 (#31).
@@ -34,6 +35,7 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/chatbot/package.json apps/chatbot/
+COPY apps/cafe/package.json apps/cafe/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
 COPY packages/eslint-config/package.json packages/eslint-config/
@@ -67,7 +69,7 @@ CMD ["node", "apps/web/server.js"]
 
 # ── bundle-build: api / chatbot 을 단일 파일로 번들 ─────────────────────────
 FROM deps AS bundle-build
-RUN pnpm --filter @wizbot/api --filter @wizbot/chatbot run build
+RUN pnpm --filter @wizbot/api --filter @wizbot/chatbot --filter @wizbot/cafe run build
 
 # ── prod-deps: 런타임 의존성만 (web 을 제외해 이미지를 크게 줄인다) ─────────
 #  번들이 npm 의존성을 이미 품고 있으므로 여기 남는 실질은 Prisma 뿐이다.
@@ -77,12 +79,16 @@ FROM base AS prod-deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/chatbot/package.json apps/chatbot/
+COPY apps/cafe/package.json apps/cafe/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
 COPY packages/eslint-config/package.json packages/eslint-config/
+#  puppeteer 의 Chrome 다운로드는 pnpm 10 이 build script 를 막아 어차피 돌지 않지만 명시한다 —
+#  카페 이미지는 시스템 chromium 을 쓴다 (아래 cafe 스테이지)
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod \
-      --filter @wizbot/api... --filter @wizbot/chatbot...
+      --filter @wizbot/api... --filter @wizbot/chatbot... --filter @wizbot/cafe...
 COPY apps/api/prisma apps/api/prisma
 RUN pnpm --filter @wizbot/api exec prisma generate
 
@@ -111,4 +117,24 @@ COPY apps/chatbot/package.json ./apps/chatbot/
 COPY --from=bundle-build /app/apps/chatbot/dist ./apps/chatbot/dist
 EXPOSE 3003
 WORKDIR /app/apps/chatbot
+CMD ["node", "dist/index.js"]
+
+# ── cafe: 네이버 카페 대문 워커 (#9, puppeteer · stateful 싱글턴) ───────────────
+#  번들은 puppeteer 만 external 이라 node_modules 가 필요하고, 브라우저는 시스템 chromium 을 쓴다.
+#  (puppeteer 가 받는 Chrome for Testing 은 데비안 slim 에서 라이브러리가 모자라고 용량도 크다)
+FROM node:${NODE_VERSION}-bookworm-slim AS cafe
+ENV NODE_ENV=production \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_SKIP_DOWNLOAD=1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-noto-cjk ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/apps/cafe/node_modules ./apps/cafe/node_modules
+COPY apps/cafe/package.json ./apps/cafe/
+COPY package.json pnpm-workspace.yaml ./
+COPY --from=bundle-build /app/apps/cafe/dist ./apps/cafe/dist
+EXPOSE 3004
+WORKDIR /app/apps/cafe
 CMD ["node", "dist/index.js"]

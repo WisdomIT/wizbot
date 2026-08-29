@@ -1,6 +1,6 @@
 'use client';
 
-import { ClipboardList, Inbox, ShieldCheck, Users } from 'lucide-react';
+import { ClipboardList, Inbox, KeyRound, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -44,6 +44,11 @@ const menu = [
     name: '관리자 계정',
     url: '/admin/admins',
     icon: <ShieldCheck />,
+  },
+  {
+    name: '네이버 봇 계정',
+    url: '/admin/naver-bot',
+    icon: <KeyRound />,
   },
 ];
 
