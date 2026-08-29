@@ -426,19 +426,23 @@ export function getBotSession(prisma: PrismaClient) {
  * 라우터가 `expired`(유효/미확인 → 만료, 아직 알리지 않음)일 때 운영자에게 메일을 보내고 alertedAt 을 찍는다.
  */
 export async function reportSessionCheck(prisma: PrismaClient, result: { valid: boolean; message: string | null }) {
-  const prev = await prisma.naverBotSession.findUnique({ where: { id: 1 }, select: { valid: true, alertedAt: true } });
+  const prev = await prisma.naverBotSession.findUnique({ where: { id: 1 }, select: { valid: true, alertedAt: true, updatedAt: true } });
   if (!prev) return { transition: null as 'expired' | 'recovered' | null };
+  //  updatedAt 은 "어드민이 쿠키를 저장한 시각" 이다 — 검사 결과 기록이 @updatedAt 을 건드리면 checkedAt < updatedAt(µs 차)이 돼
+  //  워커가 새 세션으로 오인하고 15초마다 재검사한다(실측). 명시적으로 이전 값을 유지한다
   await prisma.naverBotSession.update({
     where: { id: 1 },
-    data: { checkedAt: new Date(), valid: result.valid, checkMessage: result.message, ...(result.valid ? { alertedAt: null } : {}) },
+    data: { checkedAt: new Date(), valid: result.valid, checkMessage: result.message, updatedAt: prev.updatedAt, ...(result.valid ? { alertedAt: null } : {}) },
   });
   if (!result.valid && !prev.alertedAt) return { transition: 'expired' as const };
   if (result.valid && prev.valid === false) return { transition: 'recovered' as const };
   return { transition: null };
 }
 
-export function markSessionAlerted(prisma: PrismaClient) {
-  return prisma.naverBotSession.updateMany({ where: { id: 1 }, data: { alertedAt: new Date() } });
+export async function markSessionAlerted(prisma: PrismaClient) {
+  const prev = await prisma.naverBotSession.findUnique({ where: { id: 1 }, select: { updatedAt: true } });
+  if (!prev) return;
+  await prisma.naverBotSession.update({ where: { id: 1 }, data: { alertedAt: new Date(), updatedAt: prev.updatedAt } });
 }
 
 /** 스트리머 안내용 — 봇 계정 이름과 세션 상태. 쿠키는 내려가지 않는다 */
