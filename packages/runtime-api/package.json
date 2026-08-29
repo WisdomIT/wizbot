@@ -1,0 +1,10 @@
+{
+  "name": "@wizbot/runtime-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "api 이미지의 런타임 node_modules 전용 (#134). 번들이 나머지 의존성을 전부 품고 있어 런타임에 필요한 건 Prisma(클라이언트·엔진·migrate CLI)뿐이다 — 이 패키지만 --prod 로 설치해 apps/api/node_modules 로 복사한다. 버전은 apps/api 와 맞춘다.",
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "prisma": "^6.19.3"
+  }
+}
