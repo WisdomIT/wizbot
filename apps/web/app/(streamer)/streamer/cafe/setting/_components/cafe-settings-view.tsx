@@ -239,7 +239,7 @@ export function CafeSettingsView() {
               <CardTitle>4. 대문에 넣기</CardTitle>
               <CardDescription>
                 대문 HTML 을 가져와 방송 상태 이미지{data.youtubeChannelId ? '와 유튜브' : ''}가 들어갈 자리를 고릅니다.
-                기존 요소를 클릭하면 그 요소가 교체되고, 고르지 않으면 맨 아래에 추가됩니다. 넣은 뒤부터 방송 상태에 따라 자동으로 갱신됩니다.
+                네이버에 보이는 그대로 렌더한 대문에서 요소를 클릭하면 그 요소가 교체되고, 고르지 않으면 맨 아래에 추가됩니다. 넣은 뒤부터 방송 상태에 따라 자동으로 갱신됩니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
@@ -261,6 +261,7 @@ export function CafeSettingsView() {
                 <GatePicker
                   key={gate.gateFetchedAt ? String(gate.gateFetchedAt) : 'none'}
                   html={gate.gateHtml}
+                  render={gate.render}
                   imageBlock={gate.imageBlock}
                   youtubeTag={gate.youtubeTag}
                   disabled={busy || submitGate.isPending}

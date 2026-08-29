@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 
 import { findImageTags, normalizeGateHtml } from '@wizbot/shared/lib/cafeGate';
 
-import { checkSession, closeBrowser, type NaverCookies, readGate, verifyGateAccess, writeGate } from './naver';
+import { checkSession, closeBrowser, type NaverCookies, readGate, renderGate, verifyGateAccess, writeGate } from './naver';
 import { trpc } from './trpc';
 
 for (const key of ['INTERNAL_API_TOKEN'] as const) {
@@ -55,8 +55,13 @@ async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promi
     await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message: result.message });
     return { ok: false, message: result.message, sessionInvalid: result.reason === 'SESSION_INVALID' };
   }
-  await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html });
-  return { ok: true, log: `대문 읽음 (${result.html.length}자)` };
+  //  렌더 실패는 치명적이지 않다 — 그림 없이도(빈 대문처럼) 맨 아래 추가는 가능하다
+  const render = await renderGate(result.html).catch((error) => {
+    console.warn('⚠️ 대문 렌더 실패:', error instanceof Error ? error.message : error);
+    return null;
+  });
+  await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html, render });
+  return { ok: true, log: `대문 읽음 (${result.html.length}자${render ? `, 렌더 ${render.width}×${render.height}, 요소 ${render.boxes.length}` : ''})` };
 }
 
 /**

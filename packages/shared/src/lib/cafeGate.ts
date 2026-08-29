@@ -11,6 +11,11 @@ import { uploadsPlaylistId } from './cafe';
  */
 export const GATE_IMAGE_MARKER = 'chzzk-automation';
 
+/** 워커가 렌더한 대문의 요소 하나 — body 로부터의 자식 인덱스 경로와 CSS px 좌표 */
+export type GateBox = { path: number[]; tag: string; x: number; y: number; w: number; h: number };
+/** 렌더 폭 = 네이버 대문 폭 */
+export const GATE_RENDER_WIDTH = 836;
+
 export function cafeImageUrl(siteUrl: string, channelId: string, serial: number): string {
   return `${siteUrl.replace(/\/$/, '')}/cafe/${channelId}.png?v=${serial}`;
 }

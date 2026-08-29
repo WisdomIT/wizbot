@@ -1,7 +1,7 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { isYoutubeChannelId, parseCafeSlug, parseClubInfo } from '../lib/cafe';
-import { buildImageBlock, buildYoutubeTag, cafeImageUrl, findImageTags, imageSrcOf } from '../lib/cafeGate';
+import { buildImageBlock, buildYoutubeTag, cafeImageUrl, findImageTags, type GateBox, imageSrcOf } from '../lib/cafeGate';
 import {
   CAFE_MAX_WIDTH,
   type CafeLayout,
@@ -167,6 +167,10 @@ export async function getGate(prisma: PrismaClient, userId: number) {
   return {
     gateHtml: row.gateHtml,
     gateFetchedAt: row.gateFetchedAt,
+    /** 워커 렌더 — 콘솔은 이 그림 위에 클릭 영역을 얹는다. 대문이 비어 있으면 null */
+    render: row.gateImage && row.gateWidth && row.gateHeight
+      ? { png: Buffer.from(row.gateImage).toString('base64'), width: row.gateWidth, height: row.gateHeight, boxes: (row.gateBoxes ?? []) as GateBox[] }
+      : null,
     imageBlock: buildImageBlock({
       src: cafeImageUrl(siteUrl(), user.channelId, row.lastSaveSerial),
       width: size.width,
@@ -249,11 +253,24 @@ export function listPendingActions(prisma: PrismaClient) {
   });
 }
 
-/** 워커가 대문을 읽어왔다 */
-export function completeGateFetch(prisma: PrismaClient, id: number, html: string) {
+/** 워커가 대문을 읽고 렌더했다 */
+export function completeGateFetch(
+  prisma: PrismaClient,
+  id: number,
+  input: { html: string; render: { png: string; width: number; height: number; boxes: GateBox[] } | null },
+) {
   return prisma.cafeIntegration.update({
     where: { id },
-    data: { pendingAction: null, statusMessage: null, gateHtml: html, gateFetchedAt: new Date() },
+    data: {
+      pendingAction: null,
+      statusMessage: null,
+      gateHtml: input.html,
+      gateFetchedAt: new Date(),
+      gateImage: input.render ? Buffer.from(input.render.png, 'base64') : null,
+      gateBoxes: input.render ? input.render.boxes : [],
+      gateWidth: input.render?.width ?? null,
+      gateHeight: input.render?.height ?? null,
+    },
   });
 }
 

@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import { type GateBox, GATE_RENDER_WIDTH } from '@wizbot/shared/lib/cafeGate';
 import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer';
 
 /**
@@ -161,4 +162,51 @@ export async function writeGate(cookies: NaverCookies, clubId: string, html: str
     if (!reopened.ok) return reopened;
     return { ok: true, html: await reopened.textarea.evaluate((el) => el.value) };
   });
+}
+
+export type GateRender = { png: string; width: number; height: number; boxes: GateBox[] };
+
+/** 렌더 높이 상한 — 스크린샷·DB 크기를 막는다 */
+const RENDER_MAX_HEIGHT = 6000;
+
+/**
+ * 대문 HTML 을 네이버 대문 폭(836px)으로 렌더해 스크린샷과 요소 좌표를 뽑는다 (#9).
+ * 실측 (2026-09-01): 카페 이미지 서버(cafefiles.pstatic.net)는 Referer 검사를 하므로 cafe.naver.com 을 붙여야 200.
+ * 콘솔에서 직접 렌더하면 403·CSP·폭 불일치가 나서 워커가 그린다. 요소 경로는 body 자식 인덱스 —
+ * 콘솔이 같은 HTML 을 DOMParser 로 파싱하면 같은 트리가 나오므로 그 경로로 교체한다.
+ */
+export async function renderGate(html: string): Promise<GateRender | null> {
+  if (!html.trim()) return null;
+  const page = await (await getBrowser()).newPage();
+  try {
+    await page.setUserAgent(UA);
+    await page.setViewport({ width: GATE_RENDER_WIDTH, height: 600, deviceScaleFactor: 1 });
+    await page.setExtraHTTPHeaders({ Referer: 'https://cafe.naver.com/' });
+    const safe = html.replace(/<script\b[\s\S]*?<\/script>/gi, '');
+    const doc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0}body{width:${GATE_RENDER_WIDTH}px;overflow-x:hidden}img{max-width:100%}</style></head><body>${safe}</body></html>`;
+    // 유튜브 embed 의 광고 요청 등으로 idle 이 안 올 수 있다 — 시간 내 안 오면 그대로 찍는다
+    await page.setContent(doc, { waitUntil: 'load', timeout: 20_000 }).catch(() => null);
+    await page.waitForNetworkIdle({ idleTime: 500, timeout: 15_000 }).catch(() => null);
+    const size = await page.evaluate(() => ({ w: document.body.scrollWidth, h: document.body.scrollHeight }));
+    const height = Math.min(RENDER_MAX_HEIGHT, Math.max(1, size.h));
+    await page.setViewport({ width: GATE_RENDER_WIDTH, height, deviceScaleFactor: 1 });
+    const boxes = await page.evaluate((maxH: number) => {
+      const out: GateBox[] = [];
+      const walk = (el: Element, path: number[]) => {
+        const b = el.getBoundingClientRect();
+        const y = Math.round(b.y + window.scrollY);
+        //  줄바꿈·빈 요소는 고를 수 없다
+        if (el.tagName !== 'BR' && b.width >= 1 && b.height >= 1 && y < maxH) {
+          out.push({ path, tag: el.tagName.toLowerCase(), x: Math.round(b.x), y, w: Math.round(b.width), h: Math.round(b.height) });
+        }
+        Array.from(el.children).forEach((c, i) => walk(c, [...path, i]));
+      };
+      Array.from(document.body.children).forEach((c, i) => walk(c, [i]));
+      return out;
+    }, height);
+    const png = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: GATE_RENDER_WIDTH, height }, encoding: 'base64' });
+    return { png: String(png), width: GATE_RENDER_WIDTH, height, boxes };
+  } finally {
+    await page.close().catch(() => null);
+  }
 }

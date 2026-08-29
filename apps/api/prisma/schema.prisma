@@ -396,6 +396,11 @@ model CafeIntegration {
   /// 워커가 마지막으로 읽어온 대문 HTML — 스트리머가 삽입 위치를 고를 때 렌더한다 (#9 PR3)
   gateHtml         String?        @db.MediumText
   gateFetchedAt    DateTime?      @db.DateTime(6)
+  /// 워커가 gateHtml 을 836px 로 렌더한 스크린샷(PNG)과 요소별 좌표 — 콘솔이 네이버와 같은 모양 위에서 자리를 고르게 (#9)
+  gateImage        Bytes?         @db.LongBlob
+  gateBoxes        Json?
+  gateWidth        Int?
+  gateHeight       Int?
   /// 스트리머가 자리를 골라 만든 저장 대기 HTML — SAVE_GATE 액션이 대문에 쓴다
   gateDraft        String?        @db.MediumText
   updatedAt        DateTime       @updatedAt @db.DateTime(6)

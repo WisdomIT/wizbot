@@ -1,121 +1,57 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type GateBox } from '@wizbot/shared/lib/cafeGate';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type Target = 'image' | 'youtube';
-/** body 에서부터의 자식 요소 인덱스 경로 — 렌더한 문서와 새로 파싱한 문서가 같은 파서를 쓰므로 같은 경로를 가리킨다 */
+/** body 에서부터의 자식 요소 인덱스 경로 — 워커가 렌더한 DOM 과 여기서 새로 파싱한 DOM 이 같은 트리라 같은 경로를 가리킨다 */
 type Path = number[];
-
-const PICK_CLASS: Record<Target, string> = { image: '__wz-image', youtube: '__wz-youtube' };
+export type GateRender = { png: string; width: number; height: number; boxes: GateBox[] };
 
 /**
- * 대문 HTML 을 그대로 렌더하고, 요소를 클릭해 위즈봇 블록이 들어갈 자리를 고른다 (#9 PR3).
- * 스크립트는 CSP 로 막고(sandbox 에 allow-scripts 없음), 같은 출처(allow-same-origin)라 부모가 클릭을 받는다.
- * 고른 요소는 통째로 교체되고, 고르지 않으면 맨 아래에 붙는다.
+ * 워커가 네이버 대문 폭(836px)으로 렌더한 스크린샷 위에 요소별 투명 클릭 영역을 얹어 자리를 고른다 (#9).
+ * 콘솔에서 HTML 을 직접 렌더하면 카페 이미지가 Referer 검사로 403 이 나고 폭·CSS 도 네이버와 달라서
+ * 워커가 그린 그림을 그대로 쓴다. 고른 요소는 통째로 교체되고, 고르지 않으면 맨 아래에 붙는다.
  */
 export function GatePicker({
-  html, imageBlock, youtubeTag, disabled, onSubmit,
+  html, render, imageBlock, youtubeTag, disabled, onSubmit,
 }: {
-  html: string; imageBlock: string; youtubeTag: string | null; disabled: boolean; onSubmit: (html: string) => void;
+  html: string; render: GateRender | null; imageBlock: string; youtubeTag: string | null; disabled: boolean; onSubmit: (html: string) => void;
 }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [target, setTarget] = useState<Target>('image');
   const [picks, setPicks] = useState<Record<Target, Path | null>>({ image: null, youtube: null });
-  const [height, setHeight] = useState(200);
-  const empty = html.trim().length === 0;
+  const empty = html.trim().length === 0 || !render;
 
-  const srcDoc = `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="script-src 'none'">
-<base target="_blank">
-<style>
-  body { margin: 8px; font-family: sans-serif; }
-  body * { cursor: pointer !important; }
-  a { pointer-events: none; }
-  .__wz-hover { outline: 2px dashed #38bdf8 !important; outline-offset: 2px; }
-  .__wz-image { outline: 3px solid #ec4899 !important; outline-offset: 2px; }
-  .__wz-youtube { outline: 3px solid #ef4444 !important; outline-offset: 2px; }
-</style></head><body>${html}</body></html>`;
+  //  원본을 파싱해 둔다 — 설명 문구와 최종 HTML 생성에 쓴다
+  const doc = useMemo(() => new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html'), [html]);
+  //  깊은 요소가 위에 오도록 경로 길이 순 — 겹치는 영역에서 안쪽 요소가 클릭을 받는다
+  const boxes = useMemo(() => (render ? [...render.boxes].sort((a, b) => a.path.length - b.path.length) : []), [render]);
 
-  const applyMarks = useCallback((doc: Document, next: Record<Target, Path | null>) => {
-    for (const cls of Object.values(PICK_CLASS)) doc.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
-    for (const t of ['image', 'youtube'] as Target[]) {
-      const el = next[t] && resolvePath(doc.body, next[t]!);
-      if (el) el.classList.add(PICK_CLASS[t]);
-    }
-  }, []);
-
-  //  iframe 문서가 준비되면 클릭·호버를 받는다
-  const targetRef = useRef(target);
-  targetRef.current = target;
-  const picksRef = useRef(picks);
-  picksRef.current = picks;
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    let cleanup = () => {};
-    const attach = () => {
-      const doc = iframe.contentDocument;
-      if (!doc?.body) return;
-      setHeight(Math.min(800, Math.max(120, doc.documentElement.scrollHeight + 16)));
-      applyMarks(doc, picksRef.current);
-      let hovered: Element | null = null;
-      const over = (e: Event) => {
-        const el = pickable(doc, e.target);
-        if (hovered && hovered !== el) hovered.classList.remove('__wz-hover');
-        hovered = el;
-        el?.classList.add('__wz-hover');
-      };
-      const out = () => { hovered?.classList.remove('__wz-hover'); hovered = null; };
-      const click = (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const el = pickable(doc, e.target);
-        if (!el) return;
-        const path = pathOf(doc.body, el);
-        const t = targetRef.current;
-        //  같은 요소를 다시 누르면 선택 해제
-        const next = { ...picksRef.current, [t]: samePath(picksRef.current[t], path) ? null : path };
-        setPicks(next);
-        applyMarks(doc, next);
-      };
-      doc.addEventListener('mouseover', over);
-      doc.addEventListener('mouseleave', out);
-      doc.addEventListener('click', click, true);
-      cleanup = () => {
-        doc.removeEventListener('mouseover', over);
-        doc.removeEventListener('mouseleave', out);
-        doc.removeEventListener('click', click, true);
-      };
-    };
-    iframe.addEventListener('load', attach);
-    if (iframe.contentDocument?.readyState === 'complete') attach();
-    return () => { iframe.removeEventListener('load', attach); cleanup(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srcDoc]);
+  function toggle(path: Path) {
+    setPicks((prev) => ({ ...prev, [target]: samePath(prev[target], path) ? null : path }));
+  }
 
   function build(): string {
-    //  렌더에 쓴 문서가 아니라 원본을 새로 파싱한다 — 표시용 class 가 섞이지 않게
-    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-    const imageEl = picks.image ? resolvePath(doc.body, picks.image) : null;
-    const youtubeEl = youtubeTag && picks.youtube ? resolvePath(doc.body, picks.youtube) : null;
+    const out = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+    const imageEl = picks.image ? resolvePath(out.body, picks.image) : null;
+    const youtubeEl = youtubeTag && picks.youtube ? resolvePath(out.body, picks.youtube) : null;
     //  경로는 둘 다 원본 기준이라 요소를 먼저 잡아둔 뒤 교체한다. 같은 요소를 골랐으면 이미지 뒤에 유튜브
     if (youtubeTag && youtubeEl && youtubeEl !== imageEl) youtubeEl.outerHTML = youtubeTag;
     if (imageEl) imageEl.outerHTML = youtubeTag && youtubeEl === imageEl ? imageBlock + youtubeTag : imageBlock;
-    else doc.body.insertAdjacentHTML('beforeend', imageBlock);
+    else out.body.insertAdjacentHTML('beforeend', imageBlock);
     if (youtubeTag && !youtubeEl) {
-      const img = doc.body.querySelector('img[alt="chzzk-automation"]');
+      const img = out.body.querySelector('img[alt="chzzk-automation"]');
       const block = img?.closest('p') ?? img;
       if (block) block.insertAdjacentHTML('afterend', youtubeTag);
     }
-    return doc.body.innerHTML;
+    return out.body.innerHTML;
   }
 
   const describe = (path: Path | null) => {
-    const doc = iframeRef.current?.contentDocument;
-    const el = doc && path ? resolvePath(doc.body, path) : null;
+    const el = path ? resolvePath(doc.body, path) : null;
     if (!el) return null;
     const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
     const imgs = el.querySelectorAll('img').length + (el.tagName === 'IMG' ? 1 : 0);
@@ -125,7 +61,9 @@ export function GatePicker({
   return (
     <div className="flex flex-col gap-3">
       {empty ? (
-        <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">대문이 비어 있습니다 — 위즈봇 블록만 들어갑니다.</p>
+        <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          {html.trim() ? '대문 미리보기를 만들지 못했습니다 — 위즈봇 블록은 맨 아래에 추가됩니다.' : '대문이 비어 있습니다 — 위즈봇 블록만 들어갑니다.'}
+        </p>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -139,14 +77,33 @@ export function GatePicker({
               </Button>
             )}
           </div>
-          <iframe
-            ref={iframeRef}
-            title="카페 대문 미리보기"
-            sandbox="allow-same-origin"
-            srcDoc={srcDoc}
-            className="w-full rounded-md border bg-white"
-            style={{ height }}
-          />
+          {/* 네이버 대문과 같은 836px 렌더. 폭에 맞춰 축소되고 클릭 영역은 % 로 따라간다 */}
+          <div className="relative w-full overflow-hidden rounded-md border bg-white" style={{ maxWidth: render.width }}>
+            <img src={`data:image/png;base64,${render.png}`} alt="카페 대문 미리보기" width={render.width} height={render.height} className="block h-auto w-full select-none" draggable={false} />
+            {boxes.map((b) => {
+              const picked = (['image', 'youtube'] as Target[]).find((t) => samePath(picks[t], b.path));
+              return (
+                <button
+                  key={b.path.join('.')}
+                  type="button"
+                  title={`<${b.tag}>`}
+                  onClick={() => toggle(b.path)}
+                  className={cn(
+                    'absolute cursor-pointer outline-offset-[-2px] hover:bg-sky-400/15 hover:outline hover:outline-2 hover:outline-dashed hover:outline-sky-400',
+                    picked === 'image' && 'bg-pink-500/15 outline outline-[3px] outline-pink-500',
+                    picked === 'youtube' && 'bg-red-500/15 outline outline-[3px] outline-red-500',
+                  )}
+                  style={{
+                    left: `${(b.x / render.width) * 100}%`,
+                    top: `${(b.y / render.height) * 100}%`,
+                    width: `${(b.w / render.width) * 100}%`,
+                    height: `${(b.h / render.height) * 100}%`,
+                    zIndex: b.path.length,
+                  }}
+                />
+              );
+            })}
+          </div>
           <ul className="text-sm text-muted-foreground">
             <li className={cn(picks.image && 'text-foreground')}>이미지: {describe(picks.image) ?? '고르지 않음 → 맨 아래에 추가'}</li>
             {youtubeTag && <li className={cn(picks.youtube && 'text-foreground')}>유튜브: {describe(picks.youtube) ?? '고르지 않음 → 이미지 바로 아래'}</li>}
@@ -160,22 +117,6 @@ export function GatePicker({
   );
 }
 
-function pickable(doc: Document, target: EventTarget | null): Element | null {
-  const el = target instanceof Element ? target : null;
-  if (!el || el === doc.body || el === doc.documentElement) return null;
-  return el;
-}
-function pathOf(root: Element, el: Element): Path {
-  const path: Path = [];
-  let cur: Element | null = el;
-  while (cur && cur !== root) {
-    const parent: Element | null = cur.parentElement;
-    if (!parent) return path;
-    path.unshift(Array.prototype.indexOf.call(parent.children, cur));
-    cur = parent;
-  }
-  return path;
-}
 function resolvePath(root: Element, path: Path): Element | null {
   let cur: Element | null = root;
   for (const i of path) {

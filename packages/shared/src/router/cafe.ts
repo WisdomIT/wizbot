@@ -119,8 +119,21 @@ export const cafeRouter = t.router({
       cafeService.completeAction(ctx.prisma, input.id, { status: input.status, message: input.message }),
     ),
   completeGateFetch: internalProcedure
-    .input(z.object({ id: z.number(), html: z.string().max(2 * 1024 * 1024) }))
-    .mutation(({ ctx, input }) => cafeService.completeGateFetch(ctx.prisma, input.id, input.html)),
+    .input(
+      z.object({
+        id: z.number(),
+        html: z.string().max(2 * 1024 * 1024),
+        render: z
+          .object({
+            png: z.string().max(8 * 1024 * 1024),
+            width: z.number().int().positive(),
+            height: z.number().int().positive(),
+            boxes: z.array(z.object({ path: z.array(z.number().int()), tag: z.string().max(32), x: z.number(), y: z.number(), w: z.number(), h: z.number() })).max(2000),
+          })
+          .nullable(),
+      }),
+    )
+    .mutation(({ ctx, input }) => cafeService.completeGateFetch(ctx.prisma, input.id, { html: input.html, render: input.render })),
   completeGateSave: internalProcedure
     .input(
       z.object({ id: z.number() }).and(
