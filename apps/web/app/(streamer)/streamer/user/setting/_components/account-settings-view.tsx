@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -23,8 +23,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useTRPC } from '@/src/utils/trpc-react';
 
-/** 계정 설정 (#7) — 채널 정보, 목록 노출, 챗봇 사용, 탈퇴 */
-export function AccountSettingsView() {
+/** 계정 설정 (#7) — 채널 정보, 테마(슬롯), 목록 노출, 챗봇 사용, 탈퇴 */
+export function AccountSettingsView({ themeSlot }: { themeSlot?: ReactNode }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(trpc.user.getAccount.queryOptions());
@@ -116,6 +116,9 @@ export function AccountSettingsView() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* 테마는 채널 정보 바로 다음 — 외형 설정이 한 묶음으로 보이도록 (#77) */}
+      {themeSlot}
 
       <Card>
         <CardHeader>

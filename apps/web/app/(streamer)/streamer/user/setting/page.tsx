@@ -6,11 +6,10 @@ import { ThemeSettingsView } from './_components/theme-settings-view';
 
 export default function Page() {
   return (
-    <div className="flex max-w-2xl flex-col">
-      <AccountSettingsView />
+    <div>
       {/* 폰트 목록을 각 폰트로 그리기 위해 이 페이지에서만 전체를 링크한다 (#77) */}
       <FontLink keys={ALL_FONT_KEYS} />
-      <ThemeSettingsView />
+      <AccountSettingsView themeSlot={<ThemeSettingsView />} />
     </div>
   );
 }
