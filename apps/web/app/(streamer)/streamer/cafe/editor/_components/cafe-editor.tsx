@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CAFE_ELEMENT_KINDS,
   CAFE_ELEMENT_LABEL,
-  CAFE_MAX_WIDTH,
   type CafeElement,
   type CafeElementKind,
   cafeElementSchema,
@@ -157,19 +156,19 @@ export function CafeEditor({ channelId }: { channelId: string }) {
       toast.error('PNG 또는 JPEG 파일만 올릴 수 있습니다.');
       return;
     }
-    //  네이버 카페 대문 최대 폭(836)으로 줄여서 보낸다 — 그보다 크면 캔버스도 커지고 대문에서 축소된다
-    void downscaleToWidth(file, CAFE_MAX_WIDTH).then(({ base64, resized }) => {
-      if (base64.length > 3 * 1024 * 1024) {
-        toast.error('줄인 뒤에도 2MB 를 넘습니다. 더 작은 이미지를 올려주세요.');
-        return;
-      }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('배경 이미지는 2MB 이하여야 합니다.');
+      return;
+    }
+    //  원본 그대로 올린다 — 대문의 <img> 크기는 지정한 요소를 따른다
+    void fileToBase64(file).then((base64) => {
       toast.promise(upload.mutateAsync({ scene, base64 }), {
         loading: '업로드 중...',
         success: (r) => {
           void queryClient.invalidateQueries(trpc.cafe.backgrounds.queryFilter());
           void queryClient.invalidateQueries(trpc.cafe.getLayout.queryFilter());
           setBgVersion((v) => v + 1);
-          return `배경을 올렸습니다 (${r.width}×${r.height})${resized ? ' — 가로 836px 로 줄였습니다' : ''}. 캔버스 크기를 맞췄습니다.`;
+          return `배경을 올렸습니다 (${r.width}×${r.height}). 캔버스 크기를 맞췄습니다.`;
         },
         error: (err) => (err instanceof Error ? err.message : String(err)),
       });
@@ -242,7 +241,7 @@ export function CafeEditor({ channelId }: { channelId: string }) {
                 배경 삭제
               </Button>
             )}
-            <span className="text-xs text-muted-foreground">캔버스 {current.width}×{current.height} · 배경 크기를 따릅니다 (PNG/JPEG, 가로 최대 836px, 2MB)</span>
+            <span className="text-xs text-muted-foreground">캔버스 {current.width}×{current.height} · 배경 크기를 따릅니다 (PNG/JPEG, 2MB 이하)</span>
           </div>
           {imageOnly ? (
             <p className="text-sm text-muted-foreground">방송 종료 화면은 배경 이미지만 씁니다 — 제목·시청자 수 같은 요소는 방송 중 화면에서 배치합니다.</p>
@@ -586,19 +585,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 
-/** 브라우저에서 가로를 maxWidth 로 줄여 base64 로. 원본이 작으면 그대로 */
-async function downscaleToWidth(file: File, maxWidth: number): Promise<{ base64: string; resized: boolean }> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxWidth / bitmap.width);
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  //  PNG 는 투명도를 지킨다. JPEG 원본은 JPEG 로 (용량)
-  const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-  const dataUrl = canvas.toDataURL(type, 0.92);
-  return { base64: dataUrl.split(',')[1] ?? '', resized: scale < 1 };
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

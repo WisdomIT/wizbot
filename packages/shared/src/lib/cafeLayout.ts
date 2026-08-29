@@ -84,8 +84,8 @@ export type CafeElement = z.infer<typeof cafeElementSchema>;
 export type CafeTextElement = Extract<CafeElement, { kind: 'title' | 'category' | 'viewers' | 'openedAt' }>;
 
 export const cafeSceneSchema = z.object({
-  /** 배경 이미지 크기 = 캔버스 크기. 배경이 없으면 기본 836×300 (카페 대문 최대 폭) */
-  width: z.number().int().min(100).max(CAFE_MAX_WIDTH).default(CAFE_MAX_WIDTH),
+  /** 배경 이미지 크기 = 캔버스 크기. 배경이 없으면 기본 836×300 (카페 대문 폭). 대문의 <img> 크기는 지정한 요소를 따르므로 제한하지 않는다 */
+  width: z.number().int().min(100).max(4000).default(CAFE_MAX_WIDTH),
   height: z.number().int().min(50).max(4000).default(300),
   elements: z.array(cafeElementSchema).max(20).default([]),
 });

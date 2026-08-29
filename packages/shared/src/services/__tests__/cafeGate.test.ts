@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGatePlan, buildImageBlock, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSrcOf, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
+import { buildGatePlan, buildImageBlock, imageSizeOf, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSrcOf, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
 import { parseYoutubeChannelPage, youtubeChannelUrl } from '../../lib/youtube';
 
 describe('카페 대문 블록 (#9 PR3)', () => {
+  it('표식 img 의 크기 속성 읽기 — 갱신 때 지정한 요소 크기를 이어받는다', () => {
+    expect(imageSizeOf('<img id="x" src="a" width="640" height="360" alt="chzzk-automation" style="width:640px">')).toEqual({ width: 640, height: 360 });
+    expect(imageSizeOf('<img src="a" alt="chzzk-automation">')).toBeNull();
+  });
   it('이미지 URL — 사이트 끝 슬래시 제거, ?v= 일련번호', () => {
     expect(cafeImageUrl('https://bot.wisdomit.co.kr/', 'abc', 7)).toBe('https://bot.wisdomit.co.kr/cafe/abc.png?v=7');
   });
@@ -36,13 +40,16 @@ describe('카페 대문 블록 (#9 PR3)', () => {
 });
 
 describe('반영 계획 buildGatePlan', () => {
-  const image = { ready: true, src: 'https://x/a.png?v=1', width: 836, height: 300, href: 'https://chzzk.naver.com/live/c' };
+  const image = { ready: true, src: 'https://x/a.png?v=1', href: 'https://chzzk.naver.com/live/c' };
   const pick = { path: [1, 0], w: 560, h: 315 };
   it('설정이 끝난 자리만 교체하고, 미완인 자리는 null (경로는 유지)', () => {
     const plan = buildGatePlan({ html: '', picks: { image: pick, youtube: pick }, image: { ...image, ready: false }, youtube: { channelId: 'UCXuqSBlHAE6Xw-yeJA0Tunw' } });
     expect(plan.image).toBeNull();
     expect(plan.youtube).toMatchObject({ kind: 'replace', path: [1, 0] });
     expect((plan.youtube as { html: string }).html).toContain('width="560" height="315"');
+    //  이미지도 지정한 요소 크기 그대로
+    const ready = buildGatePlan({ html: '', picks: { image: { path: [0], w: 640, h: 360 }, youtube: null }, image, youtube: { channelId: null } });
+    expect((ready.image as { html: string }).html).toContain('width="640" height="360"');
   });
   it('remove 는 들어 있을 때만', () => {
     const html = '<p><img src="a" alt="chzzk-automation"></p>';

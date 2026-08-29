@@ -4,7 +4,7 @@ dotenv.config();
 
 import { createServer } from 'node:http';
 
-import { findImageTags, findYoutubeTags, imageSrcOf, normalizeGateHtml, replaceImageTags } from '@wizbot/shared/lib/cafeGate';
+import { buildImageTag, findImageTags, findYoutubeTags, imageSizeOf, imageSrcOf, normalizeGateHtml, replaceImageTags } from '@wizbot/shared/lib/cafeGate';
 import { fetchLiveSnapshot } from '@wizbot/shared/lib/chzzkLive';
 
 import { applyGatePlan, checkSession, closeBrowser, type NaverCookies, readGate, renderGate, verifyGateAccess, writeGate } from './naver';
@@ -140,7 +140,7 @@ async function processActions(cookies: NaverCookies): Promise<void> {
 
 /**
  * 방송 상태 폴링 → 대문 갱신 (#9 PR3b). 판정은 API(evaluateLive)가 DB 로 한다.
- * 저장 = 대문의 표식 <img> 를 새 일련번호 태그로 통째로 교체(스타일 누적 방지) → 저장 → 재읽기에서 새 주소 확인.
+ * 저장 = 대문의 표식 <img> 를 새 일련번호 태그로 통째로 교체(스타일 누적 방지, 크기는 기존 태그 = 지정한 요소 크기) → 저장 → 재읽기에서 새 주소 확인.
  * 표식이 사라졌으면 동작을 멈추고 자리를 다시 고르게 한다.
  */
 async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void> {
@@ -165,12 +165,14 @@ async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void
         if (current.reason === 'SESSION_INVALID') return 'session-invalid';
         continue;
       }
-      const replaced = replaceImageTags(current.html, save.imageTag);
-      if (replaced.count === 0) {
+      const existing = findImageTags(current.html)[0];
+      const size = existing ? imageSizeOf(existing) : null;
+      if (!existing || !size) {
         console.warn('⚠️', label, '대문에서 이미지 블록이 사라짐 — 동작 중지');
-        await fail('대문에서 방송 상태 이미지가 사라졌습니다. 연동 설정에서 자리를 다시 골라주세요.', { missing: true, html: current.html });
+        await fail('대문에서 방송 상태 이미지가 사라졌습니다. 연동 설정에서 위치를 다시 지정해주세요.', { missing: true, html: current.html });
         continue;
       }
+      const replaced = replaceImageTags(current.html, buildImageTag({ src: save.src, ...size }));
       const saved = await writeGate(cookies, row.clubId, replaced.html);
       if (!saved.ok) {
         await fail(saved.message);

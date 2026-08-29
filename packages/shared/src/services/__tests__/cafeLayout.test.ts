@@ -11,7 +11,8 @@ describe('cafeLayout 스키마', () => {
   it('텍스트 요소의 기본값이 채워진다', () => {
     const layout = cafeLayoutSchema.parse({ live: { elements: [{ id: 'a', kind: 'title', x: 0, y: 0, w: 100, h: 40 }] } });
     expect(layout.live.elements[0]).toMatchObject({ fontKey: 'suit', weight: 400, color: '#ffffff', align: 'left', fontSize: null, lines: 1 });
-    expect(() => cafeLayoutSchema.parse({ live: { width: 2048 } })).toThrow(); // 카페 대문 최대 폭 초과
+    expect(cafeLayoutSchema.parse({ live: { width: 2048 } }).live.width).toBe(2048); // 폭 제한 없음 — 대문 img 가 836 으로 비례 축소된다
+    expect(() => cafeLayoutSchema.parse({ live: { width: 5000 } })).toThrow();
   });
   it('모르는 종류·잘못된 색은 거부', () => {
     expect(() => cafeLayoutSchema.parse({ live: { elements: [{ id: 'a', kind: 'logo', x: 0, y: 0, w: 1, h: 1 }] } })).toThrow();

@@ -398,6 +398,8 @@ model CafeIntegration {
   lastViewerBucket Int?
   gateSerial       Int            @default(0)
   saveAttemptedAt  DateTime?      @db.DateTime(6)
+  /// 워커가 대문을 실제로 바꾼 마지막 시각 (반영 현황 표시용)
+  gateUpdatedAt    DateTime?      @db.DateTime(6)
   /// 워커가 마지막으로 읽어온 대문 HTML — 스트리머가 삽입 위치를 고를 때 렌더한다 (#9 PR3)
   gateHtml         String?        @db.MediumText
   gateFetchedAt    DateTime?      @db.DateTime(6)
