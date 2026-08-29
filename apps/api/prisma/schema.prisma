@@ -393,6 +393,11 @@ model CafeIntegration {
   lastSaveSerial   Int            @default(0)
   /// 마지막 저장 시점의 방송 상태 — 같은 v 는 항상 같은 그림이어야 하므로 렌더는 이걸 그린다
   lastSnapshot     Json?
+  /// 갱신 정책용 (#9 PR3b): 마지막 저장 판정 시각·그때의 시청자 구간, 대문에 실제로 써진 일련번호, 마지막 시도 시각
+  lastSavedAt      DateTime?      @db.DateTime(6)
+  lastViewerBucket Int?
+  gateSerial       Int            @default(0)
+  saveAttemptedAt  DateTime?      @db.DateTime(6)
   /// 워커가 마지막으로 읽어온 대문 HTML — 스트리머가 삽입 위치를 고를 때 렌더한다 (#9 PR3)
   gateHtml         String?        @db.MediumText
   gateFetchedAt    DateTime?      @db.DateTime(6)

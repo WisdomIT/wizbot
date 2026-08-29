@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { fetchLiveSnapshot, kstToIso, normalizeLiveDetail } from '../chzzkLive';
+import { fetchLiveSnapshot, kstToIso, normalizeLiveDetail } from '../../lib/chzzkLive';
 
 describe('chzzk live-detail 정규화 (#9)', () => {
   it('OPEN 이면 스냅샷, 썸네일 {type} 을 480 으로', () => {

@@ -1,4 +1,4 @@
-import type { CafeSnapshot } from '../lib/cafeLayout';
+import type { CafeSnapshot } from './cafeLayout';
 
 /**
  * 치지직 비공식 API — 특정 채널의 방송 상태 (#9).

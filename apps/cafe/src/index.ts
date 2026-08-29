@@ -4,7 +4,8 @@ dotenv.config();
 
 import { createServer } from 'node:http';
 
-import { findImageTags, findYoutubeTags, normalizeGateHtml } from '@wizbot/shared/lib/cafeGate';
+import { findImageTags, findYoutubeTags, imageSrcOf, normalizeGateHtml, replaceImageTags } from '@wizbot/shared/lib/cafeGate';
+import { fetchLiveSnapshot } from '@wizbot/shared/lib/chzzkLive';
 
 import { applyGatePlan, checkSession, closeBrowser, type NaverCookies, readGate, renderGate, verifyGateAccess, writeGate } from './naver';
 import { trpc } from './trpc';
@@ -22,6 +23,9 @@ console.log('🚀 카페 워커가 실행되었습니다!');
 
 /** 폴링은 가볍다(internal 조회 1회) — 스트리머 요청과 어드민의 세션 갱신에 빨리 반응하도록 짧게 */
 const POLL_INTERVAL_MS = 15 * 1000;
+/** 방송 상태 조회 주기 (이슈 §3: 30초~1분). 저장은 정책이 정한다 */
+const LIVE_INTERVAL_MS = 30 * 1000;
+let lastLiveAt = 0;
 /** 세션 유효성 검사 주기 — 만료를 늦어도 30분 안에 안다 */
 const SESSION_CHECK_MS = 30 * 60 * 1000;
 let lastSessionCheckAt = 0;
@@ -134,6 +138,59 @@ async function processActions(cookies: NaverCookies): Promise<void> {
   }
 }
 
+/**
+ * 방송 상태 폴링 → 대문 갱신 (#9 PR3b). 판정은 API(evaluateLive)가 DB 로 한다.
+ * 저장 = 대문의 표식 <img> 를 새 일련번호 태그로 통째로 교체(스타일 누적 방지) → 저장 → 재읽기에서 새 주소 확인.
+ * 표식이 사라졌으면 동작을 멈추고 자리를 다시 고르게 한다.
+ */
+async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void> {
+  if (Date.now() - lastLiveAt < LIVE_INTERVAL_MS) return;
+  lastLiveAt = Date.now();
+  const rows = await trpc.cafe.activeIntegrations.query();
+  for (const row of rows) {
+    const label = `[${row.channelName} → ${row.cafeName ?? row.clubId}]`;
+    const snapshot = await fetchLiveSnapshot(row.channelId);
+    if (!snapshot) {
+      console.warn('⚠️', label, '치지직 방송 상태 조회 실패');
+      continue;
+    }
+    const { save } = await trpc.cafe.evaluateLive.mutate({ id: row.id, snapshot });
+    if (!save) continue;
+    const fail = (message: string, extra: { missing?: boolean; html?: string } = {}) =>
+      trpc.cafe.reportSave.mutate({ id: row.id, ok: false, message, ...extra }).catch(() => null);
+    try {
+      const current = await readGate(cookies, row.clubId);
+      if (!current.ok) {
+        await fail(current.message);
+        if (current.reason === 'SESSION_INVALID') return 'session-invalid';
+        continue;
+      }
+      const replaced = replaceImageTags(current.html, save.imageTag);
+      if (replaced.count === 0) {
+        console.warn('⚠️', label, '대문에서 이미지 블록이 사라짐 — 동작 중지');
+        await fail('대문에서 방송 상태 이미지가 사라졌습니다. 연동 설정에서 자리를 다시 골라주세요.', { missing: true, html: current.html });
+        continue;
+      }
+      const saved = await writeGate(cookies, row.clubId, replaced.html);
+      if (!saved.ok) {
+        await fail(saved.message);
+        if (saved.reason === 'SESSION_INVALID') return 'session-invalid';
+        continue;
+      }
+      const written = findImageTags(saved.html).some((tag) => imageSrcOf(tag)?.endsWith(`?v=${save.serial}`));
+      if (!written) {
+        await fail('저장했지만 대문에서 새 이미지 주소가 보이지 않습니다. 다음 주기에 다시 시도합니다.', { html: saved.html });
+        continue;
+      }
+      await trpc.cafe.reportSave.mutate({ id: row.id, ok: true, serial: save.serial, html: saved.html });
+      console.log('🖼️', label, `대문 갱신 v${save.serial} (${save.reason}) — ${snapshot.live ? `방송 중 · ${snapshot.title} · ${snapshot.viewers}명` : '방송 종료'}`);
+    } catch (error) {
+      console.error('❌', label, '대문 갱신 오류:', error);
+      await fail(`대문 갱신 중 오류: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500));
+    }
+  }
+}
+
 async function syncSession(session: BotSession): Promise<void> {
   // 어드민이 방금 저장한 세션(checkedAt 이 없거나 updatedAt 보다 이전)은 주기와 무관하게 바로 검사한다
   const fresh = !session.checkedAt || new Date(session.checkedAt) < new Date(session.updatedAt);
@@ -156,6 +213,10 @@ async function poll(): Promise<void> {
     }
     await syncSession(session);
     await processActions(session);
+    if ((await syncLive(session)) === 'session-invalid') {
+      await trpc.cafe.reportSessionCheck.mutate({ valid: false, message: '봇 계정의 네이버 세션이 만료됐습니다.' });
+      lastSessionCheckAt = Date.now();
+    }
     lastPollAt = new Date();
   } catch (error) {
     console.error('❌ 폴링 실패:', error);
