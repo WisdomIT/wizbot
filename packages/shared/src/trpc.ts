@@ -26,12 +26,25 @@ export interface SongSourceAuth {
   readOnly: boolean;
 }
 
+/**
+ * 어드민 대행 (#71) — 어드민 세션이 `admin-acting-as` 쿠키(또는 x-acting-as 헤더)로 스트리머를 지정한 상태.
+ * API 의 createContext 가 admin 세션일 때만 채운다. streamerProcedure 는 이걸 보고 ctx.user 를 그 스트리머로 좁힌다.
+ */
+export interface ActingAs {
+  /** 대행 대상 스트리머 */
+  userId: number;
+  /** 실제 세션의 어드민 (감사 로그용, #175) */
+  adminId: number;
+}
+
 export interface Context {
   prisma: PrismaClient;
   user: AuthUser | null;
   internal: boolean;
   /** x-song-token 헤더로 인증된 송출 소스. 없으면 null */
   songSource: SongSourceAuth | null;
+  /** 어드민 대행 상태. 없으면 null (#71) */
+  actingAs?: ActingAs | null;
 }
 
 export const t = initTRPC.context<Context>().create();
@@ -64,12 +77,20 @@ const mapServiceErrors = t.middleware(async ({ next }) => {
 /** 인증 불필요 (공개 조회, 로그인 플로우, 설정값) */
 export const publicProcedure = t.procedure.use(mapServiceErrors);
 
-/** 로그인한 스트리머 전용. ctx.user가 non-null로 좁혀진다 */
+/**
+ * 로그인한 스트리머 전용. ctx.user가 non-null로 좁혀진다.
+ * 어드민이 대행 중(#71)이면 ctx.user 를 대행 대상 스트리머로 바꿔 통과시킨다 — 89개 스트리머 프로시저가
+ * 수정 없이 그 스트리머 스코프로 동작한다. 실제 세션이 admin 일 때만 가능하므로 스트리머가 쿠키를 흉내내도 소용없다.
+ */
 export const streamerProcedure = publicProcedure.use(({ ctx, next }) => {
-  if (!ctx.user || ctx.user.role !== 'streamer') {
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' });
+  if (ctx.user?.role === 'streamer') {
+    return next({ ctx: { ...ctx, user: ctx.user } });
   }
-  return next({ ctx: { ...ctx, user: ctx.user } });
+  if (ctx.user?.role === 'admin' && ctx.actingAs) {
+    const user: AuthUser = { id: ctx.actingAs.userId, role: 'streamer' };
+    return next({ ctx: { ...ctx, user } });
+  }
+  throw new TRPCError({ code: 'UNAUTHORIZED', message: '로그인이 필요합니다.' });
 });
 
 /** 사용 신청자 전용 (#96) — ctx.user.id 가 신청 레코드 id */

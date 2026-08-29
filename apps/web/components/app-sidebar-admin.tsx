@@ -60,6 +60,8 @@ interface AppSidebarAdminProps extends React.ComponentProps<typeof Sidebar> {
 export default function AppSidebarAdmin({ children, email, ...props }: AppSidebarAdminProps) {
   const pathname = usePathname();
   const currentPage = menu.find((item) => item.url === pathname)?.name;
+  //  어드민 대행 콘솔(#71) 안에서는 스트리머 사이드바가 자기 헤더를 그리므로 바깥 헤더를 생략한다
+  const acting = /^\/admin\/streamers\/\d+(\/|$)/.test(pathname);
 
   return (
     <>
@@ -75,9 +77,11 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <BodyBreadcrumb group="운영" page={currentPage ?? ''}>
-          {children}
-        </BodyBreadcrumb>
+        {acting ? children : (
+          <BodyBreadcrumb group="운영" page={currentPage ?? ''}>
+            {children}
+          </BodyBreadcrumb>
+        )}
       </SidebarInset>
     </>
   );

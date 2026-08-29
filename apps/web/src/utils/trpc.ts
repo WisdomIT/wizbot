@@ -16,8 +16,11 @@ export const trpc = createTRPCClient<AppRouter>({
       headers: async () => {
         try {
           const { cookies } = await import('next/headers');
-          const token = (await cookies()).get('session-token')?.value;
-          return token ? { Authorization: `Bearer ${token}` } : {};
+          const jar = await cookies();
+          const token = jar.get('session-token')?.value;
+          //  어드민 대행 (#71) — 브라우저 요청은 쿠키가 프록시를 타지만 서버 컴포넌트는 헤더로 넘긴다
+          const actingAs = jar.get('admin-acting-as')?.value;
+          return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(actingAs ? { 'x-acting-as': actingAs } : {}) };
         } catch {
           return {};
         }
