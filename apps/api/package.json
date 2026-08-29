@@ -7,7 +7,8 @@
     "build": "tsup",
     "start": "node dist/server.js",
     "dev": "tsx watch --clear-screen=false src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
@@ -27,6 +28,8 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26",
+    "@wizbot/eslint-config": "workspace:^",
+    "eslint": "^9",
     "tsup": "^8.5.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.2"

@@ -1,8 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { appRouter } from '..';
 import type { Context } from '../../trpc';
+import { appRouter } from '..';
 
 function createCaller(overrides: Partial<Context> = {}) {
   const prisma = {

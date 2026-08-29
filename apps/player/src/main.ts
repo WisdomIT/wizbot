@@ -1,15 +1,16 @@
+import { join } from 'node:path';
+
 import {
   app,
   BrowserWindow,
   globalShortcut,
   ipcMain,
   Menu,
+  type MenuItemConstructorOptions,
   session,
   shell,
   Tray,
-  type MenuItemConstructorOptions,
 } from 'electron';
-import { join } from 'node:path';
 
 import { api, fetchState, type PlayerState } from './api';
 import {

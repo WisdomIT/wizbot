@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../lib/nodemailer', () => ({ sendMail: vi.fn().mockResolvedValue(undefined) }));
 
 import { sendMail } from '../../lib/nodemailer';
-import { appRouter } from '..';
 import type { Context } from '../../trpc';
+import { appRouter } from '..';
 
 const APP = { id: 7, channelId: 'c'.repeat(32), channelName: '테스터', channelImageUrl: null, status: 'REJECTED', reason: null, rejectReason: null };
 

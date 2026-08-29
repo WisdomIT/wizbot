@@ -1,10 +1,8 @@
+import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { CHAT_MAX_LENGTH } from '../chatbot/lib';
-
-import type { PrismaClient } from '@prisma/client';
-
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '../chatbot/definitions';
+import { CHAT_MAX_LENGTH } from '../chatbot/lib';
 import { commandService, repeatService, ServiceError } from '../services';
 import { publicProcedure, streamerProcedure, t } from '../trpc';
 

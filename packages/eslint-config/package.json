@@ -8,6 +8,7 @@
   "license": "ISC",
   "type": "module",
   "exports": {
+    "./base": "./base.js",
     "./next": "./next.js"
   },
   "packageManager": "pnpm@10.5.2",

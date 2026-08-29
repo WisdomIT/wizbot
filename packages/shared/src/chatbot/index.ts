@@ -71,7 +71,7 @@ export function findExactCommandMatch<T extends { command: string }>(
 }
 
 export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
-  const { userId, senderNickname, senderRole, content } = data;
+  const { userId, senderRole, content } = data;
 
   const contentWithoutPrefix = content.slice(1).trim();
 
