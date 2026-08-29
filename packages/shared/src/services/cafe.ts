@@ -1,11 +1,10 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
-import { buildGatePlan, buildImageTag, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
+import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
 import { decideSave, RETRY_MS, type SaveReason, viewerBucket } from '../lib/cafePolicy';
 import { parseYoutubeChannelPage, youtubeChannelUrl } from '../lib/youtube';
 import {
-  CAFE_MAX_WIDTH,
   type CafeLayout,
   cafeLayoutSchema,
   type CafeScene,
@@ -153,21 +152,22 @@ export async function requestGateFetch(prisma: PrismaClient, userId: number) {
   });
 }
 
-/** 지금 렌더될 장면의 레이아웃 크기 — 대문 <img> 의 width/height */
-function currentImageSize(row: { layout: unknown; lastSnapshot: unknown }) {
-  const layout = cafeLayoutSchema.safeParse(row.layout ?? {});
-  const parsed = layout.success ? layout.data : EMPTY_LAYOUT;
-  const snapshot = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
-  const scene: CafeScene = snapshot.success && snapshot.data.live ? 'live' : 'offline';
-  return { width: parsed[scene].width, height: parsed[scene].height };
-}
-
 /** 콘솔의 「대문 자리 고르기」에 필요한 것 — 렌더·고른 자리·들어 있는 블록·설정 완료 여부 */
 export async function getGate(prisma: PrismaClient, userId: number) {
-  const row = await prisma.cafeIntegration.findUnique({ where: { userId }, include: { assets: { select: { scene: true } } } });
+  const row = await prisma.cafeIntegration.findUnique({ where: { userId }, include: { assets: { select: { scene: true } }, user: { select: { channelId: true } } } });
   if (!row) return null;
   const picks = gatePicksSchema.safeParse(row.gatePicks ?? {});
+  const snapshot = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
   return {
+    /** 반영 현황 — 마지막 대문 변경·반영된 방송 상태·현재 대문 이미지 */
+    activity: {
+      gateUpdatedAt: row.gateUpdatedAt,
+      lastSavedAt: row.lastSavedAt,
+      serial: row.lastSaveSerial,
+      gateSerial: row.gateSerial,
+      snapshot: snapshot.success && row.lastSavedAt ? snapshot.data : null,
+      imageUrl: row.gateSerial > 0 ? cafeImageUrl(siteUrl(), row.user.channelId, row.gateSerial) : null,
+    },
     gateHtml: row.gateHtml,
     gateFetchedAt: row.gateFetchedAt,
     /** 워커 렌더 — 콘솔은 이 그림 위에 클릭 영역을 얹는다. 대문이 비어 있으면 null */
@@ -266,8 +266,6 @@ export async function listPendingActions(prisma: PrismaClient) {
       gateHtml: true,
       gatePicks: true,
       youtubeChannelId: true,
-      layout: true,
-      lastSnapshot: true,
       lastSaveSerial: true,
       user: { select: { channelName: true, channelId: true } },
       assets: { select: { scene: true } },
@@ -275,15 +273,14 @@ export async function listPendingActions(prisma: PrismaClient) {
     orderBy: { requestedAt: 'asc' },
   });
   //  SAVE_GATE 는 API 가 계획을 세우고 워커는 DOM 에서 실행만 한다 — 주소·크기·설정 완료 여부를 여기서 안다
-  return rows.map(({ gatePicks, youtubeChannelId, layout, lastSnapshot, lastSaveSerial, assets, ...row }) => {
+  return rows.map(({ gatePicks, youtubeChannelId, lastSaveSerial, assets, ...row }) => {
     const parsed = gatePicksSchema.safeParse(gatePicks ?? {});
     const picks = parsed.success ? parsed.data : EMPTY_PICKS;
-    const size = currentImageSize({ layout, lastSnapshot });
     const plan = row.pendingAction === 'SAVE_GATE' && row.gateHtml !== null
       ? buildGatePlan({
           html: row.gateHtml,
           picks,
-          image: { ready: assets.some((a) => a.scene === 'live'), src: cafeImageUrl(siteUrl(), row.user.channelId, lastSaveSerial), ...size, href: `https://chzzk.naver.com/live/${row.user.channelId}` },
+          image: { ready: assets.some((a) => a.scene === 'live'), src: cafeImageUrl(siteUrl(), row.user.channelId, lastSaveSerial), href: `https://chzzk.naver.com/live/${row.user.channelId}` },
           youtube: { channelId: youtubeChannelId },
         })
       : null;
@@ -348,6 +345,7 @@ export function completeGateSave(
       statusMessage: null,
       gateHtml: result.html,
       gateFetchedAt: new Date(),
+      ...(result.render ? { gateUpdatedAt: new Date() } : {}),
       gatePicks: result.picks,
       ...(result.render
         ? { gateImage: Buffer.from(result.render.png, 'base64'), gateBoxes: result.render.boxes, gateWidth: result.render.width, gateHeight: result.render.height }
@@ -371,12 +369,12 @@ export async function listActive(prisma: PrismaClient) {
 
 /**
  * 워커가 가져온 방송 상태로 저장 여부를 판정한다. 판정·일련번호·스냅샷은 전부 DB — 워커가 재시작해도 불필요한 저장이 없다.
- * 저장하기로 하면 일련번호를 올리고 새 <img> 태그(장면에 맞는 크기)를 준다. 이전 저장이 대문에 못 써졌으면(gateSerial 뒤처짐) 1분마다 재시도.
+ * 저장하기로 하면 일련번호를 올리고 새 이미지 주소를 준다 — <img> 크기는 워커가 대문의 기존 태그(지정한 요소 크기)에서 이어받는다. 이전 저장이 대문에 못 써졌으면(gateSerial 뒤처짐) 1분마다 재시도.
  */
 export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: CafeSnapshotInput, now = new Date()) {
   const row = await prisma.cafeIntegration.findUnique({
     where: { id },
-    select: { lastSnapshot: true, lastSavedAt: true, lastViewerBucket: true, lastSaveSerial: true, gateSerial: true, saveAttemptedAt: true, layout: true, user: { select: { channelId: true } } },
+    select: { lastSnapshot: true, lastSavedAt: true, lastViewerBucket: true, lastSaveSerial: true, gateSerial: true, saveAttemptedAt: true, user: { select: { channelId: true } } },
   });
   if (!row) return { save: null };
   const stored = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
@@ -386,10 +384,8 @@ export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: C
   if (!reason) return { save: null };
 
   let serial = row.lastSaveSerial;
-  let drawn = prev.snapshot ?? snapshot;
   if (reason !== 'retry') {
     serial += 1;
-    drawn = snapshot;
     await prisma.cafeIntegration.update({
       where: { id },
       data: { lastSaveSerial: serial, lastSnapshot: snapshot, lastSavedAt: now, lastViewerBucket: viewerBucket(snapshot.viewers), saveAttemptedAt: now },
@@ -397,16 +393,7 @@ export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: C
   } else {
     await prisma.cafeIntegration.update({ where: { id }, data: { saveAttemptedAt: now } });
   }
-  const layout = cafeLayoutSchema.safeParse(row.layout ?? {});
-  const parsed = layout.success ? layout.data : EMPTY_LAYOUT;
-  const size = parsed[drawn.live ? 'live' : 'offline'];
-  return {
-    save: {
-      reason,
-      serial,
-      imageTag: buildImageTag({ src: cafeImageUrl(siteUrl(), row.user.channelId, serial), width: size.width, height: size.height }),
-    },
-  };
+  return { save: { reason, serial, src: cafeImageUrl(siteUrl(), row.user.channelId, serial) } };
 }
 type CafeSnapshotInput = ReturnType<typeof cafeSnapshotSchema.parse>;
 
@@ -417,7 +404,7 @@ export function reportSave(
   result: { ok: true; serial: number; html: string } | { ok: false; message: string; missing?: boolean; html?: string },
 ) {
   if (result.ok) {
-    return prisma.cafeIntegration.update({ where: { id }, data: { gateSerial: result.serial, gateHtml: result.html, statusMessage: null } });
+    return prisma.cafeIntegration.update({ where: { id }, data: { gateSerial: result.serial, gateHtml: result.html, gateUpdatedAt: new Date(), statusMessage: null } });
   }
   return prisma.cafeIntegration.update({
     where: { id },
@@ -532,9 +519,9 @@ export async function uploadBackground(
   }
   const size = imageSize(buffer);
   if (!size) throw new ServiceError('INVALID_INPUT', 'PNG 또는 JPEG 파일만 올릴 수 있습니다.');
-  // 에디터가 업로드 전에 카페 대문 최대 폭(836)으로 줄여 보낸다 — 서버는 안전망으로만 거른다
-  if (size.width > CAFE_MAX_WIDTH || size.height > 4000) {
-    throw new ServiceError('INVALID_INPUT', `배경 가로는 ${CAFE_MAX_WIDTH}px 이하여야 합니다 (네이버 카페 대문 최대 폭).`);
+  //  크기 제한은 용량(2MB)뿐. 레이아웃 스키마 상한(4000)만 지킨다
+  if (size.width > 4000 || size.height > 4000) {
+    throw new ServiceError('INVALID_INPUT', '배경 이미지는 가로·세로 4000px 이하여야 합니다.');
   }
 
   const integration = await prisma.cafeIntegration.upsert({

@@ -21,6 +21,13 @@ export const IMAGE_TAG_SELECTOR = 'img[alt="chzzk-automation"]';
 /** 렌더 폭 = 네이버 대문 폭 */
 export const GATE_RENDER_WIDTH = 836;
 
+/** 표식 <img> 의 width/height 속성 — 갱신 때 크기를 그대로 이어받는다 (지정한 요소 크기) */
+export function imageSizeOf(tag: string): { width: number; height: number } | null {
+  const w = Number(tag.match(/\bwidth=["'](\d+)/i)?.[1]);
+  const h = Number(tag.match(/\bheight=["'](\d+)/i)?.[1]);
+  return w > 0 && h > 0 ? { width: w, height: h } : null;
+}
+
 export function cafeImageUrl(siteUrl: string, channelId: string, serial: number): string {
   return `${siteUrl.replace(/\/$/, '')}/cafe/${channelId}.png?v=${serial}`;
 }
@@ -93,19 +100,19 @@ export type GatePlan = { image: GateOp; youtube: GateOp };
 
 /**
  * 워커가 할 일. 설정이 미완인 자리(배경 없음 / 채널 없음)는 건드리지 않고 경로만 남긴다 —
- * 설정이 끝나면 다시 반영된다. 유튜브 크기는 고른 영역 크기, 이미지 크기는 레이아웃 크기.
+ * 설정이 끝나면 다시 반영된다. 블록 크기는 이미지·유튜브 모두 지정한 요소의 렌더 크기 그대로.
  */
 export function buildGatePlan(o: {
   html: string;
   picks: GatePicks;
-  image: { ready: boolean; src: string; width: number; height: number; href: string };
+  image: { ready: boolean; src: string; href: string };
   youtube: { channelId: string | null };
 }): GatePlan {
   const image: GateOp =
     o.picks.image === 'remove'
       ? findImageTags(o.html).length ? { kind: 'remove' } : null
       : o.picks.image && o.image.ready
-        ? { kind: 'replace', path: o.picks.image.path, html: buildImageBlock(o.image) }
+        ? { kind: 'replace', path: o.picks.image.path, html: buildImageBlock({ ...o.image, width: o.picks.image.w, height: o.picks.image.h }) }
         : null;
   const youtube: GateOp =
     o.picks.youtube === 'remove'

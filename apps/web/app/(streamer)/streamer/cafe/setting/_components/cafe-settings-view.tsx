@@ -72,7 +72,7 @@ export function CafeSettingsView() {
   const permitted = data.status === 'PERMISSION_OK' || data.status === 'ACTIVE';
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4 py-4">
+    <div className="flex max-w-[1344px] flex-col gap-4 py-4">
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
@@ -194,11 +194,11 @@ export function CafeSettingsView() {
 
           <Card className={permitted ? undefined : 'pointer-events-none opacity-50'}>
             <CardHeader>
-              <CardTitle>3. 대문에서 자리 고르기</CardTitle>
+              <CardTitle>3. 방송 상태 위치 설정</CardTitle>
               <CardDescription>
-                네이버에 보이는 그대로 렌더한 대문에서, 어떤 요소가 <strong>방송 상태 이미지</strong>가 되고 어떤 요소가 <strong>유튜브 영상</strong>이 될지 클릭해 고릅니다.
-                고른 요소는 그 블록으로 교체되고 크기는 그 요소를 따릅니다. 둘 다 선택 사항이며, 고르지 않으면 아무것도 넣지 않습니다.
-                이미지는 <Link href="/streamer/cafe/editor" className="underline">대문 이미지</Link>, 영상은 <Link href="/streamer/cafe/youtube" className="underline">유튜브 채널</Link> 설정이 끝나야 반영됩니다.
+                네이버와 동일하게 렌더된 대문에서 <strong>방송 상태 이미지</strong>와 <strong>유튜브 영상</strong>이 들어갈 요소를 클릭해 지정합니다.
+                지정한 요소는 해당 블록으로 교체되며 크기는 그 요소를 따릅니다. 두 항목 모두 선택 사항이며, 지정하지 않으면 반영하지 않습니다.
+                이미지는 <Link href="/streamer/cafe/editor" className="underline">대문 이미지</Link>, 영상은 <Link href="/streamer/cafe/youtube" className="underline">유튜브 채널</Link> 설정이 완료되어야 반영됩니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
@@ -207,12 +207,12 @@ export function CafeSettingsView() {
                   size="sm"
                   variant={gate?.gateHtml != null ? 'outline' : 'default'}
                   disabled={!permitted || busy || requestGateFetch.isPending}
-                  onClick={() => run(requestGateFetch.mutateAsync(), { loading: '요청 중...', success: '대문을 가져오는 중입니다. 잠시 후 표시됩니다.' })}
+                  onClick={() => run(requestGateFetch.mutateAsync(), { loading: '요청 중...', success: '대문을 불러오는 중입니다. 잠시 후 표시됩니다.' })}
                 >
-                  {gate?.gateHtml != null ? '대문 다시 가져오기' : '대문 가져오기'}
+                  {gate?.gateHtml != null ? '대문 다시 불러오기' : '대문 불러오기'}
                 </Button>
                 {gate?.gateFetchedAt && (
-                  <span className="text-xs text-muted-foreground">가져온 시각 {new Date(gate.gateFetchedAt).toLocaleString('ko-KR')}</span>
+                  <span className="text-xs text-muted-foreground">불러온 시각 {new Date(gate.gateFetchedAt).toLocaleString('ko-KR')}</span>
                 )}
                 {busy && data.pendingAction !== 'VERIFY' && <span className="text-xs text-muted-foreground">워커가 처리 중입니다…</span>}
               </div>
@@ -225,16 +225,61 @@ export function CafeSettingsView() {
                   present={gate.present}
                   ready={gate.ready}
                   disabled={busy || savePicks.isPending}
-                  onApply={(picks) => run(savePicks.mutateAsync(picks), { loading: '저장 중...', success: (r) => (r.applying ? '자리를 저장하고 대문에 반영하는 중입니다.' : '자리를 저장했습니다. 설정이 완료되면 반영됩니다.') })}
+                  onApply={(picks) => run(savePicks.mutateAsync(picks), { loading: '저장 중...', success: (r) => (r.applying ? '위치를 저장하고 대문에 반영하는 중입니다.' : '위치를 저장했습니다. 설정이 완료되면 반영됩니다.') })}
                 />
               )}
-              {data.status === 'ACTIVE' && (
-                <p className="text-sm text-green-700 dark:text-green-400">대문에 들어가 있습니다 — 방송 상태가 바뀌면 이미지가 자동으로 갱신됩니다.</p>
-              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>4. 반영 현황</CardTitle>
+              <CardDescription>대문이 마지막으로 변경된 시각과 현재 대문에 반영된 방송 상태입니다. 방송 상태는 30초마다 확인하며, 변화가 있을 때 대문을 갱신합니다.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ActivityPanel activity={gate?.activity ?? null} active={data.status === 'ACTIVE'} />
             </CardContent>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+type Activity = {
+  gateUpdatedAt: string | Date | null; lastSavedAt: string | Date | null; serial: number; gateSerial: number;
+  snapshot: { live: boolean; title: string; category: string; viewers: number; openedAt: string | null } | null; imageUrl: string | null;
+};
+
+function ActivityPanel({ activity, active }: { activity: Activity | null; active: boolean }) {
+  if (!activity) return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
+  const fmt = (d: string | Date | null) => (d ? new Date(d).toLocaleString('ko-KR') : '없음');
+  const s = activity.snapshot;
+  const pending = activity.gateSerial < activity.serial;
+  return (
+    <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        <dt className="text-muted-foreground">동작 상태</dt>
+        <dd>{active ? '동작 중 — 방송 상태에 따라 자동 갱신' : '중지 — 위치를 지정하고 반영하면 시작됩니다'}</dd>
+        <dt className="text-muted-foreground">마지막 대문 변경</dt>
+        <dd>{fmt(activity.gateUpdatedAt)}{activity.gateSerial > 0 && <span className="ml-2 font-mono text-xs text-muted-foreground">v{activity.gateSerial}</span>}</dd>
+        <dt className="text-muted-foreground">반영된 방송 상태</dt>
+        <dd>
+          {s ? (
+            s.live
+              ? `방송 중 · ${s.title || '(제목 없음)'} · ${s.category || '(카테고리 없음)'} · ${s.viewers.toLocaleString('ko-KR')}명${s.openedAt ? ` · ${new Date(s.openedAt).toLocaleString('ko-KR')} 시작` : ''}`
+              : '방송 종료'
+          ) : '아직 반영된 상태가 없습니다'}
+          {s && <span className="ml-2 text-xs text-muted-foreground">({fmt(activity.lastSavedAt)} 판정)</span>}
+          {pending && <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">v{activity.serial} 반영 대기 중</span>}
+        </dd>
+      </dl>
+      {activity.imageUrl && (
+        <figure className="flex flex-col gap-1">
+          <img src={activity.imageUrl} alt="현재 대문 이미지" className="max-h-40 w-auto max-w-[320px] rounded border" />
+          <figcaption className="text-xs text-muted-foreground">현재 대문 이미지</figcaption>
+        </figure>
+      )}
     </div>
   );
 }

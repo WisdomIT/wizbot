@@ -79,22 +79,21 @@ export function GatePicker({
         </>
       );
     }
-    return present[t] ? <span className="text-green-700 dark:text-green-400">대문에 들어 있음</span> : <span>고르지 않음 — 넣지 않습니다</span>;
+    return present[t] ? <span className="text-green-700 dark:text-green-400">대문에 반영됨</span> : <span>지정하지 않음 — 반영하지 않습니다</span>;
   };
 
   return (
     <div className="flex flex-col gap-3">
       {empty ? (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          {html.trim() ? '대문 미리보기를 만들지 못했습니다. 다시 가져와주세요.' : '대문이 비어 있어 자리를 고를 수 없습니다. 네이버 카페에서 대문을 먼저 꾸민 뒤 다시 가져와주세요.'}
+          {html.trim() ? '대문 미리보기를 만들지 못했습니다. 다시 불러와주세요.' : '대문이 비어 있어 위치를 지정할 수 없습니다. 네이버 카페에서 대문을 먼저 구성한 뒤 다시 불러와주세요.'}
         </p>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">고르는 중:</span>
             {(['image', 'youtube'] as Target[]).map((t) => (
               <Button key={t} size="sm" variant={target === t ? 'default' : 'outline'} onClick={() => setTarget(t)}>
-                <span className={cn('size-2 rounded-full', t === 'image' ? 'bg-pink-500' : 'bg-red-500')} /> {LABEL[t]} 자리
+                <span className={cn('size-2 rounded-full', t === 'image' ? 'bg-pink-500' : 'bg-red-500')} /> 현재 {LABEL[t]}
               </Button>
             ))}
           </div>
@@ -130,7 +129,7 @@ export function GatePicker({
         <li><span className="font-medium text-foreground">유튜브:</span> {status('youtube')}</li>
       </ul>
       <div className="flex justify-end">
-        <Button disabled={disabled || empty} onClick={() => onApply(picks)}>대문에 반영</Button>
+        <Button disabled={disabled || empty} onClick={() => onApply(picks)}>반영</Button>
       </div>
     </div>
   );
