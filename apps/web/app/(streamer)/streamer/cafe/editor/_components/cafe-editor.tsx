@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CAFE_ELEMENT_KINDS,
   CAFE_ELEMENT_LABEL,
+  CAFE_MAX_WIDTH,
   type CafeElement,
   type CafeElementKind,
   cafeElementSchema,
@@ -14,18 +15,20 @@ import {
   EMPTY_LAYOUT,
   OPENED_AT_FORMATS,
   SAMPLE_SNAPSHOT,
+  THUMBNAIL_RATIO,
 } from '@wizbot/shared/lib/cafeLayout';
 import { THEME_FONTS } from '@wizbot/shared/lib/theme';
 import { ImagePlus, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { FontLink } from '@/components/theme/font-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FONT_FAMILY } from '@/lib/fonts';
+import { ALL_FONT_KEYS, FONT_FAMILY } from '@/lib/fonts';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { type DragState,ElementBox } from './element-box';
@@ -65,7 +68,7 @@ export function CafeEditor({ channelId }: { channelId: string }) {
   }
   function addElement(kind: CafeElementKind) {
     const id = `${kind}-${Date.now().toString(36)}`;
-    const base = { id, x: 40, y: 40 + current.elements.length * 20, w: kind === 'thumbnail' ? 320 : 480, h: kind === 'thumbnail' ? 180 : 60 };
+    const base = { id, x: 40, y: 40 + current.elements.length * 20, w: kind === 'thumbnail' ? 320 : 480, h: kind === 'thumbnail' ? Math.round(320 / THUMBNAIL_RATIO) : 60 };
     const element = cafeElementSchema.parse(kind === 'thumbnail' ? { ...base, kind } : { ...base, kind, color: '#ffffff' });
     updateScene((elements) => [...elements, element]);
     setSelectedId(id);
@@ -76,25 +79,27 @@ export function CafeEditor({ channelId }: { channelId: string }) {
   }
 
   function handleUpload(file: File) {
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('배경 이미지는 2MB 이하여야 합니다.');
+    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+      toast.error('PNG 또는 JPEG 파일만 올릴 수 있습니다.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = String(reader.result).split(',')[1] ?? '';
+    //  네이버 카페 대문 최대 폭(836)으로 줄여서 보낸다 — 그보다 크면 캔버스도 커지고 대문에서 축소된다
+    void downscaleToWidth(file, CAFE_MAX_WIDTH).then(({ base64, resized }) => {
+      if (base64.length > 3 * 1024 * 1024) {
+        toast.error('줄인 뒤에도 2MB 를 넘습니다. 더 작은 이미지를 올려주세요.');
+        return;
+      }
       toast.promise(upload.mutateAsync({ scene, base64 }), {
         loading: '업로드 중...',
         success: (r) => {
           void queryClient.invalidateQueries(trpc.cafe.backgrounds.queryFilter());
           void queryClient.invalidateQueries(trpc.cafe.getLayout.queryFilter());
           setBgVersion((v) => v + 1);
-          return `배경을 올렸습니다 (${r.width}×${r.height}). 캔버스 크기를 맞췄습니다.`;
+          return `배경을 올렸습니다 (${r.width}×${r.height})${resized ? ' — 가로 836px 로 줄였습니다' : ''}. 캔버스 크기를 맞췄습니다.`;
         },
         error: (err) => (err instanceof Error ? err.message : String(err)),
       });
-    };
-    reader.readAsDataURL(file);
+    });
   }
 
   function handleSave() {
@@ -113,8 +118,12 @@ export function CafeEditor({ channelId }: { channelId: string }) {
   const usedKinds = new Set(current.elements.map((e) => e.kind));
   const previewUrl = `/cafe/${channelId}.png?preview=1&scene=${scene}&t=${Date.now()}`;
 
+  const imageOnly = scene === 'offline';
+
   return (
-    <div className="flex flex-col gap-4 py-4">
+    <div className="flex min-w-0 flex-col gap-4 py-4">
+      {/* 요소·속성 패널이 폰트를 실제 모양으로 보이도록 전체를 링크한다 */}
+      <FontLink keys={ALL_FONT_KEYS} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-md border p-1">
           {(['live', 'offline'] as const).map((s) => (
@@ -131,14 +140,15 @@ export function CafeEditor({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-        <div className="flex flex-col gap-3">
+      {/* minmax(0,1fr): 캔버스의 원본 폭이 열을 밀어 가로 스크롤을 만들지 않게 */}
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex min-w-0 flex-col gap-3">
           <Canvas
             key={`${scene}-${bgVersion}`}
             width={current.width}
             height={current.height}
             backgroundUrl={hasBackground ? `/cafe/${channelId}/background?scene=${scene}&v=${bgVersion}` : null}
-            elements={current.elements}
+            elements={imageOnly ? [] : current.elements}
             selectedId={selectedId}
             scene={scene}
             onSelect={setSelectedId}
@@ -155,18 +165,26 @@ export function CafeEditor({ channelId }: { channelId: string }) {
                 배경 삭제
               </Button>
             )}
-            <span className="text-xs text-muted-foreground">캔버스 {current.width}×{current.height} · 배경 이미지 크기를 따릅니다 (PNG/JPEG, 2MB)</span>
+            <span className="text-xs text-muted-foreground">캔버스 {current.width}×{current.height} · 배경 크기를 따릅니다 (PNG/JPEG, 가로 최대 836px, 2MB)</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {CAFE_ELEMENT_KINDS.map((kind) => (
-              <Button key={kind} variant="outline" size="sm" disabled={usedKinds.has(kind)} onClick={() => addElement(kind)}>
-                <Plus className="size-4" /> {CAFE_ELEMENT_LABEL[kind]}
-              </Button>
-            ))}
-          </div>
+          {imageOnly ? (
+            <p className="text-sm text-muted-foreground">방송 종료 화면은 배경 이미지만 씁니다 — 제목·시청자 수 같은 요소는 방송 중 화면에서 배치합니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {CAFE_ELEMENT_KINDS.map((kind) => (
+                <Button key={kind} variant="outline" size="sm" disabled={usedKinds.has(kind)} onClick={() => addElement(kind)}>
+                  <Plus className="size-4" /> {CAFE_ELEMENT_LABEL[kind]}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <PropertyPanel element={selected} onChange={(patch) => selected && updateElement(selected.id, patch)} onRemove={() => selected && removeElement(selected.id)} />
+        {imageOnly ? (
+          <div className="rounded-md border p-4 text-sm text-muted-foreground">방송 종료 화면에는 배치할 요소가 없습니다.</div>
+        ) : (
+          <PropertyPanel element={selected} onChange={(patch) => selected && updateElement(selected.id, patch)} onRemove={() => selected && removeElement(selected.id)} />
+        )}
       </div>
     </div>
   );
@@ -227,10 +245,16 @@ function PropertyPanel({ element, onChange, onRemove }: { element: CafeElement |
       </div>
     );
   }
+  //  썸네일은 16:9 고정 — 한쪽을 바꾸면 다른 쪽이 따라온다
+  const setSize = (key: 'x' | 'y' | 'w' | 'h', value: number) => {
+    if (element.kind === 'thumbnail' && key === 'w') return onChange({ w: value, h: Math.round(value / THUMBNAIL_RATIO) });
+    if (element.kind === 'thumbnail' && key === 'h') return onChange({ h: value, w: Math.round(value * THUMBNAIL_RATIO) });
+    onChange({ [key]: value } as Partial<CafeElement>);
+  };
   const num = (key: 'x' | 'y' | 'w' | 'h') => (
     <div className="flex flex-col gap-1">
       <Label className="text-xs uppercase">{key}</Label>
-      <Input type="number" value={Math.round(element[key])} onChange={(e) => onChange({ [key]: Number(e.target.value) } as Partial<CafeElement>)} className="h-8" />
+      <Input type="number" value={Math.round(element[key])} onChange={(e) => setSize(key, Number(e.target.value))} className="h-8" />
     </div>
   );
   return (
@@ -243,6 +267,7 @@ function PropertyPanel({ element, onChange, onRemove }: { element: CafeElement |
 
       {element.kind === 'thumbnail' ? (
         <>
+          <p className="text-xs text-muted-foreground">썸네일은 16:9 비율로 고정됩니다.</p>
           <Field label="맞춤">
             <Select value={element.fit} onValueChange={(fit) => onChange({ fit: fit as 'cover' | 'contain' })}>
               <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
@@ -289,7 +314,13 @@ function PropertyPanel({ element, onChange, onRemove }: { element: CafeElement |
               </div>
             </Field>
           </div>
-          <p className="text-xs text-muted-foreground">글자 크기가 「자동」이면 영역 높이의 80%로 시작해 가로를 넘지 않게 줄이고, 그래도 넘치면 …으로 자릅니다.</p>
+          <Field label="최대 줄 수">
+            <Select value={String(element.lines)} onValueChange={(lines) => onChange({ lines: Number(lines) } as Partial<CafeElement>)}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>{[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={String(n)}>{n}줄</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <p className="text-xs text-muted-foreground">글자 크기가 「자동」이면 (영역 높이 ÷ 줄 수)의 80%로 시작해 가로를 넘지 않게 줄이고, 그래도 넘치면 마지막 줄을 …으로 자릅니다.</p>
           {element.kind === 'openedAt' && (
             <Field label="시간 형식">
               <Select value={element.timeFormat} onValueChange={(timeFormat) => onChange({ timeFormat } as Partial<CafeElement>)}>
@@ -318,5 +349,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// 미사용 경고 방지 — useMemo 는 2b(스냅 계산)에서 쓴다
-void useMemo;
+
+/** 브라우저에서 가로를 maxWidth 로 줄여 base64 로. 원본이 작으면 그대로 */
+async function downscaleToWidth(file: File, maxWidth: number): Promise<{ base64: string; resized: boolean }> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxWidth / bitmap.width);
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  //  PNG 는 투명도를 지킨다. JPEG 원본은 JPEG 로 (용량)
+  const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+  const dataUrl = canvas.toDataURL(type, 0.92);
+  return { base64: dataUrl.split(',')[1] ?? '', resized: scale < 1 };
+}

@@ -14,7 +14,8 @@ import type { ThemeFontKey } from '@wizbot/shared/lib/theme';
  * Emoji 로 글자 단위 폴백한다 — 실측(2026-08-29): 폴백 체인 없이는 이모지와 "똠" 이 □ 로 나온다.
  */
 
-const FONT_DIR = path.join(process.cwd(), 'fonts');
+/** standalone 은 apps/web 으로 chdir 하지만, 다른 실행 방식(모노레포 루트)도 대비한다 */
+const FONT_DIR = [path.join(process.cwd(), 'fonts'), path.join(process.cwd(), 'apps/web/fonts')].find((dir) => existsSync(dir)) ?? path.join(process.cwd(), 'fonts');
 
 /** 키 → [파일, family]. 굵기는 Regular/Bold 파일 또는 변수 폰트 */
 const FILES: Record<ThemeFontKey, { family: string; files: string[] }> = {
