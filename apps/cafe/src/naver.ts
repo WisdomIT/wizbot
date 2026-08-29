@@ -110,3 +110,55 @@ export async function verifyGateAccess(cookies: NaverCookies, clubId: string): P
     return { ok: false, reason: 'NO_PERMISSION', message };
   });
 }
+
+/* ── 대문 HTML 읽기·쓰기 (#9 PR3) ── */
+
+export type GateResult = { ok: true; html: string } | Exclude<CheckResult, { ok: true }>;
+
+const GATE_URL = (clubId: string) => `https://cafe.naver.com/ManageGateEditor.nhn?clubid=${clubId}`;
+
+/**
+ * 편집기를 열어 HTML 모드로 전환하고 textarea 를 돌려준다.
+ * 실측 (2026-08-31): iframe(cafe_main) → Gate.nhn?m=viewEditorIframe, 폼 frmWrite 가 Gate.nhn 으로 POST,
+ * 저장 버튼 `a._click(ManageGateEditor|Submit)` 은 바깥 페이지에 있다. 저장 1회 ≈ 0.4초.
+ */
+async function openHtmlMode(page: Page, clubId: string): Promise<{ ok: true; textarea: ElementHandle<HTMLTextAreaElement> } | Exclude<CheckResult, { ok: true }>> {
+  await page.goto(GATE_URL(clubId), { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT });
+  if (bouncedToLogin(page)) {
+    return { ok: false, reason: 'SESSION_INVALID', message: '봇 계정의 네이버 세션이 만료됐습니다. 관리자에게 문의해주세요.' };
+  }
+  const frameHandle = await page.$('iframe[name="cafe_main"]');
+  const frame = frameHandle ? await frameHandle.contentFrame() : null;
+  const button = frame ? await frame.$('#elHtmlMode') : null;
+  if (!frame || !button) {
+    return { ok: false, reason: 'NO_PERMISSION', message: '대문 편집기를 열 수 없습니다. 봇의 디자인 스탭 권한을 확인해주세요.' };
+  }
+  await button.click();
+  const textarea = (await frame.waitForSelector('textarea[name="content"]', { timeout: NAV_TIMEOUT })) as ElementHandle<HTMLTextAreaElement> | null;
+  if (!textarea) return { ok: false, reason: 'UNKNOWN', message: 'HTML 편집 모드로 전환하지 못했습니다.' };
+  return { ok: true, textarea };
+}
+
+export async function readGate(cookies: NaverCookies, clubId: string): Promise<GateResult> {
+  return withPage(cookies, async (page) => {
+    const opened = await openHtmlMode(page, clubId);
+    if (!opened.ok) return opened;
+    return { ok: true, html: await opened.textarea.evaluate((el) => el.value) };
+  });
+}
+
+/** HTML 모드에 값을 넣고 저장한 뒤, 다시 열어 실제로 저장된 HTML 을 돌려준다 (네이버가 손댄 결과) */
+export async function writeGate(cookies: NaverCookies, clubId: string, html: string): Promise<GateResult> {
+  return withPage(cookies, async (page) => {
+    const opened = await openHtmlMode(page, clubId);
+    if (!opened.ok) return opened;
+    await opened.textarea.evaluate((el, value) => { el.value = value; }, html);
+    await Promise.all([
+      page.waitForNavigation({ timeout: NAV_TIMEOUT }),
+      page.click('a._click\\(ManageGateEditor\\|Submit\\)'),
+    ]);
+    const reopened = await openHtmlMode(page, clubId);
+    if (!reopened.ok) return reopened;
+    return { ok: true, html: await reopened.textarea.evaluate((el) => el.value) };
+  });
+}

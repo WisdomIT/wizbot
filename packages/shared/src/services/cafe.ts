@@ -1,6 +1,7 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { isYoutubeChannelId, parseCafeSlug, parseClubInfo } from '../lib/cafe';
+import { buildImageBlock, buildYoutubeTag, cafeImageUrl, findImageTags, imageSrcOf } from '../lib/cafeGate';
 import {
   CAFE_MAX_WIDTH,
   type CafeLayout,
@@ -124,6 +125,72 @@ export async function requestAction(prisma: PrismaClient, userId: number, action
   });
 }
 
+/* ── 대문 HTML 가져오기·삽입 (#9 PR3) ── */
+
+function isPermitted(status: CafeLinkStatus): boolean {
+  return status === 'PERMISSION_OK' || status === 'ACTIVE';
+}
+
+export function siteUrl(): string {
+  return (process.env.PUBLIC_SITE_URL ?? 'https://bot.wisdomit.co.kr').replace(/\/$/, '');
+}
+
+async function requirePermitted(prisma: PrismaClient, userId: number) {
+  const row = await requireLinked(prisma, userId);
+  if (!isPermitted(row.status)) throw new ServiceError('FORBIDDEN', '먼저 「권한 확인」을 통과해야 합니다.');
+  if (row.pendingAction) throw new ServiceError('CONFLICT', '이미 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.');
+  return row;
+}
+
+/** 대문 HTML 읽어오기 — 워커에게 시킨다 */
+export async function requestGateFetch(prisma: PrismaClient, userId: number) {
+  await requirePermitted(prisma, userId);
+  return prisma.cafeIntegration.update({
+    where: { userId },
+    data: { pendingAction: 'FETCH_GATE', requestedAt: new Date() },
+  });
+}
+
+/**
+ * 콘솔이 삽입 화면을 그리는 데 필요한 것 — 읽어온 대문 HTML 과 넣을 블록.
+ * 이미지 크기는 지금 렌더될 장면(마지막 스냅샷 기준)의 레이아웃 크기. 이후 저장마다 워커가 장면에 맞춰 다시 쓴다.
+ */
+export async function getGate(prisma: PrismaClient, userId: number) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelId: true, cafeIntegration: true } });
+  const row = user?.cafeIntegration;
+  if (!user || !row) return null;
+  const layout = cafeLayoutSchema.safeParse(row.layout ?? {});
+  const parsed = layout.success ? layout.data : EMPTY_LAYOUT;
+  const snapshot = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
+  const scene: CafeScene = snapshot.success && snapshot.data.live ? 'live' : 'offline';
+  const size = parsed[scene];
+  return {
+    gateHtml: row.gateHtml,
+    gateFetchedAt: row.gateFetchedAt,
+    imageBlock: buildImageBlock({
+      src: cafeImageUrl(siteUrl(), user.channelId, row.lastSaveSerial),
+      width: size.width,
+      height: size.height,
+      href: `https://chzzk.naver.com/live/${user.channelId}`,
+    }),
+    youtubeTag: row.youtubeChannelId ? buildYoutubeTag(row.youtubeChannelId, row.youtubeWidth, row.youtubeHeight) : null,
+  };
+}
+
+/** 스트리머가 자리를 골라 만든 HTML 을 저장 대기로 — 우리 이미지가 들어 있는지만 확인한다 (나머지는 스트리머의 대문이다) */
+export async function submitGate(prisma: PrismaClient, userId: number, html: string) {
+  const row = await requirePermitted(prisma, userId);
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelId: true } });
+  const prefix = `${siteUrl()}/cafe/${user?.channelId}.png`;
+  const ours = findImageTags(html).some((tag) => imageSrcOf(tag)?.startsWith(prefix));
+  if (!ours) throw new ServiceError('INVALID_INPUT', '위즈봇 이미지가 들어 있지 않습니다. 자리를 고른 뒤 다시 시도해주세요.');
+  if (!row.gateHtml) throw new ServiceError('INVALID_INPUT', '먼저 대문 HTML 을 가져와주세요.');
+  return prisma.cafeIntegration.update({
+    where: { userId },
+    data: { gateDraft: html, pendingAction: 'SAVE_GATE', requestedAt: new Date() },
+  });
+}
+
 /* ── 어드민: 가입 대기 목록 ── */
 
 export function listJoinRequests(prisma: PrismaClient) {
@@ -174,9 +241,33 @@ export function listPendingActions(prisma: PrismaClient) {
       clubId: true,
       cafeName: true,
       pendingAction: true,
+      gateHtml: true,
+      gateDraft: true,
       user: { select: { channelName: true } },
     },
     orderBy: { requestedAt: 'asc' },
+  });
+}
+
+/** 워커가 대문을 읽어왔다 */
+export function completeGateFetch(prisma: PrismaClient, id: number, html: string) {
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: { pendingAction: null, statusMessage: null, gateHtml: html, gateFetchedAt: new Date() },
+  });
+}
+
+/** 워커의 대문 저장 결과. 성공이면 ACTIVE — 이제부터 폴링·갱신 대상이다 */
+export function completeGateSave(
+  prisma: PrismaClient,
+  id: number,
+  result: { ok: true; html: string } | { ok: false; message: string },
+) {
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: result.ok
+      ? { pendingAction: null, gateDraft: null, status: 'ACTIVE', statusMessage: null, gateHtml: result.html, gateFetchedAt: new Date() }
+      : { pendingAction: null, gateDraft: null, statusMessage: result.message },
   });
 }
 

@@ -4,7 +4,9 @@ dotenv.config();
 
 import { createServer } from 'node:http';
 
-import { checkSession, closeBrowser, type NaverCookies, verifyGateAccess } from './naver';
+import { findImageTags, normalizeGateHtml } from '@wizbot/shared/lib/cafeGate';
+
+import { checkSession, closeBrowser, type NaverCookies, readGate, verifyGateAccess, writeGate } from './naver';
 import { trpc } from './trpc';
 
 for (const key of ['INTERNAL_API_TOKEN'] as const) {
@@ -32,35 +34,84 @@ async function getSession(): Promise<BotSession | null> {
   return session ? { nidAut: session.nidAut, nidSes: session.nidSes, updatedAt: session.updatedAt, checkedAt: session.checkedAt } : null;
 }
 
-/** 스트리머가 콘솔에서 시킨 일 — 권한 확인 (#9). 가입은 운영자가 직접 한다(보안문자) */
+type PendingAction = Awaited<ReturnType<typeof trpc.cafe.pendingActions.query>>[number];
+type ActionOutcome = { ok: true; log: string } | { ok: false; message: string; sessionInvalid?: boolean };
+
+/** 권한 확인 (#9 PR1) */
+async function runVerify(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
+  const result = await verifyGateAccess(cookies, action.clubId!);
+  if (result.ok) {
+    await trpc.cafe.completeAction.mutate({ id: action.id, status: 'PERMISSION_OK', message: null });
+    return { ok: true, log: '권한 확인' };
+  }
+  await trpc.cafe.completeAction.mutate({ id: action.id, status: 'PERMISSION_FAILED', message: result.message });
+  return { ok: false, message: result.message, sessionInvalid: result.reason === 'SESSION_INVALID' };
+}
+
+/** 대문 HTML 읽어오기 (#9 PR3) — 스트리머가 삽입 자리를 고를 수 있게 */
+async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
+  const result = await readGate(cookies, action.clubId!);
+  if (!result.ok) {
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message: result.message });
+    return { ok: false, message: result.message, sessionInvalid: result.reason === 'SESSION_INVALID' };
+  }
+  await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html });
+  return { ok: true, log: `대문 읽음 (${result.html.length}자)` };
+}
+
+/**
+ * 대문 저장 (#9 PR3). 스트리머가 고른 자리는 읽어온 HTML 기준이므로, 그사이 대문이 바뀌었으면
+ * 덮어쓰지 않고 다시 가져오게 한다. 저장 후 다시 읽어 우리 이미지가 남아 있는지 확인해야 ACTIVE.
+ */
+async function runSaveGate(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
+  const fail = async (message: string, sessionInvalid = false): Promise<ActionOutcome> => {
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message });
+    return { ok: false, message, sessionInvalid };
+  };
+  if (!action.gateDraft || action.gateHtml === null) return fail('저장할 HTML 이 없습니다. 대문을 다시 가져와주세요.');
+  const current = await readGate(cookies, action.clubId!);
+  if (!current.ok) return fail(current.message, current.reason === 'SESSION_INVALID');
+  if (normalizeGateHtml(current.html) !== normalizeGateHtml(action.gateHtml)) {
+    return fail('그사이 대문이 바뀌었습니다. 대문 HTML 을 다시 가져와 자리를 골라주세요.');
+  }
+  const saved = await writeGate(cookies, action.clubId!, action.gateDraft);
+  if (!saved.ok) return fail(saved.message, saved.reason === 'SESSION_INVALID');
+  if (findImageTags(saved.html).length === 0) {
+    return fail('저장은 됐지만 대문에서 위즈봇 이미지를 찾지 못했습니다. 네이버 편집기가 태그를 지웠을 수 있습니다 — 관리자에게 알려주세요.');
+  }
+  await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: true, html: saved.html });
+  return { ok: true, log: '대문 저장 · 동작 시작' };
+}
+
+/** 스트리머가 콘솔에서 시킨 일 — 권한 확인·대문 읽기·대문 저장 (#9). 가입은 운영자가 직접 한다(보안문자) */
 async function processActions(cookies: NaverCookies): Promise<void> {
   const actions = await trpc.cafe.pendingActions.query();
   for (const action of actions) {
-    const label = `[${action.user.channelName} → ${action.cafeName ?? action.clubId}]`;
+    const label = `[${action.user.channelName} → ${action.cafeName ?? action.clubId}] ${action.pendingAction}`;
     try {
-      const result = await verifyGateAccess(cookies, action.clubId!);
-      if (result.ok) {
-        await trpc.cafe.completeAction.mutate({ id: action.id, status: 'PERMISSION_OK', message: null });
-        console.log('✅', label, '권한 확인');
-      } else {
-        await trpc.cafe.completeAction.mutate({ id: action.id, status: 'PERMISSION_FAILED', message: result.message });
-        console.warn('⚠️', label, '권한 없음:', result.message);
-        // 세션 만료는 전체에 영향 — 즉시 보고하고 나머지는 다음 폴링에
-        if (result.reason === 'SESSION_INVALID') {
-          await trpc.cafe.reportSessionCheck.mutate({ valid: false, message: result.message });
-          lastSessionCheckAt = Date.now();
-          return;
-        }
+      const outcome = action.pendingAction === 'VERIFY'
+        ? await runVerify(cookies, action)
+        : action.pendingAction === 'FETCH_GATE'
+          ? await runFetchGate(cookies, action)
+          : await runSaveGate(cookies, action);
+      if (outcome.ok) {
+        console.log('✅', label, outcome.log);
+        continue;
+      }
+      console.warn('⚠️', label, outcome.message);
+      // 세션 만료는 전체에 영향 — 즉시 보고하고 나머지는 다음 폴링에
+      if (outcome.sessionInvalid) {
+        await trpc.cafe.reportSessionCheck.mutate({ valid: false, message: outcome.message });
+        lastSessionCheckAt = Date.now();
+        return;
       }
     } catch (error) {
       console.error('❌', label, '처리 오류:', error);
-      await trpc.cafe
-        .completeAction.mutate({
-          id: action.id,
-          status: 'PERMISSION_FAILED',
-          message: `처리 중 오류: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500),
-        })
-        .catch(() => null);
+      const message = `처리 중 오류: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500);
+      await (action.pendingAction === 'VERIFY'
+        ? trpc.cafe.completeAction.mutate({ id: action.id, status: 'PERMISSION_FAILED', message })
+        : trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message })
+      ).catch(() => null);
     }
   }
 }
