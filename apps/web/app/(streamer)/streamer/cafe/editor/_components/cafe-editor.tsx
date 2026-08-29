@@ -202,7 +202,7 @@ function Canvas({
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const el = ref.current; if (!el) return;
-    const ro = new ResizeObserver(() => setScale(Math.min(1, el.clientWidth / width)));
+    const ro = new ResizeObserver(() => setScale(el.clientWidth / width));
     ro.observe(el);
     return () => ro.disconnect();
   }, [width]);
