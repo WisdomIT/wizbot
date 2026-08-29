@@ -168,11 +168,29 @@ describe('봇 세션', () => {
   });
 });
 
-describe('setYoutube', () => {
-  it('채널 ID 형식 검증, 빈 값은 해제', async () => {
-    const { prisma, cafeIntegration } = createPrisma();
-    await expect(setYoutube(prisma, 7, { channelId: 'bad', width: 560, height: 315 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-    await setYoutube(prisma, 7, { channelId: '  ', width: 560, height: 315 });
-    expect(cafeIntegration.upsert.mock.calls[0][0].update).toMatchObject({ youtubeChannelId: null });
+describe('setYoutube — 주소를 채널 페이지에서 해석한다', () => {
+  const upsert = vi.fn().mockResolvedValue({});
+  const findUnique = vi.fn().mockResolvedValue(null);
+  const prisma = { cafeIntegration: { upsert, findUnique } } as unknown as PrismaClient;
+  const page = '<link rel="canonical" href="https://www.youtube.com/channel/UCAJ-meoCh1TrPZ7La3UpPrw"><meta property="og:title" content="빅헤드">';
+  const fetchOk = vi.fn().mockResolvedValue({ ok: true, text: async () => page });
+  beforeEach(() => { upsert.mockClear(); fetchOk.mockClear(); });
+
+  it('@핸들 주소 → UC ID·이름 저장', async () => {
+    const r = await setYoutube(prisma, 7, 'https://www.youtube.com/@%EB%B9%85%ED%97%A4%EB%93%9C', fetchOk);
+    expect(fetchOk.mock.calls[0][0]).toBe('https://www.youtube.com/@%EB%B9%85%ED%97%A4%EB%93%9C');
+    expect(r.channel).toEqual({ youtubeChannelId: 'UCAJ-meoCh1TrPZ7La3UpPrw', youtubeTitle: '빅헤드', youtubeUrl: 'https://www.youtube.com/@%EB%B9%85%ED%97%A4%EB%93%9C' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: r.channel }));
+  });
+  it('유튜브 주소가 아니면 INVALID_INPUT, 페이지에 채널이 없으면 NOT_FOUND', async () => {
+    await expect(setYoutube(prisma, 7, 'https://example.com', fetchOk)).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    await expect(setYoutube(prisma, 7, '@nobody', vi.fn().mockResolvedValue({ ok: true, text: async () => '<html></html>' }))).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(setYoutube(prisma, 7, '@nobody', vi.fn().mockResolvedValue({ ok: false, text: async () => '' }))).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+  it('null 이면 해제', async () => {
+    const r = await setYoutube(prisma, 7, null, fetchOk);
+    expect(r.channel).toBeNull();
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { youtubeChannelId: null, youtubeTitle: null, youtubeUrl: null } }));
+    expect(fetchOk).not.toHaveBeenCalled();
   });
 });

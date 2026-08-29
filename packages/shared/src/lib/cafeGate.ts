@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import { uploadsPlaylistId } from './cafe';
 
 /**
@@ -11,8 +13,11 @@ import { uploadsPlaylistId } from './cafe';
  */
 export const GATE_IMAGE_MARKER = 'chzzk-automation';
 
-/** 워커가 렌더한 대문의 요소 하나 — body 로부터의 자식 인덱스 경로와 CSS px 좌표 */
-export type GateBox = { path: number[]; tag: string; x: number; y: number; w: number; h: number };
+/** 워커가 렌더한 대문의 요소 하나 — body 로부터의 자식 인덱스 경로와 CSS px 좌표. marker 는 이미 들어 있는 위즈봇 블록 */
+export type GateBox = { path: number[]; tag: string; x: number; y: number; w: number; h: number; marker?: 'image' | 'youtube' };
+/** 위즈봇 유튜브 iframe 판별 — 업로드 재생목록(UU…) nocookie embed */
+export const YOUTUBE_TAG_SELECTOR = 'iframe[src^="https://www.youtube-nocookie.com/embed/videoseries?list=UU"]';
+export const IMAGE_TAG_SELECTOR = 'img[alt="chzzk-automation"]';
 /** 렌더 폭 = 네이버 대문 폭 */
 export const GATE_RENDER_WIDTH = 836;
 
@@ -60,4 +65,53 @@ export function imageSrcOf(tag: string): string | null {
 /** 읽어온 HTML 비교용 — 네이버가 줄 끝 공백·줄바꿈을 붙이므로 공백을 접어서 본다 */
 export function normalizeGateHtml(html: string): string {
   return html.replace(/\s+/g, ' ').trim();
+}
+
+const YOUTUBE_TAG_RE = /<iframe\b[^>]*\bsrc=["']https:\/\/www\.youtube-nocookie\.com\/embed\/videoseries\?list=UU[^"']*["'][^>]*>/gi;
+
+export function findYoutubeTags(html: string): string[] {
+  return html.match(YOUTUBE_TAG_RE) ?? [];
+}
+
+/* ── 자리 선택과 반영 계획 (#9) ── */
+
+/** 스트리머가 고른 요소 — 렌더 시점 HTML 의 경로와 그 요소의 렌더 크기(유튜브 iframe 크기가 된다) */
+export const gatePickSchema = z.object({
+  path: z.array(z.number().int().min(0)).min(1).max(40),
+  w: z.number().int().min(1).max(4000),
+  h: z.number().int().min(1).max(4000),
+});
+export type GatePick = z.infer<typeof gatePickSchema>;
+/** 객체 = 이 자리로 교체, 'remove' = 들어 있는 블록 제거, null = 그대로 */
+const pickStateSchema = z.union([gatePickSchema, z.literal('remove'), z.null()]).default(null);
+export const gatePicksSchema = z.object({ image: pickStateSchema, youtube: pickStateSchema });
+export type GatePicks = z.infer<typeof gatePicksSchema>;
+export const EMPTY_PICKS: GatePicks = { image: null, youtube: null };
+
+export type GateOp = { kind: 'replace'; path: number[]; html: string } | { kind: 'remove' } | null;
+export type GatePlan = { image: GateOp; youtube: GateOp };
+
+/**
+ * 워커가 할 일. 설정이 미완인 자리(배경 없음 / 채널 없음)는 건드리지 않고 경로만 남긴다 —
+ * 설정이 끝나면 다시 반영된다. 유튜브 크기는 고른 영역 크기, 이미지 크기는 레이아웃 크기.
+ */
+export function buildGatePlan(o: {
+  html: string;
+  picks: GatePicks;
+  image: { ready: boolean; src: string; width: number; height: number; href: string };
+  youtube: { channelId: string | null };
+}): GatePlan {
+  const image: GateOp =
+    o.picks.image === 'remove'
+      ? findImageTags(o.html).length ? { kind: 'remove' } : null
+      : o.picks.image && o.image.ready
+        ? { kind: 'replace', path: o.picks.image.path, html: buildImageBlock(o.image) }
+        : null;
+  const youtube: GateOp =
+    o.picks.youtube === 'remove'
+      ? findYoutubeTags(o.html).length ? { kind: 'remove' } : null
+      : o.picks.youtube && o.youtube.channelId
+        ? { kind: 'replace', path: o.picks.youtube.path, html: buildYoutubeTag(o.youtube.channelId, o.picks.youtube.w, o.picks.youtube.h) }
+        : null;
+  return { image, youtube };
 }

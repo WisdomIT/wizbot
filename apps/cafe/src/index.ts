@@ -4,9 +4,9 @@ dotenv.config();
 
 import { createServer } from 'node:http';
 
-import { findImageTags, normalizeGateHtml } from '@wizbot/shared/lib/cafeGate';
+import { findImageTags, findYoutubeTags, normalizeGateHtml } from '@wizbot/shared/lib/cafeGate';
 
-import { checkSession, closeBrowser, type NaverCookies, readGate, renderGate, verifyGateAccess, writeGate } from './naver';
+import { applyGatePlan, checkSession, closeBrowser, type NaverCookies, readGate, renderGate, verifyGateAccess, writeGate } from './naver';
 import { trpc } from './trpc';
 
 for (const key of ['INTERNAL_API_TOKEN'] as const) {
@@ -65,27 +65,40 @@ async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promi
 }
 
 /**
- * 대문 저장 (#9 PR3). 스트리머가 고른 자리는 읽어온 HTML 기준이므로, 그사이 대문이 바뀌었으면
- * 덮어쓰지 않고 다시 가져오게 한다. 저장 후 다시 읽어 우리 이미지가 남아 있는지 확인해야 ACTIVE.
+ * 대문 반영 (#9). API 가 세운 계획(어느 자리를 무슨 블록으로, 무엇을 뺄지)을 DOM 에서 실행해 저장한다.
+ * 고른 자리는 읽어온 HTML 기준이므로 그사이 대문이 바뀌었으면 덮어쓰지 않고(stale) 다시 고르게 한다.
+ * 저장 후 다시 읽어 블록이 남아 있어야 성공 — 네이버 편집기가 태그를 지울 수 있다.
  */
 async function runSaveGate(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
-  const fail = async (message: string, sessionInvalid = false): Promise<ActionOutcome> => {
-    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message });
-    return { ok: false, message, sessionInvalid };
+  const fail = async (message: string, opts: { sessionInvalid?: boolean; stale?: boolean } = {}): Promise<ActionOutcome> => {
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message, stale: opts.stale });
+    return { ok: false, message, sessionInvalid: opts.sessionInvalid };
   };
-  if (!action.gateDraft || action.gateHtml === null) return fail('저장할 HTML 이 없습니다. 대문을 다시 가져와주세요.');
+  if (!action.plan || action.gateHtml === null) return fail('반영할 내용이 없습니다. 대문을 다시 가져와주세요.');
   const current = await readGate(cookies, action.clubId!);
-  if (!current.ok) return fail(current.message, current.reason === 'SESSION_INVALID');
+  if (!current.ok) return fail(current.message, { sessionInvalid: current.reason === 'SESSION_INVALID' });
   if (normalizeGateHtml(current.html) !== normalizeGateHtml(action.gateHtml)) {
-    return fail('그사이 대문이 바뀌었습니다. 대문 HTML 을 다시 가져와 자리를 골라주세요.');
+    return fail('그사이 대문이 바뀌었습니다. 대문 HTML 을 다시 가져와 자리를 골라주세요.', { stale: true });
   }
-  const saved = await writeGate(cookies, action.clubId!, action.gateDraft);
-  if (!saved.ok) return fail(saved.message, saved.reason === 'SESSION_INVALID');
-  if (findImageTags(saved.html).length === 0) {
-    return fail('저장은 됐지만 대문에서 위즈봇 이미지를 찾지 못했습니다. 네이버 편집기가 태그를 지웠을 수 있습니다 — 관리자에게 알려주세요.');
+  const applied = await applyGatePlan(current.html, action.plan, action.picks);
+  if (!applied.ok) return fail(applied.message, { stale: true });
+  if (!applied.changed) {
+    //  아직 설정이 안 끝난 자리뿐 — 경로만 갱신해 두고 끝
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: true, html: current.html, picks: applied.picks, render: null });
+    return { ok: true, log: '반영할 블록 없음 (설정 대기)' };
   }
-  await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: true, html: saved.html });
-  return { ok: true, log: '대문 저장 · 동작 시작' };
+  const saved = await writeGate(cookies, action.clubId!, applied.html);
+  if (!saved.ok) return fail(saved.message, { sessionInvalid: saved.reason === 'SESSION_INVALID' });
+  if (action.plan.image?.kind === 'replace' && findImageTags(saved.html).length === 0) {
+    return fail('저장은 됐지만 대문에서 방송 상태 이미지를 찾지 못했습니다. 네이버 편집기가 태그를 지웠을 수 있습니다 — 관리자에게 알려주세요.');
+  }
+  if (action.plan.youtube?.kind === 'replace' && findYoutubeTags(saved.html).length === 0) {
+    return fail('저장은 됐지만 대문에서 유튜브 영상을 찾지 못했습니다. 네이버 편집기가 iframe 을 지웠을 수 있습니다 — 관리자에게 알려주세요.');
+  }
+  const render = await renderGate(saved.html).catch(() => null);
+  await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: true, html: saved.html, picks: applied.picks, render });
+  const done = [action.plan.image && `이미지 ${action.plan.image.kind}`, action.plan.youtube && `유튜브 ${action.plan.youtube.kind}`].filter(Boolean).join(', ');
+  return { ok: true, log: `대문 반영 (${done})` };
 }
 
 /** 스트리머가 콘솔에서 시킨 일 — 권한 확인·대문 읽기·대문 저장 (#9). 가입은 운영자가 직접 한다(보안문자) */

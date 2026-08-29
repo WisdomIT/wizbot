@@ -352,7 +352,7 @@ enum CafeAction {
   VERIFY
   /// 대문 HTML 읽어오기 — 스트리머가 삽입 위치를 고르기 위해
   FETCH_GATE
-  /// gateDraft 를 대문에 저장
+  /// gatePicks 를 대문에 반영
   SAVE_GATE
 }
 
@@ -383,10 +383,10 @@ model CafeIntegration {
   statusMessage    String?        @db.VarChar(500)
   pendingAction    CafeAction?
   requestedAt      DateTime?      @db.DateTime(6)
-  /// 유튜브 업로드 재생목록 embed — 채널 ID(UC…)와 크기
+  /// 유튜브 업로드 재생목록 embed — 채널 주소를 해석한 채널 ID(UC…). 크기는 대문에서 고른 영역을 따른다
   youtubeChannelId String?        @db.VarChar(24)
-  youtubeWidth     Int            @default(560)
-  youtubeHeight    Int            @default(315)
+  youtubeTitle     String?        @db.VarChar(100)
+  youtubeUrl       String?        @db.VarChar(200)
   /// 대문 이미지 레이아웃 — packages/shared/src/lib/cafeLayout.ts 의 CafeLayout
   layout           Json?
   /// 저장 일련번호. 이미지 URL 의 ?v= 가 되어 네이버 캐시를 무효화한다. 워커가 저장할 때마다 +1
@@ -401,8 +401,8 @@ model CafeIntegration {
   gateBoxes        Json?
   gateWidth        Int?
   gateHeight       Int?
-  /// 스트리머가 자리를 골라 만든 저장 대기 HTML — SAVE_GATE 액션이 대문에 쓴다
-  gateDraft        String?        @db.MediumText
+  /// 스트리머가 고른 자리 — lib/cafeGate.ts 의 GatePicks. 설정이 미완이면 경로만 들고 있다가 완료되면 반영
+  gatePicks        Json?
   updatedAt        DateTime       @updatedAt @db.DateTime(6)
 
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)

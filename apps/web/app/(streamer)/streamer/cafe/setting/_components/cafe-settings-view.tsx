@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CAFE_LINK_STATUS_LABEL } from '@wizbot/shared/lib/cafe';
 import { CheckCircle2, Circle, Clock, XCircle } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -10,7 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useTRPC } from '@/src/utils/trpc-react';
@@ -18,7 +18,8 @@ import { useTRPC } from '@/src/utils/trpc-react';
 import { GatePicker } from './gate-picker';
 
 /**
- * 네이버 카페 연동 설정 (#9) — 사용 여부(기본 꺼짐), 카페 연결, 봇 가입·권한 확인, 유튜브, 대문에 넣기.
+ * 네이버 카페 연동 설정 (#9) — 사용 여부(기본 꺼짐), 카페 연결, 봇 가입·권한 확인, 대문 자리 고르기.
+ * 대문 이미지와 유튜브 채널은 각자 메뉴에서 설정한다 — 여기서는 대문의 어느 요소가 무엇이 될지만 고른다.
  * 권한 확인은 워커가 15초 주기로 처리한다. 가입은 운영자가 직접 한다 — 카페 가입 폼에 보안문자가 있다.
  */
 export function CafeSettingsView() {
@@ -43,16 +44,12 @@ export function CafeSettingsView() {
   const link = useMutation(trpc.cafe.link.mutationOptions());
   const requestJoin = useMutation(trpc.cafe.requestJoin.mutationOptions());
   const requestVerify = useMutation(trpc.cafe.requestVerify.mutationOptions());
-  const setYoutube = useMutation(trpc.cafe.setYoutube.mutationOptions());
   const requestGateFetch = useMutation(trpc.cafe.requestGateFetch.mutationOptions());
-  const submitGate = useMutation(trpc.cafe.submitGate.mutationOptions());
+  const savePicks = useMutation(trpc.cafe.savePicks.mutationOptions());
 
   const [url, setUrl] = useState('');
-  const [yt, setYt] = useState({ channelId: '', width: 560, height: 315 });
   useEffect(() => {
-    if (!data) return;
-    setUrl(data.cafeUrl ?? '');
-    setYt({ channelId: data.youtubeChannelId ?? '', width: data.youtubeWidth, height: data.youtubeHeight });
+    if (data) setUrl(data.cafeUrl ?? '');
   }, [data]);
 
   if (isPending) return <Skeleton className="h-96 w-full" />;
@@ -195,81 +192,44 @@ export function CafeSettingsView() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>3. 유튜브 (선택)</CardTitle>
-              <CardDescription>
-                채널 ID 를 넣으면 대문에 업로드 재생목록이 들어갑니다. 새 영상은 자동으로 반영됩니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="yt">채널 ID</Label>
-                  <Input id="yt" value={yt.channelId} onChange={(e) => setYt({ ...yt, channelId: e.target.value.trim() })} placeholder="UC로 시작하는 24자" className="font-mono" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ytw">너비</Label>
-                  <Input id="ytw" type="number" className="w-24" value={yt.width} onChange={(e) => setYt({ ...yt, width: Number(e.target.value) })} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="yth">높이</Label>
-                  <Input id="yth" type="number" className="w-24" value={yt.height} onChange={(e) => setYt({ ...yt, height: Number(e.target.value) })} />
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  disabled={setYoutube.isPending}
-                  onClick={() =>
-                    run(setYoutube.mutateAsync({ channelId: yt.channelId || null, width: yt.width, height: yt.height }), {
-                      loading: '저장 중...',
-                      success: '유튜브 설정을 저장했습니다.',
-                    })
-                  }
-                >
-                  저장
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           <Card className={permitted ? undefined : 'pointer-events-none opacity-50'}>
             <CardHeader>
-              <CardTitle>4. 대문에 넣기</CardTitle>
+              <CardTitle>3. 대문에서 자리 고르기</CardTitle>
               <CardDescription>
-                대문 HTML 을 가져와 방송 상태 이미지{data.youtubeChannelId ? '와 유튜브' : ''}가 들어갈 자리를 고릅니다.
-                네이버에 보이는 그대로 렌더한 대문에서 요소를 클릭하면 그 요소가 교체되고, 고르지 않으면 맨 아래에 추가됩니다. 넣은 뒤부터 방송 상태에 따라 자동으로 갱신됩니다.
+                네이버에 보이는 그대로 렌더한 대문에서, 어떤 요소가 <strong>방송 상태 이미지</strong>가 되고 어떤 요소가 <strong>유튜브 영상</strong>이 될지 클릭해 고릅니다.
+                고른 요소는 그 블록으로 교체되고 크기는 그 요소를 따릅니다. 둘 다 선택 사항이며, 고르지 않으면 아무것도 넣지 않습니다.
+                이미지는 <Link href="/streamer/cafe/editor" className="underline">대문 이미지</Link>, 영상은 <Link href="/streamer/cafe/youtube" className="underline">유튜브 채널</Link> 설정이 끝나야 반영됩니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
-                  variant={gate?.gateHtml !== null && gate?.gateHtml !== undefined ? 'outline' : 'default'}
+                  variant={gate?.gateHtml != null ? 'outline' : 'default'}
                   disabled={!permitted || busy || requestGateFetch.isPending}
-                  onClick={() => run(requestGateFetch.mutateAsync(), { loading: '요청 중...', success: '대문 HTML 을 가져오는 중입니다. 잠시 후 표시됩니다.' })}
+                  onClick={() => run(requestGateFetch.mutateAsync(), { loading: '요청 중...', success: '대문을 가져오는 중입니다. 잠시 후 표시됩니다.' })}
                 >
-                  {gate?.gateHtml !== null && gate?.gateHtml !== undefined ? '대문 HTML 다시 가져오기' : '대문 HTML 가져오기'}
+                  {gate?.gateHtml != null ? '대문 다시 가져오기' : '대문 가져오기'}
                 </Button>
                 {gate?.gateFetchedAt && (
                   <span className="text-xs text-muted-foreground">가져온 시각 {new Date(gate.gateFetchedAt).toLocaleString('ko-KR')}</span>
                 )}
                 {busy && data.pendingAction !== 'VERIFY' && <span className="text-xs text-muted-foreground">워커가 처리 중입니다…</span>}
               </div>
-              {gate?.gateHtml !== null && gate?.gateHtml !== undefined && (
+              {gate?.gateHtml != null && (
                 <GatePicker
-                  key={gate.gateFetchedAt ? String(gate.gateFetchedAt) : 'none'}
+                  key={`${gate.gateFetchedAt ? String(gate.gateFetchedAt) : 'none'}-${JSON.stringify(gate.picks)}`}
                   html={gate.gateHtml}
                   render={gate.render}
-                  imageBlock={gate.imageBlock}
-                  youtubeTag={gate.youtubeTag}
-                  disabled={busy || submitGate.isPending}
-                  onSubmit={(html) => run(submitGate.mutateAsync({ html }), { loading: '요청 중...', success: '대문에 넣는 중입니다. 잠시 후 상태가 「동작 중」으로 바뀝니다.' })}
+                  initial={gate.picks}
+                  present={gate.present}
+                  ready={gate.ready}
+                  disabled={busy || savePicks.isPending}
+                  onApply={(picks) => run(savePicks.mutateAsync(picks), { loading: '저장 중...', success: (r) => (r.applying ? '자리를 저장하고 대문에 반영하는 중입니다.' : '자리를 저장했습니다. 설정이 완료되면 반영됩니다.') })}
                 />
               )}
               {data.status === 'ACTIVE' && (
-                <p className="text-sm text-green-700 dark:text-green-400">대문에 들어가 있습니다 — 방송 상태가 바뀌면 자동으로 갱신됩니다.</p>
+                <p className="text-sm text-green-700 dark:text-green-400">대문에 들어가 있습니다 — 방송 상태가 바뀌면 이미지가 자동으로 갱신됩니다.</p>
               )}
             </CardContent>
           </Card>

@@ -1,7 +1,8 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
-import { isYoutubeChannelId, parseCafeSlug, parseClubInfo } from '../lib/cafe';
-import { buildImageBlock, buildYoutubeTag, cafeImageUrl, findImageTags, type GateBox, imageSrcOf } from '../lib/cafeGate';
+import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
+import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
+import { parseYoutubeChannelPage, youtubeChannelUrl } from '../lib/youtube';
 import {
   CAFE_MAX_WIDTH,
   type CafeLayout,
@@ -32,8 +33,8 @@ const DEFAULTS = {
   pendingAction: null as CafeAction | null,
   requestedAt: null,
   youtubeChannelId: null,
-  youtubeWidth: 560,
-  youtubeHeight: 315,
+  youtubeTitle: null,
+  youtubeUrl: null,
 };
 
 export async function getIntegration(prisma: PrismaClient, userId: number) {
@@ -151,19 +152,20 @@ export async function requestGateFetch(prisma: PrismaClient, userId: number) {
   });
 }
 
-/**
- * 콘솔이 삽입 화면을 그리는 데 필요한 것 — 읽어온 대문 HTML 과 넣을 블록.
- * 이미지 크기는 지금 렌더될 장면(마지막 스냅샷 기준)의 레이아웃 크기. 이후 저장마다 워커가 장면에 맞춰 다시 쓴다.
- */
-export async function getGate(prisma: PrismaClient, userId: number) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelId: true, cafeIntegration: true } });
-  const row = user?.cafeIntegration;
-  if (!user || !row) return null;
+/** 지금 렌더될 장면의 레이아웃 크기 — 대문 <img> 의 width/height */
+function currentImageSize(row: { layout: unknown; lastSnapshot: unknown }) {
   const layout = cafeLayoutSchema.safeParse(row.layout ?? {});
   const parsed = layout.success ? layout.data : EMPTY_LAYOUT;
   const snapshot = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
   const scene: CafeScene = snapshot.success && snapshot.data.live ? 'live' : 'offline';
-  const size = parsed[scene];
+  return { width: parsed[scene].width, height: parsed[scene].height };
+}
+
+/** 콘솔의 「대문 자리 고르기」에 필요한 것 — 렌더·고른 자리·들어 있는 블록·설정 완료 여부 */
+export async function getGate(prisma: PrismaClient, userId: number) {
+  const row = await prisma.cafeIntegration.findUnique({ where: { userId }, include: { assets: { select: { scene: true } } } });
+  if (!row) return null;
+  const picks = gatePicksSchema.safeParse(row.gatePicks ?? {});
   return {
     gateHtml: row.gateHtml,
     gateFetchedAt: row.gateFetchedAt,
@@ -171,28 +173,20 @@ export async function getGate(prisma: PrismaClient, userId: number) {
     render: row.gateImage && row.gateWidth && row.gateHeight
       ? { png: Buffer.from(row.gateImage).toString('base64'), width: row.gateWidth, height: row.gateHeight, boxes: (row.gateBoxes ?? []) as GateBox[] }
       : null,
-    imageBlock: buildImageBlock({
-      src: cafeImageUrl(siteUrl(), user.channelId, row.lastSaveSerial),
-      width: size.width,
-      height: size.height,
-      href: `https://chzzk.naver.com/live/${user.channelId}`,
-    }),
-    youtubeTag: row.youtubeChannelId ? buildYoutubeTag(row.youtubeChannelId, row.youtubeWidth, row.youtubeHeight) : null,
+    picks: picks.success ? picks.data : EMPTY_PICKS,
+    /** 대문에 이미 들어 있는 블록 */
+    present: { image: !!row.gateHtml && findImageTags(row.gateHtml).length > 0, youtube: !!row.gateHtml && findYoutubeTags(row.gateHtml).length > 0 },
+    /** 자리를 골라도 이게 안 돼 있으면 반영하지 않는다 */
+    ready: { image: row.assets.some((a) => a.scene === 'live'), youtube: !!row.youtubeChannelId },
   };
 }
 
-/** 스트리머가 자리를 골라 만든 HTML 을 저장 대기로 — 우리 이미지가 들어 있는지만 확인한다 (나머지는 스트리머의 대문이다) */
-export async function submitGate(prisma: PrismaClient, userId: number, html: string) {
+/** 스트리머가 고른 자리 저장 → 워커에게 반영 요청. 고른 자리가 없고 뺄 것도 없으면 아무 일도 없다 */
+export async function savePicks(prisma: PrismaClient, userId: number, picks: GatePicks) {
   const row = await requirePermitted(prisma, userId);
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelId: true } });
-  const prefix = `${siteUrl()}/cafe/${user?.channelId}.png`;
-  const ours = findImageTags(html).some((tag) => imageSrcOf(tag)?.startsWith(prefix));
-  if (!ours) throw new ServiceError('INVALID_INPUT', '위즈봇 이미지가 들어 있지 않습니다. 자리를 고른 뒤 다시 시도해주세요.');
   if (!row.gateHtml) throw new ServiceError('INVALID_INPUT', '먼저 대문 HTML 을 가져와주세요.');
-  return prisma.cafeIntegration.update({
-    where: { userId },
-    data: { gateDraft: html, pendingAction: 'SAVE_GATE', requestedAt: new Date() },
-  });
+  await prisma.cafeIntegration.update({ where: { userId }, data: { gatePicks: picks } });
+  return { applying: await autoApplyGate(prisma, userId) };
 }
 
 /* ── 어드민: 가입 대기 목록 ── */
@@ -222,23 +216,46 @@ export async function markJoined(prisma: PrismaClient, id: number) {
   });
 }
 
-export async function setYoutube(
-  prisma: PrismaClient,
-  userId: number,
-  input: { channelId: string | null; width: number; height: number },
-) {
-  const channelId = input.channelId?.trim() || null;
-  if (channelId && !isYoutubeChannelId(channelId)) {
-    throw new ServiceError('INVALID_INPUT', '유튜브 채널 ID 는 UC 로 시작하는 24자입니다.');
+export type FetchTextLike = (url: string, init?: { headers?: Record<string, string> }) => Promise<{ ok: boolean; text(): Promise<string> }>;
+
+/**
+ * 유튜브 채널 연결 — 주소·@핸들·채널 ID 를 받아 채널 페이지에서 UC ID 를 찾는다. null 이면 해제.
+ * 대문에 유튜브 자리가 골라져 있으면 바로 반영을 시킨다.
+ */
+export async function setYoutube(prisma: PrismaClient, userId: number, input: string | null, fetchImpl: FetchTextLike = fetch) {
+  if (input === null || !input.trim()) {
+    await prisma.cafeIntegration.upsert({
+      where: { userId },
+      update: { youtubeChannelId: null, youtubeTitle: null, youtubeUrl: null },
+      create: { userId },
+    });
+    return { channel: null, applying: await autoApplyGate(prisma, userId) };
   }
-  const data = { youtubeChannelId: channelId, youtubeWidth: input.width, youtubeHeight: input.height };
-  return prisma.cafeIntegration.upsert({ where: { userId }, update: data, create: { userId, ...data } });
+  const url = youtubeChannelUrl(input);
+  if (!url) throw new ServiceError('INVALID_INPUT', '유튜브 채널 주소(youtube.com/@핸들 또는 /channel/…)나 @핸들을 넣어주세요.');
+  const response = await fetchImpl(url, { headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36', 'accept-language': 'ko,en' } }).catch(() => null);
+  if (!response?.ok) throw new ServiceError('NOT_FOUND', '유튜브 채널 페이지를 열 수 없습니다. 주소를 확인해주세요.');
+  const info = parseYoutubeChannelPage(await response.text());
+  if (!info) throw new ServiceError('NOT_FOUND', '채널을 찾지 못했습니다. 채널 홈 주소(youtube.com/@핸들)인지 확인해주세요.');
+  const data = { youtubeChannelId: info.channelId, youtubeTitle: info.title?.slice(0, 100) ?? null, youtubeUrl: url };
+  await prisma.cafeIntegration.upsert({ where: { userId }, update: data, create: { userId, ...data } });
+  return { channel: data, applying: await autoApplyGate(prisma, userId) };
+}
+
+/** 골라둔 자리가 있고 반영할 수 있는 상태면 워커에게 SAVE_GATE 를 시킨다 (설정 완료 시 자동 반영) */
+export async function autoApplyGate(prisma: PrismaClient, userId: number): Promise<boolean> {
+  const row = await prisma.cafeIntegration.findUnique({ where: { userId } });
+  if (!row?.clubId || !row.gateHtml || row.pendingAction || !isPermitted(row.status)) return false;
+  const picks = gatePicksSchema.safeParse(row.gatePicks ?? {});
+  if (!picks.success || (!picks.data.image && !picks.data.youtube)) return false;
+  await prisma.cafeIntegration.update({ where: { userId }, data: { pendingAction: 'SAVE_GATE', requestedAt: new Date() } });
+  return true;
 }
 
 /* ── 워커 (internal) ── */
 
-export function listPendingActions(prisma: PrismaClient) {
-  return prisma.cafeIntegration.findMany({
+export async function listPendingActions(prisma: PrismaClient) {
+  const rows = await prisma.cafeIntegration.findMany({
     where: { pendingAction: { not: null }, clubId: { not: null } },
     select: {
       id: true,
@@ -246,45 +263,30 @@ export function listPendingActions(prisma: PrismaClient) {
       cafeName: true,
       pendingAction: true,
       gateHtml: true,
-      gateDraft: true,
-      user: { select: { channelName: true } },
+      gatePicks: true,
+      youtubeChannelId: true,
+      layout: true,
+      lastSnapshot: true,
+      lastSaveSerial: true,
+      user: { select: { channelName: true, channelId: true } },
+      assets: { select: { scene: true } },
     },
     orderBy: { requestedAt: 'asc' },
   });
-}
-
-/** 워커가 대문을 읽고 렌더했다 */
-export function completeGateFetch(
-  prisma: PrismaClient,
-  id: number,
-  input: { html: string; render: { png: string; width: number; height: number; boxes: GateBox[] } | null },
-) {
-  return prisma.cafeIntegration.update({
-    where: { id },
-    data: {
-      pendingAction: null,
-      statusMessage: null,
-      gateHtml: input.html,
-      gateFetchedAt: new Date(),
-      gateImage: input.render ? Buffer.from(input.render.png, 'base64') : null,
-      gateBoxes: input.render ? input.render.boxes : [],
-      gateWidth: input.render?.width ?? null,
-      gateHeight: input.render?.height ?? null,
-    },
-  });
-}
-
-/** 워커의 대문 저장 결과. 성공이면 ACTIVE — 이제부터 폴링·갱신 대상이다 */
-export function completeGateSave(
-  prisma: PrismaClient,
-  id: number,
-  result: { ok: true; html: string } | { ok: false; message: string },
-) {
-  return prisma.cafeIntegration.update({
-    where: { id },
-    data: result.ok
-      ? { pendingAction: null, gateDraft: null, status: 'ACTIVE', statusMessage: null, gateHtml: result.html, gateFetchedAt: new Date() }
-      : { pendingAction: null, gateDraft: null, statusMessage: result.message },
+  //  SAVE_GATE 는 API 가 계획을 세우고 워커는 DOM 에서 실행만 한다 — 주소·크기·설정 완료 여부를 여기서 안다
+  return rows.map(({ gatePicks, youtubeChannelId, layout, lastSnapshot, lastSaveSerial, assets, ...row }) => {
+    const parsed = gatePicksSchema.safeParse(gatePicks ?? {});
+    const picks = parsed.success ? parsed.data : EMPTY_PICKS;
+    const size = currentImageSize({ layout, lastSnapshot });
+    const plan = row.pendingAction === 'SAVE_GATE' && row.gateHtml !== null
+      ? buildGatePlan({
+          html: row.gateHtml,
+          picks,
+          image: { ready: assets.some((a) => a.scene === 'live'), src: cafeImageUrl(siteUrl(), row.user.channelId, lastSaveSerial), ...size, href: `https://chzzk.naver.com/live/${row.user.channelId}` },
+          youtube: { channelId: youtubeChannelId },
+        })
+      : null;
+    return { ...row, picks, plan };
   });
 }
 
@@ -296,6 +298,60 @@ export function completeAction(
   return prisma.cafeIntegration.update({
     where: { id },
     data: { pendingAction: null, status: result.status, statusMessage: result.message },
+  });
+}
+
+export type GateRenderInput = { png: string; width: number; height: number; boxes: GateBox[] };
+
+/** 워커가 대문을 읽고 렌더했다. 대문이 바뀌었으면 고른 자리는 옛 경로라 버린다 */
+export async function completeGateFetch(prisma: PrismaClient, id: number, input: { html: string; render: GateRenderInput | null }) {
+  const row = await prisma.cafeIntegration.findUnique({ where: { id }, select: { gateHtml: true } });
+  const changed = normalizeGateHtml(row?.gateHtml ?? '') !== normalizeGateHtml(input.html);
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: {
+      pendingAction: null,
+      statusMessage: null,
+      gateHtml: input.html,
+      gateFetchedAt: new Date(),
+      ...(changed ? { gatePicks: EMPTY_PICKS } : {}),
+      gateImage: input.render ? Buffer.from(input.render.png, 'base64') : null,
+      gateBoxes: input.render ? input.render.boxes : [],
+      gateWidth: input.render?.width ?? null,
+      gateHeight: input.render?.height ?? null,
+    },
+  });
+}
+
+/**
+ * 워커의 대문 반영 결과. 블록이 하나라도 들어 있으면 ACTIVE(폴링 대상), 아니면 PERMISSION_OK.
+ * stale = 대문이 그사이 바뀜 → 고른 자리를 버리고 다시 고르게 한다
+ */
+export function completeGateSave(
+  prisma: PrismaClient,
+  id: number,
+  result: { ok: true; html: string; picks: GatePicks; render: GateRenderInput | null } | { ok: false; message: string; stale?: boolean },
+) {
+  if (!result.ok) {
+    return prisma.cafeIntegration.update({
+      where: { id },
+      data: { pendingAction: null, statusMessage: result.message, ...(result.stale ? { gatePicks: EMPTY_PICKS } : {}) },
+    });
+  }
+  const active = findImageTags(result.html).length > 0 || findYoutubeTags(result.html).length > 0;
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: {
+      pendingAction: null,
+      status: active ? 'ACTIVE' : 'PERMISSION_OK',
+      statusMessage: null,
+      gateHtml: result.html,
+      gateFetchedAt: new Date(),
+      gatePicks: result.picks,
+      ...(result.render
+        ? { gateImage: Buffer.from(result.render.png, 'base64'), gateBoxes: result.render.boxes, gateWidth: result.render.width, gateHeight: result.render.height }
+        : {}),
+    },
   });
 }
 
@@ -421,7 +477,10 @@ export async function uploadBackground(
   const layout = await getLayout(prisma, userId);
   layout[input.scene] = { ...layout[input.scene], width: size.width, height: size.height };
   await saveLayout(prisma, userId, layout);
-  return { scene: input.scene, width: size.width, height: size.height, bytes: buffer.length };
+  const saved = { scene: input.scene, width: size.width, height: size.height, bytes: buffer.length };
+  //  방송 중 배경이 생겼으면 골라둔 이미지 자리를 반영한다
+  if (input.scene === 'live') await autoApplyGate(prisma, userId);
+  return saved;
 }
 
 export async function deleteBackground(prisma: PrismaClient, userId: number, scene: CafeScene) {
