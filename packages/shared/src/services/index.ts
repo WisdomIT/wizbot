@@ -2,7 +2,7 @@ export * as accountService from './account';
 export * as cafeService from './cafe';
 export * as adminUsersService from './adminUsers';
 export * from './chzzkClient';
-export * as chzzkLiveService from './chzzkLive';
+export * as chzzkLiveService from '../lib/chzzkLive';
 export * as commandService from './command';
 export * from './errors';
 export * as playbackService from './playback';

@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import { gatePicksSchema } from '../lib/cafeGate';
-import { CAFE_SCENES, cafeLayoutSchema } from '../lib/cafeLayout';
+import { CAFE_SCENES, cafeLayoutSchema, cafeSnapshotSchema } from '../lib/cafeLayout';
 import { sendMail } from '../lib/nodemailer';
 import { cafeService } from '../services';
 import { adminProcedure, internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
@@ -154,6 +154,21 @@ export const cafeRouter = t.router({
       ),
     )
     .mutation(({ ctx, input }) => cafeService.completeGateSave(ctx.prisma, input.id, input)),
+  /* ── 워커: 방송 상태 폴링·대문 갱신 (#9 PR3b) ── */
+  activeIntegrations: internalProcedure.query(({ ctx }) => cafeService.listActive(ctx.prisma)),
+  evaluateLive: internalProcedure
+    .input(z.object({ id: z.number(), snapshot: cafeSnapshotSchema }))
+    .mutation(({ ctx, input }) => cafeService.evaluateLive(ctx.prisma, input.id, input.snapshot)),
+  reportSave: internalProcedure
+    .input(
+      z.object({ id: z.number() }).and(
+        z.discriminatedUnion('ok', [
+          z.object({ ok: z.literal(true), serial: z.number().int(), html: z.string().max(2 * 1024 * 1024) }),
+          z.object({ ok: z.literal(false), message: z.string().max(500), missing: z.boolean().optional(), html: z.string().max(2 * 1024 * 1024).optional() }),
+        ]),
+      ),
+    )
+    .mutation(({ ctx, input }) => cafeService.reportSave(ctx.prisma, input.id, input)),
   botSession: internalProcedure.query(async ({ ctx }) => {
     const row = await cafeService.getBotSession(ctx.prisma);
     //  updatedAt > checkedAt 이면 어드민이 새로 저장한 것 — 워커가 즉시 검사한다

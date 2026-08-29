@@ -1,7 +1,8 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
-import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
+import { buildGatePlan, buildImageTag, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
+import { decideSave, RETRY_MS, type SaveReason, viewerBucket } from '../lib/cafePolicy';
 import { parseYoutubeChannelPage, youtubeChannelUrl } from '../lib/youtube';
 import {
   CAFE_MAX_WIDTH,
@@ -12,7 +13,7 @@ import {
   EMPTY_LAYOUT,
   SAMPLE_SNAPSHOT,
 } from '../lib/cafeLayout';
-import { fetchLiveSnapshot } from './chzzkLive';
+import { fetchLiveSnapshot } from '../lib/chzzkLive';
 import { ServiceError } from './errors';
 
 /**
@@ -351,6 +352,79 @@ export function completeGateSave(
       ...(result.render
         ? { gateImage: Buffer.from(result.render.png, 'base64'), gateBoxes: result.render.boxes, gateWidth: result.render.width, gateHeight: result.render.height }
         : {}),
+    },
+  });
+}
+
+/* ── 방송 상태 폴링·대문 갱신 (#9 PR3b) ── */
+
+/** 폴링 대상 — 켜져 있고 동작 중이며 대문에 이미지 블록이 들어 있는 연동 */
+export async function listActive(prisma: PrismaClient) {
+  const rows = await prisma.cafeIntegration.findMany({
+    where: { enabled: true, status: 'ACTIVE', clubId: { not: null }, pendingAction: null },
+    select: { id: true, clubId: true, cafeName: true, gateHtml: true, user: { select: { channelId: true, channelName: true } } },
+  });
+  return rows
+    .filter((r) => r.gateHtml && findImageTags(r.gateHtml).length > 0)
+    .map((r) => ({ id: r.id, clubId: r.clubId!, cafeName: r.cafeName, channelId: r.user.channelId, channelName: r.user.channelName }));
+}
+
+/**
+ * 워커가 가져온 방송 상태로 저장 여부를 판정한다. 판정·일련번호·스냅샷은 전부 DB — 워커가 재시작해도 불필요한 저장이 없다.
+ * 저장하기로 하면 일련번호를 올리고 새 <img> 태그(장면에 맞는 크기)를 준다. 이전 저장이 대문에 못 써졌으면(gateSerial 뒤처짐) 1분마다 재시도.
+ */
+export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: CafeSnapshotInput, now = new Date()) {
+  const row = await prisma.cafeIntegration.findUnique({
+    where: { id },
+    select: { lastSnapshot: true, lastSavedAt: true, lastViewerBucket: true, lastSaveSerial: true, gateSerial: true, saveAttemptedAt: true, layout: true, user: { select: { channelId: true } } },
+  });
+  if (!row) return { save: null };
+  const stored = cafeSnapshotSchema.safeParse(row.lastSnapshot ?? {});
+  const prev = { snapshot: stored.success ? stored.data : null, savedAt: row.lastSavedAt, bucket: row.lastViewerBucket };
+  const reason: SaveReason | 'retry' | null = decideSave(prev, snapshot, now) ??
+    (row.gateSerial < row.lastSaveSerial && (!row.saveAttemptedAt || now.getTime() - row.saveAttemptedAt.getTime() >= RETRY_MS) ? 'retry' : null);
+  if (!reason) return { save: null };
+
+  let serial = row.lastSaveSerial;
+  let drawn = prev.snapshot ?? snapshot;
+  if (reason !== 'retry') {
+    serial += 1;
+    drawn = snapshot;
+    await prisma.cafeIntegration.update({
+      where: { id },
+      data: { lastSaveSerial: serial, lastSnapshot: snapshot, lastSavedAt: now, lastViewerBucket: viewerBucket(snapshot.viewers), saveAttemptedAt: now },
+    });
+  } else {
+    await prisma.cafeIntegration.update({ where: { id }, data: { saveAttemptedAt: now } });
+  }
+  const layout = cafeLayoutSchema.safeParse(row.layout ?? {});
+  const parsed = layout.success ? layout.data : EMPTY_LAYOUT;
+  const size = parsed[drawn.live ? 'live' : 'offline'];
+  return {
+    save: {
+      reason,
+      serial,
+      imageTag: buildImageTag({ src: cafeImageUrl(siteUrl(), row.user.channelId, serial), width: size.width, height: size.height }),
+    },
+  };
+}
+type CafeSnapshotInput = ReturnType<typeof cafeSnapshotSchema.parse>;
+
+/** 워커의 대문 갱신 결과. missing = 대문에서 이미지 블록이 사라짐 → 동작 중지, 자리를 다시 고르게 */
+export function reportSave(
+  prisma: PrismaClient,
+  id: number,
+  result: { ok: true; serial: number; html: string } | { ok: false; message: string; missing?: boolean; html?: string },
+) {
+  if (result.ok) {
+    return prisma.cafeIntegration.update({ where: { id }, data: { gateSerial: result.serial, gateHtml: result.html, statusMessage: null } });
+  }
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: {
+      statusMessage: result.message,
+      ...(result.missing ? { status: 'PERMISSION_OK' as CafeLinkStatus, gatePicks: EMPTY_PICKS } : {}),
+      ...(result.html !== undefined ? { gateHtml: result.html } : {}),
     },
   });
 }
