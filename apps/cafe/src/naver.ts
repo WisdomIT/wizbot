@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { type GateBox, GATE_RENDER_WIDTH } from '@wizbot/shared/lib/cafeGate';
+import { type GateBox, GATE_RENDER_WIDTH, type GatePicks, type GatePlan, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR } from '@wizbot/shared/lib/cafeGate';
 import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer';
 
 /**
@@ -190,22 +190,116 @@ export async function renderGate(html: string): Promise<GateRender | null> {
     const size = await page.evaluate(() => ({ w: document.body.scrollWidth, h: document.body.scrollHeight }));
     const height = Math.min(RENDER_MAX_HEIGHT, Math.max(1, size.h));
     await page.setViewport({ width: GATE_RENDER_WIDTH, height, deviceScaleFactor: 1 });
-    const boxes = await page.evaluate((maxH: number) => {
+    const boxes = await page.evaluate((maxH: number, imageSel: string, youtubeSel: string) => {
       const out: GateBox[] = [];
       const walk = (el: Element, path: number[]) => {
         const b = el.getBoundingClientRect();
         const y = Math.round(b.y + window.scrollY);
         //  줄바꿈·빈 요소는 고를 수 없다
         if (el.tagName !== 'BR' && b.width >= 1 && b.height >= 1 && y < maxH) {
-          out.push({ path, tag: el.tagName.toLowerCase(), x: Math.round(b.x), y, w: Math.round(b.width), h: Math.round(b.height) });
+          const marker = el.matches(imageSel) ? 'image' : el.matches(youtubeSel) ? 'youtube' : undefined;
+          out.push({ path, tag: el.tagName.toLowerCase(), x: Math.round(b.x), y, w: Math.round(b.width), h: Math.round(b.height), ...(marker ? { marker } : {}) });
         }
         Array.from(el.children).forEach((c, i) => walk(c, [...path, i]));
       };
       Array.from(document.body.children).forEach((c, i) => walk(c, [i]));
       return out;
-    }, height);
+    }, height, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR);
     const png = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: GATE_RENDER_WIDTH, height }, encoding: 'base64' });
     return { png: String(png), width: GATE_RENDER_WIDTH, height, boxes };
+  } finally {
+    await page.close().catch(() => null);
+  }
+}
+
+export type ApplyResult = { ok: true; html: string; picks: GatePicks; changed: boolean } | { ok: false; message: string };
+
+/**
+ * 반영 계획을 DOM 에서 실행한다 (#9). 렌더와 같은 크로미움 파서라 콘솔이 고른 경로가 같은 요소를 가리킨다.
+ * - replace: 고른 요소를 블록으로 교체. 다른 곳에 남은 옛 블록은 지운다(중복 방지)
+ * - remove : 들어 있는 블록 제거 (이미지는 <p><a><img></a></p> 껍데기까지)
+ * - 설정 미완으로 아직 안 넣은 자리는 교체 뒤의 새 경로로 돌려준다
+ */
+export async function applyGatePlan(html: string, plan: GatePlan, picks: GatePicks): Promise<ApplyResult> {
+  const page = await (await getBrowser()).newPage();
+  try {
+    return await page.evaluate(
+      (html: string, plan: GatePlan, picks: GatePicks, imageSel: string, youtubeSel: string): ApplyResult => {
+        const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+        const body = doc.body;
+        const resolve = (path: number[]): Element | null => {
+          let cur: Element | null = body;
+          for (const i of path) { cur = cur?.children[i] ?? null; if (!cur) return null; }
+          return cur === body ? null : cur;
+        };
+        const pathOf = (el: Element): number[] | null => {
+          const path: number[] = [];
+          let cur: Element | null = el;
+          while (cur && cur !== body) {
+            const parent: Element | null = cur.parentElement;
+            if (!parent) return null;
+            path.unshift(Array.prototype.indexOf.call(parent.children, cur));
+            cur = parent;
+          }
+          return cur === body ? path : null;
+        };
+        const target = { image: typeof picks.image === 'object' && picks.image ? resolve(picks.image.path) : null, youtube: typeof picks.youtube === 'object' && picks.youtube ? resolve(picks.youtube.path) : null };
+        if (typeof picks.image === 'object' && picks.image && !target.image) return { ok: false, message: '이미지 자리로 고른 요소를 대문에서 찾지 못했습니다. 대문을 다시 가져와 골라주세요.' };
+        if (typeof picks.youtube === 'object' && picks.youtube && !target.youtube) return { ok: false, message: '유튜브 자리로 고른 요소를 대문에서 찾지 못했습니다. 대문을 다시 가져와 골라주세요.' };
+
+        let changed = false;
+        const removeImageBlocks = (except: Node[]) => {
+          for (const img of Array.from(body.querySelectorAll(imageSel))) {
+            if (except.some((n) => n === img || n.contains(img))) continue;
+            const a = img.parentElement?.tagName === 'A' && img.parentElement.children.length === 1 ? img.parentElement : img;
+            const p = a.parentElement?.tagName === 'P' && a.parentElement.children.length === 1 && !(a.parentElement.textContent ?? '').trim() ? a.parentElement : a;
+            p.remove(); changed = true;
+          }
+        };
+        const removeYoutubeBlocks = (except: Node[]) => {
+          for (const f of Array.from(body.querySelectorAll(youtubeSel))) {
+            if (except.some((n) => n === f || n.contains(f))) continue;
+            f.remove(); changed = true;
+          }
+        };
+        const insert = (el: Element, markup: string, after: boolean): Node[] => {
+          const frag = doc.createRange().createContextualFragment(markup);
+          const nodes = Array.from(frag.childNodes);
+          if (after) el.after(frag); else el.replaceWith(frag);
+          changed = true;
+          return nodes;
+        };
+
+        const next: GatePicks = { image: picks.image, youtube: picks.youtube };
+        let imageNodes: Node[] = [];
+        let youtubeNodes: Node[] = [];
+        const sameTarget = !!target.image && target.image === target.youtube;
+        if (plan.image?.kind === 'replace' && target.image) {
+          imageNodes = insert(target.image, plan.image.html, false);
+          next.image = null;
+        }
+        if (plan.youtube?.kind === 'replace' && target.youtube) {
+          //  같은 요소를 골랐으면 이미지 뒤에 붙인다 (이미 교체돼 사라졌으므로)
+          const anchor = sameTarget && imageNodes.length ? (imageNodes[imageNodes.length - 1] as Element) : target.youtube;
+          youtubeNodes = insert(anchor, plan.youtube.html, sameTarget && imageNodes.length > 0);
+          next.youtube = null;
+        }
+        if (plan.image?.kind === 'replace' || plan.image?.kind === 'remove') removeImageBlocks(imageNodes);
+        if (plan.youtube?.kind === 'replace' || plan.youtube?.kind === 'remove') removeYoutubeBlocks(youtubeNodes);
+        if (plan.image?.kind === 'remove') next.image = null;
+        if (plan.youtube?.kind === 'remove') next.youtube = null;
+        //  아직 안 넣은 자리는 새 경로로 (교체로 밀렸을 수 있다). 사라졌으면 버린다
+        for (const key of ['image', 'youtube'] as const) {
+          const pick = next[key];
+          if (typeof pick !== 'object' || !pick) continue;
+          const el = target[key];
+          const path = el && body.contains(el) ? pathOf(el) : null;
+          next[key] = path ? { ...pick, path } : null;
+        }
+        return { ok: true, html: body.innerHTML, picks: next, changed };
+      },
+      html, plan, picks, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR,
+    );
   } finally {
     await page.close().catch(() => null);
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { BotMessageSquare, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User } from 'lucide-react';
+import { BotMessageSquare, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -72,6 +72,11 @@ const data = {
       name: '대문 이미지',
       url: '/streamer/cafe/editor',
       icon: <ImageIcon />,
+    },
+    {
+      name: '유튜브 채널',
+      url: '/streamer/cafe/youtube',
+      icon: <Youtube />,
     },
   ],
   setting: [

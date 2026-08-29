@@ -1,11 +1,27 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
+import { gatePicksSchema } from '../lib/cafeGate';
 import { CAFE_SCENES, cafeLayoutSchema } from '../lib/cafeLayout';
 import { sendMail } from '../lib/nodemailer';
 import { cafeService } from '../services';
 import { adminProcedure, internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
+const gateBoxSchema = z.object({
+  path: z.array(z.number().int()),
+  tag: z.string().max(32),
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  marker: z.enum(['image', 'youtube']).optional(),
+});
+const gateRenderSchema = z.object({
+  png: z.string().max(8 * 1024 * 1024),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  boxes: z.array(gateBoxSchema).max(2000),
+});
 const linkStatus = z.enum(['NONE', 'JOIN_REQUESTED', 'JOINED', 'JOIN_FAILED', 'PERMISSION_OK', 'PERMISSION_FAILED', 'ACTIVE']);
 
 /** 운영자에게 가입 요청 알림. 실패해도 요청은 성공이다 (SMTP 없는 개발 환경) */
@@ -57,14 +73,8 @@ export const cafeRouter = t.router({
     cafeService.requestAction(ctx.prisma, ctx.user.id, 'VERIFY'),
   ),
   setYoutube: streamerProcedure
-    .input(
-      z.object({
-        channelId: z.string().max(24).nullable(),
-        width: z.number().int().min(100).max(2000),
-        height: z.number().int().min(100).max(2000),
-      }),
-    )
-    .mutation(({ ctx, input }) => cafeService.setYoutube(ctx.prisma, ctx.user.id, input)),
+    .input(z.object({ input: z.string().max(200).nullable() }))
+    .mutation(({ ctx, input }) => cafeService.setYoutube(ctx.prisma, ctx.user.id, input.input)),
   /** 스트리머 안내용 — 카페에서 승인할 봇 계정 이름. 쿠키는 내려가지 않는다 */
   botName: streamerProcedure.query(async ({ ctx }) => {
     const session = await cafeService.getBotSessionMasked(ctx.prisma);
@@ -74,9 +84,9 @@ export const cafeRouter = t.router({
   /* ── 대문 HTML 가져오기·삽입 (#9 PR3) ── */
   requestGateFetch: streamerProcedure.mutation(({ ctx }) => cafeService.requestGateFetch(ctx.prisma, ctx.user.id)),
   gate: streamerProcedure.query(({ ctx }) => cafeService.getGate(ctx.prisma, ctx.user.id)),
-  submitGate: streamerProcedure
-    .input(z.object({ html: z.string().max(1024 * 1024) }))
-    .mutation(({ ctx, input }) => cafeService.submitGate(ctx.prisma, ctx.user.id, input.html)),
+  savePicks: streamerProcedure
+    .input(gatePicksSchema)
+    .mutation(({ ctx, input }) => cafeService.savePicks(ctx.prisma, ctx.user.id, input)),
 
   /* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
   getLayout: streamerProcedure.query(({ ctx }) => cafeService.getLayout(ctx.prisma, ctx.user.id)),
@@ -128,7 +138,7 @@ export const cafeRouter = t.router({
             png: z.string().max(8 * 1024 * 1024),
             width: z.number().int().positive(),
             height: z.number().int().positive(),
-            boxes: z.array(z.object({ path: z.array(z.number().int()), tag: z.string().max(32), x: z.number(), y: z.number(), w: z.number(), h: z.number() })).max(2000),
+            boxes: z.array(gateBoxSchema).max(2000),
           })
           .nullable(),
       }),
@@ -138,8 +148,8 @@ export const cafeRouter = t.router({
     .input(
       z.object({ id: z.number() }).and(
         z.discriminatedUnion('ok', [
-          z.object({ ok: z.literal(true), html: z.string().max(2 * 1024 * 1024) }),
-          z.object({ ok: z.literal(false), message: z.string().max(500) }),
+          z.object({ ok: z.literal(true), html: z.string().max(2 * 1024 * 1024), picks: gatePicksSchema, render: gateRenderSchema.nullable() }),
+          z.object({ ok: z.literal(false), message: z.string().max(500), stale: z.boolean().optional() }),
         ]),
       ),
     )
