@@ -1,9 +1,9 @@
+import type { PrismaClient, SignupApplication } from '@prisma/client';
 import { z } from 'zod';
 
 import { sendMail } from '../lib/nodemailer';
 import { signupService } from '../services';
 import { applicantProcedure, internalProcedure, t } from '../trpc';
-import type { PrismaClient, SignupApplication } from '@prisma/client';
 
 /**
  * 새 신청(또는 재신청)이 들어오면 관리자 전원에게 메일. 실패해도 신청 흐름을 막지 않는다 —

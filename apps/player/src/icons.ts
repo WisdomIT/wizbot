@@ -1,6 +1,7 @@
-import { app, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { app, nativeImage } from 'electron';
 
 /**
  * 트레이 아이콘.

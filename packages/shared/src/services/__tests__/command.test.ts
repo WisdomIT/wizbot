@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertCommandNameAvailable,
-  setCommandEnabled,
   createEchoCommand,
   createFunctionCommand,
   deleteEchoCommand,
   normalizeCommandName,
+  setCommandEnabled,
   updateEchoCommand,
 } from '../command';
 import { ServiceError } from '../errors';

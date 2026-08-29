@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { appRouter } from '..';
 import { clearSource } from '../../services/songEvents';
 import type { Context } from '../../trpc';
+import { appRouter } from '..';
 
 const USER_ID = 1;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGatePlan, buildImageBlock, imageSizeOf, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSrcOf, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
+import { buildGatePlan, buildImageBlock, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSizeOf, imageSrcOf, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
 import { parseYoutubeChannelPage, youtubeChannelUrl } from '../../lib/youtube';
 
 describe('카페 대문 블록 (#9 PR3)', () => {

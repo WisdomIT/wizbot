@@ -2,8 +2,6 @@ import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
 import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
-import { decideSave, RETRY_MS, type SaveReason, viewerBucket } from '../lib/cafePolicy';
-import { parseYoutubeChannelPage, youtubeChannelUrl } from '../lib/youtube';
 import {
   type CafeLayout,
   cafeLayoutSchema,
@@ -12,7 +10,9 @@ import {
   EMPTY_LAYOUT,
   SAMPLE_SNAPSHOT,
 } from '../lib/cafeLayout';
+import { decideSave, RETRY_MS, type SaveReason, viewerBucket } from '../lib/cafePolicy';
 import { fetchLiveSnapshot } from '../lib/chzzkLive';
+import { parseYoutubeChannelPage, youtubeChannelUrl } from '../lib/youtube';
 import { ServiceError } from './errors';
 
 /**

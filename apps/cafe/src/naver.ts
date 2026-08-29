@@ -1,5 +1,5 @@
-/* eslint-disable no-console */
-import { type GateBox, GATE_RENDER_WIDTH, type GatePicks, type GatePlan, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR } from '@wizbot/shared/lib/cafeGate';
+ 
+import { GATE_RENDER_WIDTH, type GateBox, type GatePicks, type GatePlan, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR } from '@wizbot/shared/lib/cafeGate';
 import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer';
 
 /**
