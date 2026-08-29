@@ -1,15 +1,6 @@
 'use client';
 
-import {
-  BotMessageSquare,
-  FileAudio2,
-  Link,
-  ListPlus,
-  Play,
-  Radio,
-  SquareChevronRight,
-  User,
-} from 'lucide-react';
+import { BotMessageSquare, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -76,6 +67,11 @@ const data = {
       name: '연동 설정',
       url: '/streamer/cafe/setting',
       icon: <Radio />,
+    },
+    {
+      name: '대문 이미지',
+      url: '/streamer/cafe/editor',
+      icon: <ImageIcon />,
     },
   ],
   setting: [

@@ -1,6 +1,14 @@
 import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { isYoutubeChannelId, parseCafeSlug, parseClubInfo } from '../lib/cafe';
+import {
+  type CafeLayout,
+  cafeLayoutSchema,
+  type CafeScene,
+  cafeSnapshotSchema,
+  EMPTY_LAYOUT,
+  SAMPLE_SNAPSHOT,
+} from '../lib/cafeLayout';
 import { ServiceError } from './errors';
 
 /**
@@ -228,4 +236,134 @@ export async function setBotSession(
     throw new ServiceError('INVALID_INPUT', '계정 이름과 두 쿠키 값을 모두 입력해주세요.');
   }
   return prisma.naverBotSession.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
+}
+
+/* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
+
+/** 배경 이미지 크기 제한 — DB(LONGBLOB)에 들어간다 */
+export const MAX_BACKGROUND_BYTES = 2 * 1024 * 1024;
+
+export async function getLayout(prisma: PrismaClient, userId: number): Promise<CafeLayout> {
+  const row = await prisma.cafeIntegration.findUnique({ where: { userId }, select: { layout: true } });
+  const parsed = cafeLayoutSchema.safeParse(row?.layout ?? {});
+  return parsed.success ? parsed.data : EMPTY_LAYOUT;
+}
+
+export async function saveLayout(prisma: PrismaClient, userId: number, layout: CafeLayout) {
+  const data = cafeLayoutSchema.parse(layout);
+  await prisma.cafeIntegration.upsert({
+    where: { userId },
+    update: { layout: data },
+    create: { userId, layout: data },
+  });
+  return data;
+}
+
+/** PNG 헤더에서 크기. JPEG 는 SOF 마커를 찾는다 — 업로드 검증용 최소 파서 */
+export function imageSize(buffer: Buffer): { width: number; height: number; mimeType: string } | null {
+  if (buffer.length > 24 && buffer.readUInt32BE(0) === 0x89504e47) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20), mimeType: 'image/png' };
+  }
+  if (buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) return null;
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+      // SOF0~SOF15 (차등·산술 마커 제외) 에 높이·너비가 있다
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7), mimeType: 'image/jpeg' };
+      }
+      offset += 2 + length;
+    }
+  }
+  return null;
+}
+
+/** 배경 업로드 — base64 로 받아 크기를 읽고 장면별로 1장 저장. 장면 캔버스 크기도 맞춘다 */
+export async function uploadBackground(
+  prisma: PrismaClient,
+  userId: number,
+  input: { scene: CafeScene; base64: string },
+) {
+  const buffer = Buffer.from(input.base64, 'base64');
+  if (buffer.length === 0 || buffer.length > MAX_BACKGROUND_BYTES) {
+    throw new ServiceError('INVALID_INPUT', '배경 이미지는 2MB 이하의 PNG 또는 JPEG 여야 합니다.');
+  }
+  const size = imageSize(buffer);
+  if (!size) throw new ServiceError('INVALID_INPUT', 'PNG 또는 JPEG 파일만 올릴 수 있습니다.');
+  if (size.width > 4000 || size.height > 4000) {
+    throw new ServiceError('INVALID_INPUT', '이미지 한 변은 4000px 이하여야 합니다.');
+  }
+
+  const integration = await prisma.cafeIntegration.upsert({
+    where: { userId },
+    update: {},
+    create: { userId },
+  });
+  await prisma.cafeAsset.upsert({
+    where: { integrationId_scene: { integrationId: integration.id, scene: input.scene } },
+    update: { mimeType: size.mimeType, width: size.width, height: size.height, data: buffer },
+    create: { integrationId: integration.id, scene: input.scene, mimeType: size.mimeType, width: size.width, height: size.height, data: buffer },
+  });
+  // 캔버스 크기 = 배경 크기
+  const layout = await getLayout(prisma, userId);
+  layout[input.scene] = { ...layout[input.scene], width: size.width, height: size.height };
+  await saveLayout(prisma, userId, layout);
+  return { scene: input.scene, width: size.width, height: size.height, bytes: buffer.length };
+}
+
+export async function deleteBackground(prisma: PrismaClient, userId: number, scene: CafeScene) {
+  const integration = await prisma.cafeIntegration.findUnique({ where: { userId }, select: { id: true } });
+  if (!integration) return;
+  await prisma.cafeAsset.deleteMany({ where: { integrationId: integration.id, scene } });
+}
+
+/** 배경 유무·크기 — 에디터용 (바이트는 렌더 경로로만) */
+export async function listBackgrounds(prisma: PrismaClient, userId: number) {
+  const integration = await prisma.cafeIntegration.findUnique({
+    where: { userId },
+    select: { assets: { select: { scene: true, width: true, height: true, mimeType: true, createdAt: true } } },
+  });
+  return integration?.assets ?? [];
+}
+
+/**
+ * 렌더 데이터 — web 의 /cafe/{channelId}.png 가 부른다 (public).
+ * v 를 주면 그 일련번호의 스냅샷(= 워커가 저장한 상태), preview 면 샘플 데이터.
+ * 배경 바이트는 base64 로 함께 — 렌더 결과는 v 로 영구 캐시되므로 부담이 없다.
+ */
+export async function getRenderData(
+  prisma: PrismaClient,
+  input: { channelId: string; scene?: CafeScene; preview: boolean },
+) {
+  const user = await prisma.user.findUnique({
+    where: { channelId: input.channelId },
+    select: { cafeIntegration: { include: { assets: true } } },
+  });
+  const integration = user?.cafeIntegration;
+  if (!integration || (!integration.enabled && !input.preview)) return null;
+
+  const layout = cafeLayoutSchema.safeParse(integration.layout ?? {});
+  const parsedLayout = layout.success ? layout.data : EMPTY_LAYOUT;
+
+  let snapshot;
+  if (input.preview) {
+    snapshot = SAMPLE_SNAPSHOT[input.scene ?? 'live'];
+  } else {
+    const stored = cafeSnapshotSchema.safeParse(integration.lastSnapshot ?? {});
+    snapshot = stored.success ? stored.data : SAMPLE_SNAPSHOT.offline;
+  }
+  const scene: CafeScene = input.preview ? (input.scene ?? 'live') : snapshot.live ? 'live' : 'offline';
+  const asset = integration.assets.find((a) => a.scene === scene) ?? null;
+
+  return {
+    scene,
+    layout: parsedLayout[scene],
+    snapshot,
+    serial: integration.lastSaveSerial,
+    background: asset
+      ? { mimeType: asset.mimeType, width: asset.width, height: asset.height, base64: Buffer.from(asset.data).toString('base64') }
+      : null,
+  };
 }

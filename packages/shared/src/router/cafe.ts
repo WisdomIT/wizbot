@@ -1,9 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
+import { CAFE_SCENES, cafeLayoutSchema } from '../lib/cafeLayout';
 import { sendMail } from '../lib/nodemailer';
 import { cafeService } from '../services';
-import { adminProcedure, internalProcedure, streamerProcedure, t } from '../trpc';
+import { adminProcedure, internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
 const linkStatus = z.enum(['NONE', 'JOIN_REQUESTED', 'JOINED', 'JOIN_FAILED', 'PERMISSION_OK', 'PERMISSION_FAILED', 'ACTIVE']);
 
@@ -69,6 +70,24 @@ export const cafeRouter = t.router({
     const session = await cafeService.getBotSessionMasked(ctx.prisma);
     return session?.displayName ?? null;
   }),
+
+  /* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
+  getLayout: streamerProcedure.query(({ ctx }) => cafeService.getLayout(ctx.prisma, ctx.user.id)),
+  saveLayout: streamerProcedure
+    .input(cafeLayoutSchema)
+    .mutation(({ ctx, input }) => cafeService.saveLayout(ctx.prisma, ctx.user.id, input)),
+  backgrounds: streamerProcedure.query(({ ctx }) => cafeService.listBackgrounds(ctx.prisma, ctx.user.id)),
+  uploadBackground: streamerProcedure
+    //  base64 는 원본의 4/3 — 2MB 원본이면 2.7MB
+    .input(z.object({ scene: z.enum(CAFE_SCENES), base64: z.string().max(3 * 1024 * 1024) }))
+    .mutation(({ ctx, input }) => cafeService.uploadBackground(ctx.prisma, ctx.user.id, input)),
+  deleteBackground: streamerProcedure
+    .input(z.object({ scene: z.enum(CAFE_SCENES) }))
+    .mutation(({ ctx, input }) => cafeService.deleteBackground(ctx.prisma, ctx.user.id, input.scene)),
+  /** web 의 /cafe/{channelId}.png 렌더용 (public — 결과 이미지도 공개다) */
+  renderData: publicProcedure
+    .input(z.object({ channelId: z.string(), scene: z.enum(CAFE_SCENES).optional(), preview: z.boolean().default(false) }))
+    .query(({ ctx, input }) => cafeService.getRenderData(ctx.prisma, input)),
 
   /* ── 어드민: 가입 대기 목록 ── */
   joinRequests: adminProcedure.query(({ ctx }) => cafeService.listJoinRequests(ctx.prisma)),

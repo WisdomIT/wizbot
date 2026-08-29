@@ -58,11 +58,17 @@ ENV NODE_ENV=production \
     PORT=3001 \
     HOSTNAME=0.0.0.0
 WORKDIR /app
+#  카페 대문 이미지 렌더(#9)의 폴백 폰트 — 한글 폰트에 없는 이모지·희귀 한글을 글자 단위로 대신 그린다
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji \
+ && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 # standalone 은 outputFileTracingRoot(모노레포 루트) 기준 구조로 나온다: /app/apps/web/server.js
 COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+#  렌더용 폰트(OFL, vendoring) — standalone 트레이싱에도 넣었지만 명시적으로 복사한다
+COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/fonts ./apps/web/fonts
 USER nextjs
 EXPOSE 3001
 CMD ["node", "apps/web/server.js"]
