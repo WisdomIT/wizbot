@@ -73,11 +73,16 @@ export async function checkSession(cookies: NaverCookies): Promise<CheckResult> 
 }
 
 /**
- * 대문 편집기 접근 가능 여부 = 봇이 그 카페의 매니저(대문 편집 권한)인가.
- * 편집기 iframe(cafe_main) 안에 HTML 모드 버튼(#elHtmlMode)이 있으면 권한이 있는 것이다.
+ * 대문 편집기 접근 가능 여부 = 봇이 그 카페에서 대문을 편집할 수 있는가.
+ * 실측(2026-08-29, 테스트 카페):
+ *   - 미승인/멤버 : "권한이 없습니다." 알림 후 카페 홈으로 리다이렉트, 편집기 없음
+ *   - 디자인 스탭 : ManageGateEditor 에 머물고 iframe(cafe_main) 안에 #elHtmlMode — 매니저가 아니어도 된다
+ * 권한이 없을 때는 카페 홈 텍스트로 단계를 구분한다: "가입 대기중" → 승인 대기, "카페 글쓰기" → 멤버.
  */
 export async function verifyGateAccess(cookies: NaverCookies, clubId: string): Promise<CheckResult> {
   return withPage(cookies, async (page) => {
+    const dialogs: string[] = [];
+    page.on('dialog', (dialog) => dialogs.push(dialog.message()));
     await page.goto(`https://cafe.naver.com/ManageGateEditor.nhn?clubid=${clubId}`, {
       waitUntil: 'networkidle0',
       timeout: NAV_TIMEOUT,
@@ -90,55 +95,18 @@ export async function verifyGateAccess(cookies: NaverCookies, clubId: string): P
     const hasEditor = frame ? !!(await frame.$('#elHtmlMode')) : false;
     if (hasEditor) return { ok: true };
 
-    const text = (await page.evaluate(() => document.body?.innerText ?? '')).replace(/\s+/g, ' ').slice(0, 200);
-    return {
-      ok: false,
-      reason: 'NO_PERMISSION',
-      message: `대문 편집기를 열 수 없습니다. 봇이 아직 카페 멤버가 아니거나 매니저 권한이 없습니다. (${text || page.url()})`,
-    };
-  });
-}
-
-/**
- * 카페 가입 신청. 가입 페이지는 SPA(ca-fe)라 마크업이 유동적이다 — 최선의 시도이며,
- * 질문·답변이 필수인 카페는 자동 가입이 불가하니 그대로 알린다.
- */
-export async function requestJoin(cookies: NaverCookies, clubId: string): Promise<CheckResult> {
-  return withPage(cookies, async (page) => {
-    await page.goto(`https://cafe.naver.com/ca-fe/cafes/${clubId}/join`, { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT });
-    if (bouncedToLogin(page)) {
-      return { ok: false, reason: 'SESSION_INVALID', message: '봇 계정의 네이버 세션이 만료됐습니다. 관리자에게 문의해주세요.' };
+    const text = (await page.evaluate(() => document.body?.innerText ?? '')).replace(/\s+/g, ' ');
+    const denied = dialogs.some((m) => m.includes('권한')) || /권한이 없/.test(text);
+    let message: string;
+    if (/가입 대기중/.test(text)) {
+      message = '봇의 가입 신청이 아직 승인되지 않았습니다. 카페 관리 → 멤버 관리에서 승인한 뒤 디자인 스탭(또는 매니저)으로 지정해주세요.';
+    } else if (/카페 글쓰기/.test(text)) {
+      message = '봇이 카페 멤버이지만 대문 편집 권한이 없습니다. 카페 관리 → 스탭 관리에서 디자인 스탭(또는 매니저)으로 지정해주세요.';
+    } else if (denied) {
+      message = '봇이 아직 카페 멤버가 아닙니다. 「봇 가입 신청」으로 운영자에게 가입을 요청해주세요.';
+    } else {
+      message = `대문 편집기를 열 수 없습니다. (${text.slice(0, 120) || page.url()})`;
     }
-    const snapshot = await page.evaluate(() => {
-      const text = (document.body?.innerText ?? '').replace(/\s+/g, ' ');
-      const questions = document.querySelectorAll('textarea, input[type="text"]').length;
-      const buttons = Array.from(document.querySelectorAll('button, a')).map((el) => (el.textContent ?? '').trim());
-      return { text: text.slice(0, 300), questions, buttons };
-    });
-    if (/이미 가입|가입된 카페|already/i.test(snapshot.text)) return { ok: true };
-    if (snapshot.questions > 1) {
-      return {
-        ok: false,
-        reason: 'NO_PERMISSION',
-        message: '가입 질문이 있는 카페라 자동 가입할 수 없습니다. 카페 관리에서 봇 계정을 직접 초대·승인해주세요.',
-      };
-    }
-    const submit = await page.evaluateHandle(() => {
-      const candidates = Array.from(document.querySelectorAll('button, a'));
-      return candidates.find((el) => /가입/.test(el.textContent ?? '') && !/취소/.test(el.textContent ?? '')) ?? null;
-    });
-    const element = submit.asElement() as ElementHandle<Element> | null;
-    if (!element) {
-      return {
-        ok: false,
-        reason: 'UNKNOWN',
-        message: `가입 버튼을 찾지 못했습니다. 카페 관리에서 봇 계정을 직접 초대해주세요. (${snapshot.text.slice(0, 120)})`,
-      };
-    }
-    await Promise.all([
-      page.waitForNavigation({ timeout: NAV_TIMEOUT }).catch(() => null),
-      element.click(),
-    ]);
-    return { ok: true };
+    return { ok: false, reason: 'NO_PERMISSION', message };
   });
 }

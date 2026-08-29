@@ -17,7 +17,7 @@ import { useTRPC } from '@/src/utils/trpc-react';
 
 /**
  * 네이버 카페 연동 설정 (#9 PR1) — 사용 여부(기본 꺼짐), 카페 연결, 봇 가입·권한 확인, 유튜브.
- * 실제 네이버 접속은 워커가 1분 주기로 처리하므로 요청 후 결과가 오기까지 최대 1분 걸린다.
+ * 권한 확인은 워커가 15초 주기로 처리한다. 가입은 운영자가 직접 한다 — 카페 가입 폼에 보안문자가 있다.
  */
 export function CafeSettingsView() {
   const trpc = useTRPC();
@@ -59,7 +59,8 @@ export function CafeSettingsView() {
 
   const linked = !!data.clubId;
   const busy = !!data.pendingAction;
-  const joined = ['JOIN_REQUESTED', 'PERMISSION_OK', 'ACTIVE', 'PERMISSION_FAILED'].includes(data.status);
+  const requested = data.status !== 'NONE';
+  const joined = ['JOINED', 'PERMISSION_OK', 'ACTIVE', 'PERMISSION_FAILED'].includes(data.status);
   const permitted = data.status === 'PERMISSION_OK' || data.status === 'ACTIVE';
 
   return (
@@ -130,7 +131,8 @@ export function CafeSettingsView() {
                 <StatusBadge status={data.status} busy={busy} />
               </div>
               <CardDescription>
-                위즈봇의 네이버 계정{botName ? ` (${botName})` : ''}이 카페 대문을 편집하려면 매니저 권한이 필요합니다.
+                위즈봇의 네이버 계정{botName ? ` (${botName})` : ''}이 카페 대문을 편집하려면 카페의{' '}
+                <strong>디자인 스탭</strong>(또는 매니저) 권한이 필요합니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -138,35 +140,39 @@ export function CafeSettingsView() {
                 n={1}
                 done={joined}
                 title="봇 가입 신청"
-                description="봇 계정이 카페에 가입을 신청합니다. 가입 질문이 필수인 카페는 직접 초대해주세요."
+                description={
+                  data.status === 'JOIN_REQUESTED'
+                    ? '운영자에게 요청했습니다. 운영자가 봇 계정으로 카페에 가입 신청하면 다음 단계로 넘어갑니다 (보통 하루 안).'
+                    : '요청하면 운영자가 봇 계정으로 카페에 가입을 신청합니다. 카페 가입에 보안문자가 있어 자동으로 할 수 없습니다.'
+                }
                 action={
                   <Button
                     size="sm"
-                    variant={joined ? 'outline' : 'default'}
-                    disabled={!linked || busy || requestJoin.isPending}
-                    onClick={() => run(requestJoin.mutateAsync(), { loading: '요청 중...', success: '가입 신청을 요청했습니다. 1분 안에 처리됩니다.' })}
+                    variant={requested ? 'outline' : 'default'}
+                    disabled={!linked || busy || requestJoin.isPending || data.status === 'JOIN_REQUESTED'}
+                    onClick={() => run(requestJoin.mutateAsync(), { loading: '요청 중...', success: '운영자에게 가입을 요청했습니다.' })}
                   >
-                    {joined ? '다시 신청' : '가입 신청'}
+                    {data.status === 'JOIN_REQUESTED' ? '요청됨' : requested ? '다시 요청' : '가입 신청'}
                   </Button>
                 }
               />
               <Step
                 n={2}
                 done={permitted}
-                title="카페에서 승인 · 매니저 지정"
-                description={`카페 관리 → 멤버 관리에서 ${botName ?? '봇 계정'}의 가입을 승인하고, 대문 편집 권한이 있는 매니저로 지정해주세요.`}
+                title="카페에서 승인 · 디자인 스탭 지정"
+                description={`카페 관리 → 멤버 관리에서 ${botName ?? '봇 계정'}의 가입을 승인한 뒤, 스탭 관리에서 디자인 스탭(또는 매니저)으로 지정해주세요. 대문 편집에는 디자인 스탭 권한이면 충분합니다.`}
               />
               <Step
                 n={3}
                 done={permitted}
                 title="권한 확인"
-                description="봇이 대문 편집기를 열 수 있는지 확인합니다. 확인되면 자동화를 시작할 수 있습니다."
+                description="봇이 대문 편집기를 열 수 있는지 확인합니다. 15초 안에 결과가 나오고, 확인되면 자동화를 시작할 수 있습니다."
                 action={
                   <Button
                     size="sm"
                     variant={permitted ? 'outline' : 'default'}
                     disabled={!linked || busy || requestVerify.isPending}
-                    onClick={() => run(requestVerify.mutateAsync(), { loading: '요청 중...', success: '권한 확인을 요청했습니다. 1분 안에 처리됩니다.' })}
+                    onClick={() => run(requestVerify.mutateAsync(), { loading: '요청 중...', success: '권한 확인을 요청했습니다. 잠시 후 결과가 표시됩니다.' })}
                   >
                     {permitted ? '다시 확인' : '권한 확인'}
                   </Button>
@@ -232,7 +238,7 @@ function StatusBadge({ status, busy }: { status: keyof typeof CAFE_LINK_STATUS_L
   }
   const failed = status.endsWith('FAILED');
   const ok = status === 'PERMISSION_OK' || status === 'ACTIVE';
-  return <Badge variant={failed ? 'destructive' : ok ? 'default' : 'outline'}>{CAFE_LINK_STATUS_LABEL[status]}</Badge>;
+  return <Badge variant={failed ? 'destructive' : ok ? 'default' : status === 'NONE' ? 'outline' : 'secondary'}>{CAFE_LINK_STATUS_LABEL[status]}</Badge>;
 }
 
 function Step({ n, done, title, description, action }: { n: number; done: boolean; title: string; description: string; action?: React.ReactNode }) {
