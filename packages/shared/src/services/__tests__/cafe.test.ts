@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isYoutubeChannelId, parseCafeSlug, parseClubInfo, uploadsPlaylistId } from '../../lib/cafe';
-import { completeAction, decodeHtml, getBotSessionMasked, linkCafe, requestAction, setBotSession, setYoutube } from '../cafe';
+import { completeAction, decodeHtml, getBotSessionMasked, linkCafe, markJoined, requestAction, requestJoin, setBotSession, setYoutube } from '../cafe';
 
 describe('parseCafeSlug', () => {
   it.each([
@@ -104,23 +104,46 @@ describe('linkCafe', () => {
   });
 });
 
+describe('requestJoin — 운영자에게 가입 요청 (보안문자 때문에 봇이 직접 못 한다)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('상태를 JOIN_REQUESTED 로, 워커 작업(pendingAction)은 만들지 않는다', async () => {
+    const { prisma, cafeIntegration } = createPrisma();
+    cafeIntegration.findUnique.mockResolvedValue({ id: 1, clubId: '1', status: 'NONE' });
+    await requestJoin(prisma, 7);
+    const data = cafeIntegration.update.mock.calls[0][0].data;
+    expect(data).toMatchObject({ status: 'JOIN_REQUESTED' });
+    expect(data).not.toHaveProperty('pendingAction');
+  });
+  it('이미 요청했으면 CONFLICT', async () => {
+    const { prisma, cafeIntegration } = createPrisma();
+    cafeIntegration.findUnique.mockResolvedValue({ id: 1, clubId: '1', status: 'JOIN_REQUESTED' });
+    await expect(requestJoin(prisma, 7)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+  it('운영자의 「가입 완료」 → JOINED', async () => {
+    const { prisma, cafeIntegration } = createPrisma();
+    cafeIntegration.findUnique.mockResolvedValue({ id: 1, status: 'JOIN_REQUESTED' });
+    await expect(markJoined(prisma, 1)).resolves.toMatchObject({ status: 'JOINED' });
+  });
+});
+
 describe('requestAction / completeAction', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('카페 연결 전엔 요청할 수 없다', async () => {
     const { prisma } = createPrisma();
-    await expect(requestAction(prisma, 7, 'JOIN')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    await expect(requestAction(prisma, 7, 'VERIFY')).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
   it('처리 중인 요청이 있으면 CONFLICT', async () => {
     const { prisma, cafeIntegration } = createPrisma();
-    cafeIntegration.findUnique.mockResolvedValue({ clubId: '1', pendingAction: 'JOIN' });
+    cafeIntegration.findUnique.mockResolvedValue({ clubId: '1', pendingAction: 'VERIFY' });
     await expect(requestAction(prisma, 7, 'VERIFY')).rejects.toMatchObject({ code: 'CONFLICT' });
   });
   it('봇 세션이 없으면 FORBIDDEN — 관리자가 먼저 등록해야 한다', async () => {
     const { prisma, cafeIntegration, naverBotSession } = createPrisma();
     cafeIntegration.findUnique.mockResolvedValue({ clubId: '1', pendingAction: null });
     naverBotSession.findUnique.mockResolvedValue(null);
-    await expect(requestAction(prisma, 7, 'JOIN')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(requestAction(prisma, 7, 'VERIFY')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
   it('정상이면 pendingAction 을 세우고, 워커의 완료 보고가 지운다', async () => {
     const { prisma, cafeIntegration } = createPrisma();

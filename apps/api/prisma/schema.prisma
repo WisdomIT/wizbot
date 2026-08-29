@@ -334,9 +334,13 @@ model SongFavoriteItem {
 }
 
 /// 네이버 카페 연동 상태 (#9). 봇 계정이 카페 매니저가 되는 과정을 따라간다.
+/// 가입은 운영자가 봇 계정으로 직접 한다 — 카페 가입 폼에 보안문자(CAPTCHA)가 있어 자동화할 수 없다 (실측 2026-08-29).
 enum CafeLinkStatus {
   NONE
+  /// 스트리머가 요청함 → 운영자 가입 대기
   JOIN_REQUESTED
+  /// 운영자가 가입 신청을 마침 → 스트리머 승인·스탭 지정 대기
+  JOINED
   JOIN_FAILED
   PERMISSION_OK
   PERMISSION_FAILED
@@ -345,7 +349,6 @@ enum CafeLinkStatus {
 
 /// 워커에게 시키는 일. 처리하면 null 로 돌아온다
 enum CafeAction {
-  JOIN
   VERIFY
 }
 

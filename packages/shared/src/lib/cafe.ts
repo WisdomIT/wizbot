@@ -36,7 +36,8 @@ export function uploadsPlaylistId(channelId: string): string {
 
 export const CAFE_LINK_STATUS_LABEL = {
   NONE: '연결 전',
-  JOIN_REQUESTED: '봇 가입 신청됨',
+  JOIN_REQUESTED: '운영자 가입 대기',
+  JOINED: '가입 신청됨 · 승인 대기',
   JOIN_FAILED: '가입 실패',
   PERMISSION_OK: '권한 확인됨',
   PERMISSION_FAILED: '권한 없음',

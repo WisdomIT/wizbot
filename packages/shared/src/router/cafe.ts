@@ -1,9 +1,36 @@
+import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
+import { sendMail } from '../lib/nodemailer';
 import { cafeService } from '../services';
 import { adminProcedure, internalProcedure, streamerProcedure, t } from '../trpc';
 
-const linkStatus = z.enum(['NONE', 'JOIN_REQUESTED', 'JOIN_FAILED', 'PERMISSION_OK', 'PERMISSION_FAILED', 'ACTIVE']);
+const linkStatus = z.enum(['NONE', 'JOIN_REQUESTED', 'JOINED', 'JOIN_FAILED', 'PERMISSION_OK', 'PERMISSION_FAILED', 'ACTIVE']);
+
+/** 운영자에게 가입 요청 알림. 실패해도 요청은 성공이다 (SMTP 없는 개발 환경) */
+async function notifyAdminsOfJoinRequest(
+  prisma: PrismaClient,
+  request: { channelName: string; cafeName: string | null; clubId: string | null },
+) {
+  try {
+    const admins = await prisma.admin.findMany({ select: { email: true } });
+    if (admins.length === 0) return;
+    const site = process.env.PUBLIC_SITE_URL ?? '';
+    await sendMail({
+      to: admins.map((admin) => admin.email).join(','),
+      subject: `[위즈봇] 카페 가입 요청: ${request.cafeName ?? request.clubId}`,
+      text: [
+        `${request.channelName} 채널이 카페 대문 자동화를 위해 봇 계정의 카페 가입을 요청했습니다.`,
+        `카페: ${request.cafeName ?? ''} (clubid ${request.clubId})`,
+        `가입 페이지: https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join`,
+        '',
+        `처리: ${site}/admin/naver-bot`,
+      ].join('\n'),
+    });
+  } catch {
+    /* 알림 실패는 요청과 무관하다 */
+  }
+}
 
 /** 네이버 카페 연동 (#9) */
 export const cafeRouter = t.router({
@@ -15,9 +42,16 @@ export const cafeRouter = t.router({
   link: streamerProcedure
     .input(z.object({ url: z.string().max(200) }))
     .mutation(({ ctx, input }) => cafeService.linkCafe(ctx.prisma, ctx.user.id, input.url)),
-  requestJoin: streamerProcedure.mutation(({ ctx }) =>
-    cafeService.requestAction(ctx.prisma, ctx.user.id, 'JOIN'),
-  ),
+  requestJoin: streamerProcedure.mutation(async ({ ctx }) => {
+    const row = await cafeService.requestJoin(ctx.prisma, ctx.user.id);
+    const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id }, select: { channelName: true } });
+    void notifyAdminsOfJoinRequest(ctx.prisma, {
+      channelName: user?.channelName ?? '',
+      cafeName: row.cafeName,
+      clubId: row.clubId,
+    });
+    return row;
+  }),
   requestVerify: streamerProcedure.mutation(({ ctx }) =>
     cafeService.requestAction(ctx.prisma, ctx.user.id, 'VERIFY'),
   ),
@@ -35,6 +69,12 @@ export const cafeRouter = t.router({
     const session = await cafeService.getBotSessionMasked(ctx.prisma);
     return session?.displayName ?? null;
   }),
+
+  /* ── 어드민: 가입 대기 목록 ── */
+  joinRequests: adminProcedure.query(({ ctx }) => cafeService.listJoinRequests(ctx.prisma)),
+  markJoined: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) => cafeService.markJoined(ctx.prisma, input.id)),
 
   /* ── 어드민: 봇 계정 세션 ── */
   getBotSession: adminProcedure.query(({ ctx }) => cafeService.getBotSessionMasked(ctx.prisma)),
@@ -54,7 +94,8 @@ export const cafeRouter = t.router({
     ),
   botSession: internalProcedure.query(async ({ ctx }) => {
     const row = await cafeService.getBotSession(ctx.prisma);
-    return row ? { nidAut: row.nidAut, nidSes: row.nidSes } : null;
+    //  updatedAt > checkedAt 이면 어드민이 새로 저장한 것 — 워커가 즉시 검사한다
+    return row ? { nidAut: row.nidAut, nidSes: row.nidSes, updatedAt: row.updatedAt, checkedAt: row.checkedAt } : null;
   }),
   reportSessionCheck: internalProcedure
     .input(z.object({ valid: z.boolean(), message: z.string().max(500).nullable() }))

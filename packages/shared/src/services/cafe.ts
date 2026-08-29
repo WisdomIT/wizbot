@@ -80,16 +80,64 @@ export function decodeHtml(buffer: ArrayBuffer): string {
   return new TextDecoder(korean ? 'euc-kr' : 'utf-8').decode(buffer);
 }
 
-/** 워커에게 일을 시킨다. 처리 결과는 completeAction 으로 돌아온다 (≤ 폴링 주기) */
-export async function requestAction(prisma: PrismaClient, userId: number, action: CafeAction) {
+async function requireLinked(prisma: PrismaClient, userId: number) {
   const row = await prisma.cafeIntegration.findUnique({ where: { userId } });
   if (!row?.clubId) throw new ServiceError('INVALID_INPUT', '먼저 카페 주소를 연결해주세요.');
-  if (row.pendingAction) throw new ServiceError('CONFLICT', '이미 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.');
   const session = await prisma.naverBotSession.findUnique({ where: { id: 1 } });
   if (!session) throw new ServiceError('FORBIDDEN', '봇 계정이 아직 등록되지 않았습니다. 관리자에게 문의해주세요.');
+  return row;
+}
+
+/**
+ * 봇 가입 신청 — 운영자에게 요청한다. 워커가 하지 않는다: 카페 가입 폼에 보안문자가 있어
+ * 프로그램으로는 통과할 수 없다(실측). 운영자가 봇 계정으로 직접 가입 신청하고 「가입 완료」를
+ * 누르면 JOINED 가 된다. 알림(메일)은 라우터가 보낸다.
+ */
+export async function requestJoin(prisma: PrismaClient, userId: number) {
+  const row = await requireLinked(prisma, userId);
+  if (row.status === 'JOIN_REQUESTED') {
+    throw new ServiceError('CONFLICT', '이미 운영자에게 가입을 요청했습니다. 처리되면 상태가 바뀝니다.');
+  }
+  return prisma.cafeIntegration.update({
+    where: { userId },
+    data: { status: 'JOIN_REQUESTED', statusMessage: null, requestedAt: new Date() },
+  });
+}
+
+/** 권한 확인 — 워커에게 일을 시킨다. 처리 결과는 completeAction 으로 돌아온다 (≤ 폴링 주기) */
+export async function requestAction(prisma: PrismaClient, userId: number, action: CafeAction) {
+  const row = await requireLinked(prisma, userId);
+  if (row.pendingAction) throw new ServiceError('CONFLICT', '이미 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.');
   return prisma.cafeIntegration.update({
     where: { userId },
     data: { pendingAction: action, requestedAt: new Date() },
+  });
+}
+
+/* ── 어드민: 가입 대기 목록 ── */
+
+export function listJoinRequests(prisma: PrismaClient) {
+  return prisma.cafeIntegration.findMany({
+    where: { status: 'JOIN_REQUESTED' },
+    select: {
+      id: true,
+      clubId: true,
+      cafeName: true,
+      cafeUrl: true,
+      requestedAt: true,
+      user: { select: { channelName: true } },
+    },
+    orderBy: { requestedAt: 'asc' },
+  });
+}
+
+/** 운영자가 봇 계정으로 가입 신청을 마쳤다 */
+export async function markJoined(prisma: PrismaClient, id: number) {
+  const row = await prisma.cafeIntegration.findUnique({ where: { id } });
+  if (!row) throw new ServiceError('NOT_FOUND', '존재하지 않는 연동입니다.');
+  return prisma.cafeIntegration.update({
+    where: { id },
+    data: { status: 'JOINED', statusMessage: null },
   });
 }
 
