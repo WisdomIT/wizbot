@@ -15,6 +15,8 @@ const UA =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const NAV_TIMEOUT = 30_000;
 
+const GATE_URL = (clubId: string) => `https://cafe.naver.com/ManageGateEditor.nhn?clubid=${clubId}`;
+
 let browser: Browser | null = null;
 
 /** 브라우저 하나를 재사용한다 — 매번 띄우면 요청당 수 초가 든다 */
@@ -59,13 +61,18 @@ export type CheckResult =
   | { ok: true }
   | { ok: false; reason: 'SESSION_INVALID' | 'NO_PERMISSION' | 'UNKNOWN'; message: string };
 
+/** 세션 검사용 카페 — 연동된 카페가 하나도 없을 때. 공개 카페면 어디든 된다(권한이 없어도 로그인으로 튕기지만 않으면 유효) */
+const PROBE_CLUB_ID = '29569242';
+
 /**
- * 세션 유효성 — 내 카페 목록 페이지를 열어 로그인으로 튕기는지 본다.
- * 어떤 카페의 매니저도 아니어도 열리는 페이지라 권한과 무관하게 세션만 본다.
+ * 세션 유효성 — 대문 편집기를 열어 로그인 페이지로 튕기는지 본다.
+ * 실측 (2026-08-30): 쿠키가 없거나 깨지면 `nid.naver.com/nidlogin.login` 으로 302. 유효하지만 권한이 없으면
+ * "권한이 없습니다" 알림 후 카페 홈(로그인 아님). ⚠ `MyCafeIntro.nhn` 은 쿠키와 무관하게 "등록된 네이버 카페가
+ * 아닙니다" 200 을 주는 죽은 페이지라 판정에 쓸 수 없다 — 그걸 써서 항상 유효로 나오던 버그가 있었다.
  */
-export async function checkSession(cookies: NaverCookies): Promise<CheckResult> {
+export async function checkSession(cookies: NaverCookies, clubId: string | null = null): Promise<CheckResult> {
   return withPage(cookies, async (page) => {
-    await page.goto('https://cafe.naver.com/MyCafeIntro.nhn', { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+    await page.goto(GATE_URL(clubId ?? PROBE_CLUB_ID), { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
     if (bouncedToLogin(page)) {
       return { ok: false, reason: 'SESSION_INVALID', message: '네이버 로그인 페이지로 이동했습니다 — 쿠키가 만료됐습니다.' };
     }
@@ -116,7 +123,6 @@ export async function verifyGateAccess(cookies: NaverCookies, clubId: string): P
 
 export type GateResult = { ok: true; html: string } | Exclude<CheckResult, { ok: true }>;
 
-const GATE_URL = (clubId: string) => `https://cafe.naver.com/ManageGateEditor.nhn?clubid=${clubId}`;
 
 /**
  * 편집기를 열어 HTML 모드로 전환하고 textarea 를 돌려준다.
