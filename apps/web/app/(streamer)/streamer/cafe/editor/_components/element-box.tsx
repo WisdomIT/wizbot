@@ -1,72 +1,24 @@
 'use client';
 
-import { CAFE_ELEMENT_LABEL, type CafeElement, THUMBNAIL_RATIO } from '@wizbot/shared/lib/cafeLayout';
-import type { MutableRefObject, PointerEvent as ReactPointerEvent } from 'react';
+import { CAFE_ELEMENT_LABEL, type CafeElement } from '@wizbot/shared/lib/cafeLayout';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
+import type { Handle } from '@/lib/cafe-geometry';
 import { cn } from '@/lib/utils';
 
-export type DragState = {
-  id: string;
-  mode: 'move' | 'resize';
-  handle?: Handle;
-  startX: number;
-  startY: number;
-  origin: { x: number; y: number; w: number; h: number };
-};
-
-type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const MIN_SIZE = 16;
 
 /**
- * 캔버스 위의 요소 박스 (#9 PR2a). 드래그 이동·8방향 리사이즈. 좌표는 캔버스 원본 픽셀이고
- * 화면은 scale 로 축소돼 있으므로 포인터 이동량을 scale 로 나눈다.
+ * 캔버스 위의 요소 박스 (#9). 그리기와 포인터 시작만 맡고, 이동·리사이즈·스냅 계산은 캔버스가 한다
+ * (여러 개를 함께 옮기고 다른 요소에 스냅하려면 캔버스가 전체를 알아야 한다).
+ * 좌표는 캔버스 원본 픽셀이고 화면은 scale 로 축소돼 있어 핸들·라벨 크기는 scale 로 나눈다.
  */
 export function ElementBox({
-  element, selected, scale, sampleText, fontFamily, dragRef, canvas, onSelect, onChange,
+  element, selected, resizable, scale, sampleText, fontFamily, onPointerDown,
 }: {
-  element: CafeElement; selected: boolean; scale: number; sampleText: string; fontFamily?: string;
-  dragRef: MutableRefObject<DragState | null>; canvas: { width: number; height: number };
-  onSelect: () => void; onChange: (patch: Partial<CafeElement>) => void;
+  element: CafeElement; selected: boolean; resizable: boolean; scale: number; sampleText: string; fontFamily?: string;
+  onPointerDown: (e: ReactPointerEvent, mode: 'move' | 'resize', handle?: Handle) => void;
 }) {
-  function start(e: ReactPointerEvent, mode: DragState['mode'], handle?: Handle) {
-    e.stopPropagation();
-    onSelect();
-    (e.target as Element).setPointerCapture(e.pointerId);
-    dragRef.current = { id: element.id, mode, handle, startX: e.clientX, startY: e.clientY, origin: { x: element.x, y: element.y, w: element.w, h: element.h } };
-  }
-  function move(e: ReactPointerEvent) {
-    const d = dragRef.current;
-    if (!d || d.id !== element.id) return;
-    const dx = (e.clientX - d.startX) / scale;
-    const dy = (e.clientY - d.startY) / scale;
-    const o = d.origin;
-    if (d.mode === 'move') {
-      onChange({
-        x: Math.round(Math.min(Math.max(0, o.x + dx), canvas.width - o.w)),
-        y: Math.round(Math.min(Math.max(0, o.y + dy), canvas.height - o.h)),
-      });
-      return;
-    }
-    let { x, y, w, h } = o;
-    const hd = d.handle ?? 'se';
-    if (hd.includes('e')) w = Math.max(MIN_SIZE, o.w + dx);
-    if (hd.includes('s')) h = Math.max(MIN_SIZE, o.h + dy);
-    if (hd.includes('w')) { w = Math.max(MIN_SIZE, o.w - dx); x = o.x + (o.w - w); }
-    if (hd.includes('n')) { h = Math.max(MIN_SIZE, o.h - dy); y = o.y + (o.h - h); }
-    if (element.kind === 'thumbnail') {
-      // 16:9 고정 — 가로를 잡는 핸들이면 세로가, 세로만 잡으면 가로가 따라온다
-      if (hd === 'n' || hd === 's') w = h * THUMBNAIL_RATIO;
-      else h = w / THUMBNAIL_RATIO;
-      if (hd.includes('w')) x = o.x + o.w - w;
-      if (hd.includes('n')) y = o.y + o.h - h;
-    }
-    onChange({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
-  }
-  function end() {
-    if (dragRef.current?.id === element.id) dragRef.current = null;
-  }
-
   const isText = element.kind !== 'thumbnail';
   const lines = isText ? element.lines : 1;
   const fontSize = isText ? (element.fontSize ?? Math.floor((element.h / lines) * 0.8)) : 0;
@@ -75,10 +27,7 @@ export function ElementBox({
     <div
       className={cn('absolute cursor-move', selected ? 'outline outline-2 outline-sky-400' : 'outline outline-1 outline-dashed outline-white/40 hover:outline-sky-300')}
       style={{ left: element.x, top: element.y, width: element.w, height: element.h }}
-      onPointerDown={(e) => start(e, 'move')}
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
+      onPointerDown={(e) => onPointerDown(e, 'move')}
     >
       {isText ? (
         <div
@@ -103,12 +52,10 @@ export function ElementBox({
       <span className="pointer-events-none absolute -top-5 left-0 rounded bg-sky-500 px-1 text-[10px] leading-4 text-white" style={{ fontSize: 10 / scale, lineHeight: `${16 / scale}px`, top: -20 / scale }}>
         {CAFE_ELEMENT_LABEL[element.kind]}
       </span>
-      {selected && HANDLES.map((h) => (
+      {resizable && HANDLES.map((h) => (
         <div
           key={h}
-          onPointerDown={(e) => start(e, 'resize', h)}
-          onPointerMove={move}
-          onPointerUp={end}
+          onPointerDown={(e) => onPointerDown(e, 'resize', h)}
           className="absolute bg-white outline outline-1 outline-sky-500"
           style={{ ...handleStyle(h, scale), cursor: `${h}-resize` }}
         />
