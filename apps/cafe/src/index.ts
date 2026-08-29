@@ -31,11 +31,11 @@ const SESSION_CHECK_MS = 30 * 60 * 1000;
 let lastSessionCheckAt = 0;
 let lastPollAt: Date | null = null;
 
-type BotSession = NaverCookies & { updatedAt: string | Date; checkedAt: string | Date | null };
+type BotSession = NaverCookies & { updatedAt: string | Date; checkedAt: string | Date | null; valid: boolean | null };
 
 async function getSession(): Promise<BotSession | null> {
   const session = await trpc.cafe.botSession.query();
-  return session ? { nidAut: session.nidAut, nidSes: session.nidSes, updatedAt: session.updatedAt, checkedAt: session.checkedAt } : null;
+  return session ? { nidAut: session.nidAut, nidSes: session.nidSes, updatedAt: session.updatedAt, checkedAt: session.checkedAt, valid: session.valid } : null;
 }
 
 type PendingAction = Awaited<ReturnType<typeof trpc.cafe.pendingActions.query>>[number];
@@ -193,14 +193,18 @@ async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void
   }
 }
 
-async function syncSession(session: BotSession): Promise<void> {
+/** 세션 검사. 돌려주는 값 = 지금 이 세션으로 일해도 되는가 */
+async function syncSession(session: BotSession): Promise<boolean> {
   // 어드민이 방금 저장한 세션(checkedAt 이 없거나 updatedAt 보다 이전)은 주기와 무관하게 바로 검사한다
   const fresh = !session.checkedAt || new Date(session.checkedAt) < new Date(session.updatedAt);
-  if (!fresh && Date.now() - lastSessionCheckAt < SESSION_CHECK_MS) return;
+  if (!fresh && Date.now() - lastSessionCheckAt < SESSION_CHECK_MS) return session.valid !== false;
   lastSessionCheckAt = Date.now();
   const result = await checkSession(session);
-  await trpc.cafe.reportSessionCheck.mutate({ valid: result.ok, message: result.ok ? null : result.message });
+  const { transition } = await trpc.cafe.reportSessionCheck.mutate({ valid: result.ok, message: result.ok ? null : result.message });
   console.log(result.ok ? '🔐 네이버 세션 유효' : `🔒 네이버 세션 무효: ${result.message}`);
+  if (transition === 'expired') console.warn('📧 운영자에게 세션 만료 알림을 보냈습니다.');
+  if (transition === 'recovered') console.log('✅ 세션이 복구됐습니다 — 밀린 작업을 재개합니다.');
+  return result.ok;
 }
 
 let polling = false;
@@ -213,7 +217,12 @@ async function poll(): Promise<void> {
       console.warn('⏸ 봇 계정 세션이 등록되지 않았습니다 — 어드민 > 네이버 봇 계정');
       return;
     }
-    await syncSession(session);
+    if (!(await syncSession(session))) {
+      // 만료된 세션으로는 모든 요청이 로그인 페이지로 튕긴다 — 어드민이 새 쿠키를 넣으면(updatedAt 갱신) 바로 재검사·재개
+      console.warn('⏸ 네이버 세션이 만료돼 작업을 쉽니다 — 어드민 > 네이버 봇 계정에서 쿠키를 갱신해주세요.');
+      lastPollAt = new Date();
+      return;
+    }
     await processActions(session);
     if ((await syncLive(session)) === 'session-invalid') {
       await trpc.cafe.reportSessionCheck.mutate({ valid: false, message: '봇 계정의 네이버 세션이 만료됐습니다.' });

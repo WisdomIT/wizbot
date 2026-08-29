@@ -369,6 +369,8 @@ model NaverBotSession {
   checkedAt    DateTime? @db.DateTime(6)
   valid        Boolean?
   checkMessage String?   @db.VarChar(500)
+  /// 만료 알림 메일을 보낸 시각 — 유효로 돌아오면 비운다 (한 번만 보내기 위해)
+  alertedAt    DateTime? @db.DateTime(6)
 }
 
 /// 스트리머별 카페 연동 (#9). 기본 꺼짐 — 선택 기능이다.

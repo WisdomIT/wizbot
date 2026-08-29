@@ -30,7 +30,9 @@ export function CafeSettingsView() {
     // 워커 처리 중이면 결과를 기다린다
     refetchInterval: (query) => (query.state.data?.pendingAction ? 5000 : false),
   });
-  const { data: botName } = useQuery(trpc.cafe.botName.queryOptions());
+  const { data: bot } = useQuery(trpc.cafe.botStatus.queryOptions());
+  const botName = bot?.displayName ?? null;
+  const sessionExpired = bot?.valid === false;
   const { data: gate } = useQuery({
     ...trpc.cafe.gate.queryOptions(),
     refetchInterval: (query) => (data?.pendingAction ? 5000 : false),
@@ -96,6 +98,13 @@ export function CafeSettingsView() {
           </div>
         </CardHeader>
       </Card>
+
+      {sessionExpired && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <strong>봇 계정의 네이버 세션이 만료되어 대문 갱신이 중단되었습니다.</strong> 운영자에게 알림이 전송되었으며, 운영자가 세션을 갱신하면 밀린 작업부터 자동으로 재개됩니다.
+          {bot?.checkedAt && <span className="ml-1 text-muted-foreground">(확인 {new Date(bot.checkedAt).toLocaleString('ko-KR')})</span>}
+        </div>
+      )}
 
       <div className={data.enabled ? undefined : 'pointer-events-none opacity-50'}>
         <div className="flex flex-col gap-4">
@@ -237,7 +246,7 @@ export function CafeSettingsView() {
               <CardDescription>대문이 마지막으로 변경된 시각과 현재 대문에 반영된 방송 상태입니다. 방송 상태는 30초마다 확인하며, 변화가 있을 때 대문을 갱신합니다.</CardDescription>
             </CardHeader>
             <CardContent>
-              <ActivityPanel activity={gate?.activity ?? null} active={data.status === 'ACTIVE'} />
+              <ActivityPanel activity={gate?.activity ?? null} active={data.status === 'ACTIVE'} sessionExpired={sessionExpired} />
             </CardContent>
           </Card>
         </div>
@@ -251,7 +260,7 @@ type Activity = {
   snapshot: { live: boolean; title: string; category: string; viewers: number; openedAt: string | null } | null; imageUrl: string | null;
 };
 
-function ActivityPanel({ activity, active }: { activity: Activity | null; active: boolean }) {
+function ActivityPanel({ activity, active, sessionExpired }: { activity: Activity | null; active: boolean; sessionExpired: boolean }) {
   if (!activity) return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
   const fmt = (d: string | Date | null) => (d ? new Date(d).toLocaleString('ko-KR') : '없음');
   const s = activity.snapshot;
@@ -260,7 +269,7 @@ function ActivityPanel({ activity, active }: { activity: Activity | null; active
     <div className="grid gap-4 md:grid-cols-[1fr_auto]">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted-foreground">동작 상태</dt>
-        <dd>{active ? '동작 중 — 방송 상태에 따라 자동 갱신' : '중지 — 위치를 지정하고 반영하면 시작됩니다'}</dd>
+        <dd>{sessionExpired ? <span className="text-destructive">중단 — 봇 계정 세션 만료 (운영자 갱신 대기)</span> : active ? '동작 중 — 방송 상태에 따라 자동 갱신' : '중지 — 위치를 지정하고 반영하면 시작됩니다'}</dd>
         <dt className="text-muted-foreground">마지막 대문 변경</dt>
         <dd>{fmt(activity.gateUpdatedAt)}{activity.gateSerial > 0 && <span className="ml-2 font-mono text-xs text-muted-foreground">v{activity.gateSerial}</span>}</dd>
         <dt className="text-muted-foreground">반영된 방송 상태</dt>
