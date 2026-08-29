@@ -10,6 +10,11 @@ import { THEME_FONT_KEYS } from './theme';
  * 장면은 방송 중 / 종료 둘이고 배경도 각각이다. 캔버스 크기 = 배경 이미지 크기.
  */
 
+/** 네이버 카페 대문 영역의 최대 가로 — 배경은 업로드 전에 이 폭으로 줄인다 */
+export const CAFE_MAX_WIDTH = 836;
+/** 썸네일 영역은 16:9 고정 */
+export const THUMBNAIL_RATIO = 16 / 9;
+
 export const CAFE_SCENES = ['live', 'offline'] as const;
 export type CafeScene = (typeof CAFE_SCENES)[number];
 
@@ -56,6 +61,8 @@ export const textElementSchema = z.object({
   timeFormat: z.enum(Object.keys(OPENED_AT_FORMATS) as [OpenedAtFormat, ...OpenedAtFormat[]]).default('time'),
   /** viewers 전용 — "1,234명" 처럼 뒤에 붙는 단위 */
   suffix: z.string().max(10).default('명'),
+  /** 최대 줄 수. 1 이면 한 줄 + ellipsis, 그 이상이면 폭에서 줄바꿈하고 마지막 줄에 ellipsis */
+  lines: z.number().int().min(1).max(5).default(1),
 });
 
 export const thumbnailElementSchema = z.object({
@@ -77,9 +84,9 @@ export type CafeElement = z.infer<typeof cafeElementSchema>;
 export type CafeTextElement = Extract<CafeElement, { kind: 'title' | 'category' | 'viewers' | 'openedAt' }>;
 
 export const cafeSceneSchema = z.object({
-  /** 배경 이미지 크기 = 캔버스 크기. 배경이 없으면 기본 1200×400 */
-  width: z.number().int().min(100).max(4000).default(1200),
-  height: z.number().int().min(50).max(4000).default(400),
+  /** 배경 이미지 크기 = 캔버스 크기. 배경이 없으면 기본 836×300 (카페 대문 최대 폭) */
+  width: z.number().int().min(100).max(CAFE_MAX_WIDTH).default(CAFE_MAX_WIDTH),
+  height: z.number().int().min(50).max(4000).default(300),
   elements: z.array(cafeElementSchema).max(20).default([]),
 });
 export type CafeSceneLayout = z.infer<typeof cafeSceneSchema>;
@@ -105,11 +112,14 @@ export const cafeSnapshotSchema = z.object({
 });
 export type CafeSnapshot = z.infer<typeof cafeSnapshotSchema>;
 
-/** 에디터 미리보기용 — 긴 제목으로 ellipsis 를 확인할 수 있게 */
+/**
+ * 미리보기용 샘플 — 방송을 켜지 않은 상태에서도 배치를 확인할 수 있게. 긴 제목으로 줄바꿈·ellipsis 를 본다.
+ * thumbnailUrl 이 없으면 렌더가 자리표시 썸네일을 직접 그린다.
+ */
 export const SAMPLE_SNAPSHOT: Record<CafeScene, CafeSnapshot> = {
   live: {
     live: true,
-    title: '오늘은 신작 게임 엔딩까지 달립니다 🎮 시청자 추천 곡 받아요',
+    title: '오늘은 신작 게임 엔딩까지 달립니다 🎮 시청자 추천 곡도 받아요, 편하게 놀다 가세요!',
     category: '리그 오브 레전드',
     viewers: 1234,
     openedAt: '2026-08-29T11:30:00.000Z',

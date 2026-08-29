@@ -2,6 +2,7 @@ import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
 
 import { isYoutubeChannelId, parseCafeSlug, parseClubInfo } from '../lib/cafe';
 import {
+  CAFE_MAX_WIDTH,
   type CafeLayout,
   cafeLayoutSchema,
   type CafeScene,
@@ -9,6 +10,7 @@ import {
   EMPTY_LAYOUT,
   SAMPLE_SNAPSHOT,
 } from '../lib/cafeLayout';
+import { fetchLiveSnapshot } from './chzzkLive';
 import { ServiceError } from './errors';
 
 /**
@@ -292,8 +294,9 @@ export async function uploadBackground(
   }
   const size = imageSize(buffer);
   if (!size) throw new ServiceError('INVALID_INPUT', 'PNG 또는 JPEG 파일만 올릴 수 있습니다.');
-  if (size.width > 4000 || size.height > 4000) {
-    throw new ServiceError('INVALID_INPUT', '이미지 한 변은 4000px 이하여야 합니다.');
+  // 에디터가 업로드 전에 카페 대문 최대 폭(836)으로 줄여 보낸다 — 서버는 안전망으로만 거른다
+  if (size.width > CAFE_MAX_WIDTH || size.height > 4000) {
+    throw new ServiceError('INVALID_INPUT', `배경 가로는 ${CAFE_MAX_WIDTH}px 이하여야 합니다 (네이버 카페 대문 최대 폭).`);
   }
 
   const integration = await prisma.cafeIntegration.upsert({
@@ -349,7 +352,9 @@ export async function getRenderData(
 
   let snapshot;
   if (input.preview) {
-    snapshot = SAMPLE_SNAPSHOT[input.scene ?? 'live'];
+    //  방송 중이면 실제 데이터로, 아니면 샘플로 — 방송을 켜지 않아도 배치를 볼 수 있게
+    const live = input.scene !== 'offline' ? await fetchLiveSnapshot(input.channelId) : null;
+    snapshot = live?.live ? live : SAMPLE_SNAPSHOT[input.scene ?? 'live'];
   } else {
     const stored = cafeSnapshotSchema.safeParse(integration.lastSnapshot ?? {});
     snapshot = stored.success ? stored.data : SAMPLE_SNAPSHOT.offline;
@@ -361,6 +366,8 @@ export async function getRenderData(
     scene,
     layout: parsedLayout[scene],
     snapshot,
+    /** 샘플 데이터인지 — 렌더가 자리표시 썸네일을 그릴지 정한다 */
+    sample: input.preview && snapshot === SAMPLE_SNAPSHOT[scene],
     serial: integration.lastSaveSerial,
     background: asset
       ? { mimeType: asset.mimeType, width: asset.width, height: asset.height, base64: Buffer.from(asset.data).toString('base64') }

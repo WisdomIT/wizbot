@@ -4,7 +4,7 @@ import { createCanvas, loadImage, type SKRSContext2D } from '@napi-rs/canvas';
 import type { CafeSceneLayout, CafeSnapshot, CafeTextElement } from '@wizbot/shared/lib/cafeLayout';
 import { elementText } from '@wizbot/shared/lib/cafeLayout';
 
-import { fitText } from './cafe-fit';
+import { fitLines } from './cafe-fit';
 import { ensureFontsRegistered, fontFamilyChain } from './cafe-fonts';
 
 /**
@@ -16,6 +16,8 @@ export type RenderInput = {
   layout: CafeSceneLayout;
   snapshot: CafeSnapshot;
   background: { mimeType: string; base64: string } | null;
+  /** 샘플 데이터 미리보기 — 썸네일이 없으면 자리표시 이미지를 그린다 */
+  sample?: boolean;
 };
 
 function fontString(element: CafeTextElement, size: number): string {
@@ -29,21 +31,51 @@ function drawText(ctx: SKRSContext2D, element: CafeTextElement, snapshot: CafeSn
     ctx.font = fontString(element, size);
     return ctx.measureText(text).width;
   };
-  const { text, size } = fitText(measure, raw, element, element.fontSize);
+  const { lines, size } = fitLines(measure, raw, element, element.lines, element.fontSize);
   ctx.font = fontString(element, size);
   ctx.fillStyle = element.color;
   ctx.textBaseline = 'middle';
   ctx.textAlign = element.align;
   const x = element.align === 'left' ? element.x : element.align === 'right' ? element.x + element.w : element.x + element.w / 2;
-  ctx.fillText(text, x, element.y + element.h / 2);
+  //  줄 간격 1.2, 전체 블록을 영역 세로 가운데에
+  const lineHeight = size * 1.2;
+  const top = element.y + (element.h - lineHeight * lines.length) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, x, top + lineHeight * i + lineHeight / 2));
+}
+
+/** 샘플 미리보기용 자리표시 썸네일 — 실제 방송이 없을 때 16:9 영역이 어떻게 보이는지 */
+function drawPlaceholderThumbnail(ctx: SKRSContext2D, box: { x: number; y: number; w: number; h: number; radius: number }) {
+  const { x, y, w, h, radius } = box;
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.clip();
+  const gradient = ctx.createLinearGradient(x, y, x + w, y + h);
+  gradient.addColorStop(0, '#3a86ff');
+  gradient.addColorStop(1, '#8338ec');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const size = Math.max(12, Math.floor(Math.min(w, h) * 0.16));
+  ctx.font = `700 ${size}px "Noto Sans CJK KR"`;
+  ctx.fillText('샘플 썸네일', x + w / 2, y + h / 2 - size * 0.4);
+  ctx.font = `400 ${Math.floor(size * 0.6)}px "Noto Sans CJK KR"`;
+  ctx.fillText('방송 중에는 실제 화면이 들어갑니다', x + w / 2, y + h / 2 + size * 0.6);
+  ctx.restore();
 }
 
 async function drawThumbnail(
   ctx: SKRSContext2D,
   element: Extract<CafeSceneLayout['elements'][number], { kind: 'thumbnail' }>,
   url: string | null,
+  sample: boolean,
 ) {
-  if (!url) return;
+  if (!url) {
+    if (sample) drawPlaceholderThumbnail(ctx, element);
+    return;
+  }
   let image;
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -82,7 +114,7 @@ export async function renderCafeImage(input: RenderInput): Promise<Buffer> {
   }
 
   for (const element of input.layout.elements) {
-    if (element.kind === 'thumbnail') await drawThumbnail(ctx, element, input.snapshot.thumbnailUrl);
+    if (element.kind === 'thumbnail') await drawThumbnail(ctx, element, input.snapshot.thumbnailUrl, input.sample ?? false);
     else drawText(ctx, element, input.snapshot);
   }
   return canvas.toBuffer('image/png');

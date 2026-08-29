@@ -1,6 +1,6 @@
 'use client';
 
-import { CAFE_ELEMENT_LABEL, type CafeElement } from '@wizbot/shared/lib/cafeLayout';
+import { CAFE_ELEMENT_LABEL, type CafeElement, THUMBNAIL_RATIO } from '@wizbot/shared/lib/cafeLayout';
 import type { MutableRefObject, PointerEvent as ReactPointerEvent } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -54,6 +54,13 @@ export function ElementBox({
     if (hd.includes('s')) h = Math.max(MIN_SIZE, o.h + dy);
     if (hd.includes('w')) { w = Math.max(MIN_SIZE, o.w - dx); x = o.x + (o.w - w); }
     if (hd.includes('n')) { h = Math.max(MIN_SIZE, o.h - dy); y = o.y + (o.h - h); }
+    if (element.kind === 'thumbnail') {
+      // 16:9 고정 — 가로를 잡는 핸들이면 세로가, 세로만 잡으면 가로가 따라온다
+      if (hd === 'n' || hd === 's') w = h * THUMBNAIL_RATIO;
+      else h = w / THUMBNAIL_RATIO;
+      if (hd.includes('w')) x = o.x + o.w - w;
+      if (hd.includes('n')) y = o.y + o.h - h;
+    }
     onChange({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
   }
   function end() {
@@ -61,7 +68,8 @@ export function ElementBox({
   }
 
   const isText = element.kind !== 'thumbnail';
-  const fontSize = isText ? (element.fontSize ?? Math.floor(element.h * 0.8)) : 0;
+  const lines = isText ? element.lines : 1;
+  const fontSize = isText ? (element.fontSize ?? Math.floor((element.h / lines) * 0.8)) : 0;
 
   return (
     <div
@@ -74,10 +82,18 @@ export function ElementBox({
     >
       {isText ? (
         <div
-          className="flex h-full w-full items-center overflow-hidden whitespace-nowrap"
-          style={{ fontFamily, fontSize, fontWeight: element.weight, color: element.color, justifyContent: element.align === 'left' ? 'flex-start' : element.align === 'right' ? 'flex-end' : 'center', lineHeight: 1 }}
+          className="flex h-full w-full items-center overflow-hidden"
+          style={{ fontFamily, fontSize, fontWeight: element.weight, color: element.color, justifyContent: element.align === 'left' ? 'flex-start' : element.align === 'right' ? 'flex-end' : 'center', lineHeight: 1.2, textAlign: element.align }}
         >
-          <span className="overflow-hidden text-ellipsis">{sampleText || CAFE_ELEMENT_LABEL[element.kind]}</span>
+          {/* 실제 렌더와 같은 규칙은 아니지만(줄바꿈은 캔버스가 정한다) 줄 수·크기 감은 맞춘다 */}
+          <span
+            className="overflow-hidden"
+            style={lines > 1
+              ? { display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', whiteSpace: 'normal', wordBreak: 'break-all' }
+              : { whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+          >
+            {sampleText || CAFE_ELEMENT_LABEL[element.kind]}
+          </span>
         </div>
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-black/40 text-sm text-white/80" style={{ borderRadius: element.radius }}>

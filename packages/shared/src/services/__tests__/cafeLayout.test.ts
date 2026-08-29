@@ -5,12 +5,13 @@ import { imageSize } from '../cafe';
 
 describe('cafeLayout 스키마', () => {
   it('빈 입력은 기본 장면 두 개(1200×400, 요소 없음)', () => {
-    expect(EMPTY_LAYOUT.live).toEqual({ width: 1200, height: 400, elements: [] });
+    expect(EMPTY_LAYOUT.live).toEqual({ width: 836, height: 300, elements: [] });
     expect(EMPTY_LAYOUT.offline.elements).toEqual([]);
   });
   it('텍스트 요소의 기본값이 채워진다', () => {
     const layout = cafeLayoutSchema.parse({ live: { elements: [{ id: 'a', kind: 'title', x: 0, y: 0, w: 100, h: 40 }] } });
-    expect(layout.live.elements[0]).toMatchObject({ fontKey: 'suit', weight: 400, color: '#ffffff', align: 'left', fontSize: null });
+    expect(layout.live.elements[0]).toMatchObject({ fontKey: 'suit', weight: 400, color: '#ffffff', align: 'left', fontSize: null, lines: 1 });
+    expect(() => cafeLayoutSchema.parse({ live: { width: 2048 } })).toThrow(); // 카페 대문 최대 폭 초과
   });
   it('모르는 종류·잘못된 색은 거부', () => {
     expect(() => cafeLayoutSchema.parse({ live: { elements: [{ id: 'a', kind: 'logo', x: 0, y: 0, w: 1, h: 1 }] } })).toThrow();
@@ -37,7 +38,7 @@ describe('formatKst — 서버·브라우저 어디서든 같은 KST 표기', ()
 });
 
 describe('elementText', () => {
-  const base = { id: 'x', kind: 'viewers' as const, x: 0, y: 0, w: 1, h: 1, fontKey: 'suit' as const, weight: 400 as const, color: '#fff', align: 'left' as const, fontSize: null, timeFormat: 'time' as const, suffix: '명' };
+  const base = { id: 'x', kind: 'viewers' as const, x: 0, y: 0, w: 1, h: 1, fontKey: 'suit' as const, weight: 400 as const, color: '#fff', align: 'left' as const, fontSize: null, timeFormat: 'time' as const, suffix: '명', lines: 1 };
   const snapshot = { live: true, title: 'T', category: 'C', viewers: 12345, openedAt: '2026-08-29T11:30:00.000Z', thumbnailUrl: null };
   it('시청자 수는 천 단위 구분 + 접미사', () => {
     expect(elementText('viewers', snapshot, base)).toBe('12,345명');

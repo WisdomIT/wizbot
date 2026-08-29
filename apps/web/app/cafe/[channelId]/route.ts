@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const data = await trpc.cafe.renderData.query({ channelId, scene, preview }).catch(() => null);
   if (!data) return new Response('Not Found', { status: 404 });
 
-  const png = await renderCafeImage({ layout: data.layout, snapshot: data.snapshot, background: data.background });
+  const png = await renderCafeImage({ layout: data.layout, snapshot: data.snapshot, background: data.background, sample: data.sample });
   const requestedSerial = searchParams.get('v');
   //  요청한 v 가 현재 일련번호와 같을 때만 영구 캐시 — 아니면(옛 v·미지정) 짧게
   const immutable = !preview && requestedSerial !== null && Number(requestedSerial) === data.serial;
