@@ -15,8 +15,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useTRPC } from '@/src/utils/trpc-react';
 
+import { GatePicker } from './gate-picker';
+
 /**
- * 네이버 카페 연동 설정 (#9 PR1) — 사용 여부(기본 꺼짐), 카페 연결, 봇 가입·권한 확인, 유튜브.
+ * 네이버 카페 연동 설정 (#9) — 사용 여부(기본 꺼짐), 카페 연결, 봇 가입·권한 확인, 유튜브, 대문에 넣기.
  * 권한 확인은 워커가 15초 주기로 처리한다. 가입은 운영자가 직접 한다 — 카페 가입 폼에 보안문자가 있다.
  */
 export function CafeSettingsView() {
@@ -28,13 +30,22 @@ export function CafeSettingsView() {
     refetchInterval: (query) => (query.state.data?.pendingAction ? 5000 : false),
   });
   const { data: botName } = useQuery(trpc.cafe.botName.queryOptions());
-  const invalidate = () => void queryClient.invalidateQueries(trpc.cafe.get.queryFilter());
+  const { data: gate } = useQuery({
+    ...trpc.cafe.gate.queryOptions(),
+    refetchInterval: (query) => (data?.pendingAction ? 5000 : false),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries(trpc.cafe.get.queryFilter());
+    void queryClient.invalidateQueries(trpc.cafe.gate.queryFilter());
+  };
 
   const setEnabled = useMutation(trpc.cafe.setEnabled.mutationOptions());
   const link = useMutation(trpc.cafe.link.mutationOptions());
   const requestJoin = useMutation(trpc.cafe.requestJoin.mutationOptions());
   const requestVerify = useMutation(trpc.cafe.requestVerify.mutationOptions());
   const setYoutube = useMutation(trpc.cafe.setYoutube.mutationOptions());
+  const requestGateFetch = useMutation(trpc.cafe.requestGateFetch.mutationOptions());
+  const submitGate = useMutation(trpc.cafe.submitGate.mutationOptions());
 
   const [url, setUrl] = useState('');
   const [yt, setYt] = useState({ channelId: '', width: 560, height: 315 });
@@ -220,6 +231,45 @@ export function CafeSettingsView() {
                   저장
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className={permitted ? undefined : 'pointer-events-none opacity-50'}>
+            <CardHeader>
+              <CardTitle>4. 대문에 넣기</CardTitle>
+              <CardDescription>
+                대문 HTML 을 가져와 방송 상태 이미지{data.youtubeChannelId ? '와 유튜브' : ''}가 들어갈 자리를 고릅니다.
+                기존 요소를 클릭하면 그 요소가 교체되고, 고르지 않으면 맨 아래에 추가됩니다. 넣은 뒤부터 방송 상태에 따라 자동으로 갱신됩니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={gate?.gateHtml !== null && gate?.gateHtml !== undefined ? 'outline' : 'default'}
+                  disabled={!permitted || busy || requestGateFetch.isPending}
+                  onClick={() => run(requestGateFetch.mutateAsync(), { loading: '요청 중...', success: '대문 HTML 을 가져오는 중입니다. 잠시 후 표시됩니다.' })}
+                >
+                  {gate?.gateHtml !== null && gate?.gateHtml !== undefined ? '대문 HTML 다시 가져오기' : '대문 HTML 가져오기'}
+                </Button>
+                {gate?.gateFetchedAt && (
+                  <span className="text-xs text-muted-foreground">가져온 시각 {new Date(gate.gateFetchedAt).toLocaleString('ko-KR')}</span>
+                )}
+                {busy && data.pendingAction !== 'VERIFY' && <span className="text-xs text-muted-foreground">워커가 처리 중입니다…</span>}
+              </div>
+              {gate?.gateHtml !== null && gate?.gateHtml !== undefined && (
+                <GatePicker
+                  key={gate.gateFetchedAt ? String(gate.gateFetchedAt) : 'none'}
+                  html={gate.gateHtml}
+                  imageBlock={gate.imageBlock}
+                  youtubeTag={gate.youtubeTag}
+                  disabled={busy || submitGate.isPending}
+                  onSubmit={(html) => run(submitGate.mutateAsync({ html }), { loading: '요청 중...', success: '대문에 넣는 중입니다. 잠시 후 상태가 「동작 중」으로 바뀝니다.' })}
+                />
+              )}
+              {data.status === 'ACTIVE' && (
+                <p className="text-sm text-green-700 dark:text-green-400">대문에 들어가 있습니다 — 방송 상태가 바뀌면 자동으로 갱신됩니다.</p>
+              )}
             </CardContent>
           </Card>
         </div>

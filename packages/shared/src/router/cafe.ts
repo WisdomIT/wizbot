@@ -71,6 +71,13 @@ export const cafeRouter = t.router({
     return session?.displayName ?? null;
   }),
 
+  /* ── 대문 HTML 가져오기·삽입 (#9 PR3) ── */
+  requestGateFetch: streamerProcedure.mutation(({ ctx }) => cafeService.requestGateFetch(ctx.prisma, ctx.user.id)),
+  gate: streamerProcedure.query(({ ctx }) => cafeService.getGate(ctx.prisma, ctx.user.id)),
+  submitGate: streamerProcedure
+    .input(z.object({ html: z.string().max(1024 * 1024) }))
+    .mutation(({ ctx, input }) => cafeService.submitGate(ctx.prisma, ctx.user.id, input.html)),
+
   /* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
   getLayout: streamerProcedure.query(({ ctx }) => cafeService.getLayout(ctx.prisma, ctx.user.id)),
   saveLayout: streamerProcedure
@@ -111,6 +118,19 @@ export const cafeRouter = t.router({
     .mutation(({ ctx, input }) =>
       cafeService.completeAction(ctx.prisma, input.id, { status: input.status, message: input.message }),
     ),
+  completeGateFetch: internalProcedure
+    .input(z.object({ id: z.number(), html: z.string().max(2 * 1024 * 1024) }))
+    .mutation(({ ctx, input }) => cafeService.completeGateFetch(ctx.prisma, input.id, input.html)),
+  completeGateSave: internalProcedure
+    .input(
+      z.object({ id: z.number() }).and(
+        z.discriminatedUnion('ok', [
+          z.object({ ok: z.literal(true), html: z.string().max(2 * 1024 * 1024) }),
+          z.object({ ok: z.literal(false), message: z.string().max(500) }),
+        ]),
+      ),
+    )
+    .mutation(({ ctx, input }) => cafeService.completeGateSave(ctx.prisma, input.id, input)),
   botSession: internalProcedure.query(async ({ ctx }) => {
     const row = await cafeService.getBotSession(ctx.prisma);
     //  updatedAt > checkedAt 이면 어드민이 새로 저장한 것 — 워커가 즉시 검사한다

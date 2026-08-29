@@ -9,7 +9,8 @@
     "./trpc": "./src/trpc.ts",
     "./lib/theme": "./src/lib/theme.ts",
     "./lib/cafe": "./src/lib/cafe.ts",
-    "./lib/cafeLayout": "./src/lib/cafeLayout.ts"
+    "./lib/cafeLayout": "./src/lib/cafeLayout.ts",
+    "./lib/cafeGate": "./src/lib/cafeGate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
