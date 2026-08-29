@@ -421,11 +421,30 @@ export function getBotSession(prisma: PrismaClient) {
   return prisma.naverBotSession.findUnique({ where: { id: 1 } });
 }
 
-export function reportSessionCheck(prisma: PrismaClient, result: { valid: boolean; message: string | null }) {
-  return prisma.naverBotSession.updateMany({
+/**
+ * 워커의 세션 검사 결과. 만료는 전체 스트리머의 자동화가 멈추는 단일 장애점이라 상태 전이를 돌려준다 —
+ * 라우터가 `expired`(유효/미확인 → 만료, 아직 알리지 않음)일 때 운영자에게 메일을 보내고 alertedAt 을 찍는다.
+ */
+export async function reportSessionCheck(prisma: PrismaClient, result: { valid: boolean; message: string | null }) {
+  const prev = await prisma.naverBotSession.findUnique({ where: { id: 1 }, select: { valid: true, alertedAt: true } });
+  if (!prev) return { transition: null as 'expired' | 'recovered' | null };
+  await prisma.naverBotSession.update({
     where: { id: 1 },
-    data: { checkedAt: new Date(), valid: result.valid, checkMessage: result.message },
+    data: { checkedAt: new Date(), valid: result.valid, checkMessage: result.message, ...(result.valid ? { alertedAt: null } : {}) },
   });
+  if (!result.valid && !prev.alertedAt) return { transition: 'expired' as const };
+  if (result.valid && prev.valid === false) return { transition: 'recovered' as const };
+  return { transition: null };
+}
+
+export function markSessionAlerted(prisma: PrismaClient) {
+  return prisma.naverBotSession.updateMany({ where: { id: 1 }, data: { alertedAt: new Date() } });
+}
+
+/** 스트리머 안내용 — 봇 계정 이름과 세션 상태. 쿠키는 내려가지 않는다 */
+export async function getBotStatus(prisma: PrismaClient) {
+  const row = await prisma.naverBotSession.findUnique({ where: { id: 1 }, select: { displayName: true, valid: true, checkedAt: true } });
+  return row ? { displayName: row.displayName, valid: row.valid, checkedAt: row.checkedAt } : null;
 }
 
 /* ── 어드민 ── */
@@ -443,6 +462,7 @@ export async function getBotSessionMasked(prisma: PrismaClient) {
     checkedAt: row.checkedAt,
     valid: row.valid,
     checkMessage: row.checkMessage,
+    alertedAt: row.alertedAt,
   };
 }
 
@@ -458,6 +478,7 @@ export async function setBotSession(
     checkedAt: null,
     valid: null,
     checkMessage: null,
+    alertedAt: null,
   };
   if (!data.displayName || !data.nidAut || !data.nidSes) {
     throw new ServiceError('INVALID_INPUT', '계정 이름과 두 쿠키 값을 모두 입력해주세요.');

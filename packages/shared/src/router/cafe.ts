@@ -49,6 +49,28 @@ async function notifyAdminsOfJoinRequest(
   }
 }
 
+/** 봇 세션 만료 알림 (#9 PR4) — 전체 스트리머의 대문 갱신이 멈추므로 운영자 전원에게. 실패해도 검사 결과는 기록된다 */
+async function notifyAdminsOfSessionExpiry(prisma: PrismaClient, message: string | null) {
+  try {
+    const admins = await prisma.admin.findMany({ select: { email: true } });
+    if (admins.length === 0) return;
+    const site = process.env.PUBLIC_SITE_URL ?? '';
+    await sendMail({
+      to: admins.map((admin) => admin.email).join(','),
+      subject: '[위즈봇] 네이버 봇 계정 세션 만료 — 카페 대문 갱신 중단',
+      text: [
+        '네이버 봇 계정의 세션(NID_AUT / NID_SES)이 만료됐습니다. 모든 스트리머의 카페 대문 갱신이 멈춰 있습니다.',
+        message ? `워커 메시지: ${message}` : '',
+        '',
+        `어드민 > 네이버 봇 계정에서 새 쿠키를 등록하면 즉시 다시 검사하고 자동으로 재개됩니다: ${site}/admin/naver-bot`,
+      ].join('\n'),
+    });
+    await cafeService.markSessionAlerted(prisma);
+  } catch {
+    /* 알림 실패는 다음 검사에서 다시 시도된다 (alertedAt 이 비어 있으므로) */
+  }
+}
+
 /** 네이버 카페 연동 (#9) */
 export const cafeRouter = t.router({
   /* ── 스트리머 ── */
@@ -75,11 +97,8 @@ export const cafeRouter = t.router({
   setYoutube: streamerProcedure
     .input(z.object({ input: z.string().max(200).nullable() }))
     .mutation(({ ctx, input }) => cafeService.setYoutube(ctx.prisma, ctx.user.id, input.input)),
-  /** 스트리머 안내용 — 카페에서 승인할 봇 계정 이름. 쿠키는 내려가지 않는다 */
-  botName: streamerProcedure.query(async ({ ctx }) => {
-    const session = await cafeService.getBotSessionMasked(ctx.prisma);
-    return session?.displayName ?? null;
-  }),
+  /** 스트리머 안내용 — 봇 계정 이름과 세션 상태(만료면 갱신이 멈춘다). 쿠키는 내려가지 않는다 */
+  botStatus: streamerProcedure.query(({ ctx }) => cafeService.getBotStatus(ctx.prisma)),
 
   /* ── 대문 HTML 가져오기·삽입 (#9 PR3) ── */
   requestGateFetch: streamerProcedure.mutation(({ ctx }) => cafeService.requestGateFetch(ctx.prisma, ctx.user.id)),
@@ -172,9 +191,13 @@ export const cafeRouter = t.router({
   botSession: internalProcedure.query(async ({ ctx }) => {
     const row = await cafeService.getBotSession(ctx.prisma);
     //  updatedAt > checkedAt 이면 어드민이 새로 저장한 것 — 워커가 즉시 검사한다
-    return row ? { nidAut: row.nidAut, nidSes: row.nidSes, updatedAt: row.updatedAt, checkedAt: row.checkedAt } : null;
+    return row ? { nidAut: row.nidAut, nidSes: row.nidSes, updatedAt: row.updatedAt, checkedAt: row.checkedAt, valid: row.valid } : null;
   }),
   reportSessionCheck: internalProcedure
     .input(z.object({ valid: z.boolean(), message: z.string().max(500).nullable() }))
-    .mutation(({ ctx, input }) => cafeService.reportSessionCheck(ctx.prisma, input)),
+    .mutation(async ({ ctx, input }) => {
+      const { transition } = await cafeService.reportSessionCheck(ctx.prisma, input);
+      if (transition === 'expired') await notifyAdminsOfSessionExpiry(ctx.prisma, input.message);
+      return { transition };
+    }),
 });

@@ -70,6 +70,7 @@ export function NaverBotView() {
             <Row k="저장" v={new Date(data.updatedAt).toLocaleString('ko-KR')} />
             <Row k="마지막 확인" v={data.checkedAt ? new Date(data.checkedAt).toLocaleString('ko-KR') : '아직 없음'} />
             {data.checkMessage && <Row k="메시지" v={data.checkMessage} />}
+            {data.valid === false && <Row k="만료 알림" v={data.alertedAt ? `${new Date(data.alertedAt).toLocaleString('ko-KR')} 운영자 메일 발송` : '발송 대기'} />}
           </CardContent>
         )}
       </Card>
