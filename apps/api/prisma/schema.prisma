@@ -383,9 +383,32 @@ model CafeIntegration {
   youtubeChannelId String?        @db.VarChar(24)
   youtubeWidth     Int            @default(560)
   youtubeHeight    Int            @default(315)
-  /// 대문 이미지 레이아웃 (PR 2 에디터)
+  /// 대문 이미지 레이아웃 — packages/shared/src/lib/cafeLayout.ts 의 CafeLayout
   layout           Json?
+  /// 저장 일련번호. 이미지 URL 의 ?v= 가 되어 네이버 캐시를 무효화한다. 워커가 저장할 때마다 +1
+  lastSaveSerial   Int            @default(0)
+  /// 마지막 저장 시점의 방송 상태 — 같은 v 는 항상 같은 그림이어야 하므로 렌더는 이걸 그린다
+  lastSnapshot     Json?
   updatedAt        DateTime       @updatedAt @db.DateTime(6)
 
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets           CafeAsset[]
+}
+
+/// 대문 이미지 배경 (#9 PR2). 파일이 아니라 DB — web(렌더)·api(업로드)가 공유 볼륨 없이 접근한다.
+/// 스트리머당 장면(live/offline)별 1장, 2MB 제한.
+model CafeAsset {
+  id            Int             @id @default(autoincrement())
+  integrationId Int
+  /// 'live' | 'offline'
+  scene         String          @db.VarChar(16)
+  mimeType      String          @db.VarChar(64)
+  width         Int
+  height        Int
+  data          Bytes
+  createdAt     DateTime        @default(now()) @db.DateTime(6)
+
+  integration   CafeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, scene])
 }
