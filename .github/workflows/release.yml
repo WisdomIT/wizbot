@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [web, api, chatbot]
+        app: [web, api, chatbot, cafe]
     steps:
       - uses: actions/checkout@v7
         with:

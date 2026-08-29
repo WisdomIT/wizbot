@@ -7,7 +7,8 @@
     "./chatbot": "./src/chatbot/index.ts",
     "./chatbot/definitions": "./src/chatbot/definitions.ts",
     "./trpc": "./src/trpc.ts",
-    "./lib/theme": "./src/lib/theme.ts"
+    "./lib/theme": "./src/lib/theme.ts",
+    "./lib/cafe": "./src/lib/cafe.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

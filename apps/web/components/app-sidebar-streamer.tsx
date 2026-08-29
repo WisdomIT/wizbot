@@ -6,7 +6,6 @@ import {
   Link,
   ListPlus,
   Play,
-  PlaySquare,
   Radio,
   SquareChevronRight,
   User,
@@ -74,14 +73,9 @@ const data = {
   ],
   cafe: [
     {
-      name: '치지직',
-      url: '/streamer/cafe/chzzk',
+      name: '연동 설정',
+      url: '/streamer/cafe/setting',
       icon: <Radio />,
-    },
-    {
-      name: '유튜브',
-      url: '/streamer/cafe/youtube',
-      icon: <PlaySquare />,
     },
   ],
   setting: [

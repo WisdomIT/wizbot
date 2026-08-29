@@ -133,8 +133,7 @@ model User {
   songHistories     SongHistory[]
   songPlayback      SongPlayback?
   playlists         SongFavorite[]
-  cafeChzzks        CafeChzzk[]
-  cafeYoutubes      CafeYoutube[]
+  cafeIntegration   CafeIntegration?
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
@@ -334,22 +333,56 @@ model SongFavoriteItem {
   @@index([favoriteId, order])
 }
 
-model CafeChzzk {
-  id         Int     @id @default(autoincrement())
-  userId     Int
-  channelId  String  @db.VarChar(32)
-  background String  @db.Text
-  title      String? @db.Text
-  category   String? @db.Text
-  openDate   String? @db.Text
-
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// 네이버 카페 연동 상태 (#9). 봇 계정이 카페 매니저가 되는 과정을 따라간다.
+enum CafeLinkStatus {
+  NONE
+  JOIN_REQUESTED
+  JOIN_FAILED
+  PERMISSION_OK
+  PERMISSION_FAILED
+  ACTIVE
 }
 
-model CafeYoutube {
-  id         Int     @id @default(autoincrement())
-  userId     Int
-  channelId  String  @db.VarChar(24)
+/// 워커에게 시키는 일. 처리하면 null 로 돌아온다
+enum CafeAction {
+  JOIN
+  VERIFY
+}
 
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// 네이버 봇 계정 세션 — 어드민이 관리하는 단일 행 (#9).
+/// 환경변수가 아닌 이유: 세션이 만료됐다고 재배포할 수는 없다. 워커는 API(internal)로 받는다.
+model NaverBotSession {
+  id           Int       @id @default(1)
+  /// 스트리머 안내용 (카페에서 승인할 계정 이름)
+  displayName  String    @db.VarChar(50)
+  nidAut       String    @db.Text
+  nidSes       String    @db.Text
+  updatedAt    DateTime  @updatedAt @db.DateTime(6)
+  /// 워커의 마지막 유효성 검사
+  checkedAt    DateTime? @db.DateTime(6)
+  valid        Boolean?
+  checkMessage String?   @db.VarChar(500)
+}
+
+/// 스트리머별 카페 연동 (#9). 기본 꺼짐 — 선택 기능이다.
+model CafeIntegration {
+  id               Int            @id @default(autoincrement())
+  userId           Int            @unique
+  enabled          Boolean        @default(false)
+  cafeUrl          String?        @db.VarChar(200)
+  clubId           String?        @db.VarChar(32)
+  cafeName         String?        @db.VarChar(100)
+  status           CafeLinkStatus @default(NONE)
+  statusMessage    String?        @db.VarChar(500)
+  pendingAction    CafeAction?
+  requestedAt      DateTime?      @db.DateTime(6)
+  /// 유튜브 업로드 재생목록 embed — 채널 ID(UC…)와 크기
+  youtubeChannelId String?        @db.VarChar(24)
+  youtubeWidth     Int            @default(560)
+  youtubeHeight    Int            @default(315)
+  /// 대문 이미지 레이아웃 (PR 2 에디터)
+  layout           Json?
+  updatedAt        DateTime       @updatedAt @db.DateTime(6)
+
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -1,4 +1,5 @@
 export * as accountService from './account';
+export * as cafeService from './cafe';
 export * as adminUsersService from './adminUsers';
 export * from './chzzkClient';
 export * as commandService from './command';
