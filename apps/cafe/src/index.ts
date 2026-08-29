@@ -31,11 +31,11 @@ const SESSION_CHECK_MS = 30 * 60 * 1000;
 let lastSessionCheckAt = 0;
 let lastPollAt: Date | null = null;
 
-type BotSession = NaverCookies & { updatedAt: string | Date; checkedAt: string | Date | null; valid: boolean | null };
+type BotSession = NaverCookies & { updatedAt: string | Date; checkedAt: string | Date | null; valid: boolean | null; probeClubId: string | null };
 
 async function getSession(): Promise<BotSession | null> {
   const session = await trpc.cafe.botSession.query();
-  return session ? { nidAut: session.nidAut, nidSes: session.nidSes, updatedAt: session.updatedAt, checkedAt: session.checkedAt, valid: session.valid } : null;
+  return session ? { nidAut: session.nidAut, nidSes: session.nidSes, updatedAt: session.updatedAt, checkedAt: session.checkedAt, valid: session.valid, probeClubId: session.probeClubId } : null;
 }
 
 type PendingAction = Awaited<ReturnType<typeof trpc.cafe.pendingActions.query>>[number];
@@ -199,7 +199,7 @@ async function syncSession(session: BotSession): Promise<boolean> {
   const fresh = !session.checkedAt || new Date(session.checkedAt) < new Date(session.updatedAt);
   if (!fresh && Date.now() - lastSessionCheckAt < SESSION_CHECK_MS) return session.valid !== false;
   lastSessionCheckAt = Date.now();
-  const result = await checkSession(session);
+  const result = await checkSession(session, session.probeClubId);
   const { transition } = await trpc.cafe.reportSessionCheck.mutate({ valid: result.ok, message: result.ok ? null : result.message });
   console.log(result.ok ? '🔐 네이버 세션 유효' : `🔒 네이버 세션 무효: ${result.message}`);
   if (transition === 'expired') console.warn('📧 운영자에게 세션 만료 알림을 보냈습니다.');

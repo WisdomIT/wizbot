@@ -191,7 +191,10 @@ export const cafeRouter = t.router({
   botSession: internalProcedure.query(async ({ ctx }) => {
     const row = await cafeService.getBotSession(ctx.prisma);
     //  updatedAt > checkedAt 이면 어드민이 새로 저장한 것 — 워커가 즉시 검사한다
-    return row ? { nidAut: row.nidAut, nidSes: row.nidSes, updatedAt: row.updatedAt, checkedAt: row.checkedAt, valid: row.valid } : null;
+    if (!row) return null;
+    //  세션 검사는 대문 편집기를 열어 본다 — 연동된 카페가 있으면 그 카페로 (없으면 워커의 기본 공개 카페)
+    const linked = await ctx.prisma.cafeIntegration.findFirst({ where: { clubId: { not: null } }, select: { clubId: true }, orderBy: { id: 'asc' } });
+    return { nidAut: row.nidAut, nidSes: row.nidSes, updatedAt: row.updatedAt, checkedAt: row.checkedAt, valid: row.valid, probeClubId: linked?.clubId ?? null };
   }),
   reportSessionCheck: internalProcedure
     .input(z.object({ valid: z.boolean(), message: z.string().max(500).nullable() }))
