@@ -22,6 +22,8 @@ export function NavMenu({
     name: string;
     url: string;
     icon: JSX.Element;
+    /** 이 항목만 새 창으로 (그룹 전체 popup 과 별개) */
+    popup?: boolean;
   }[];
   pathname: string;
   popup?: boolean;
@@ -35,8 +37,8 @@ export function NavMenu({
             <SidebarMenuButton asChild isActive={pathname === item.url}>
               <Link
                 href={item.url}
-                target={popup ? '_blank' : undefined}
-                rel={popup ? 'noopener noreferrer' : undefined}
+                target={popup || item.popup ? '_blank' : undefined}
+                rel={popup || item.popup ? 'noopener noreferrer' : undefined}
               >
                 {item.icon}
                 <span>{item.name}</span>
