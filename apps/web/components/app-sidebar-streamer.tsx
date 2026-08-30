@@ -131,14 +131,16 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
   }
 
   //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다. 기본 Sidebar 는 position:fixed 로 화면 왼쪽에 그려져
-  //  바깥 사이드바와 겹치므로, 흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식)
+  //  바깥 사이드바와 겹치므로, 흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식).
+  //  높이는 화면에 묶고(sticky, 바깥 inset 여백 0.5rem×2 를 뺀 100svh) — 부모가 넘치지 않으면서 내용만 스크롤되고,
+  //  메뉴가 길면 SidebarContent(overflow-auto) 안에서 자체 스크롤된다
   const nested = !!exitHref;
   return (
     <>
       <Sidebar
         variant="inset"
         collapsible={nested ? 'none' : undefined}
-        className={nested ? 'h-auto shrink-0 self-stretch border-r' : undefined}
+        className={nested ? 'sticky top-2 h-[calc(100svh-1rem)] shrink-0 self-start border-r' : undefined}
         {...props}
       >
         <SidebarHeader>
@@ -160,7 +162,7 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
           <NavUser user={user} viewerUrl={`/${user.id}/command`} />
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className={nested ? 'min-h-0' : undefined}>
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
