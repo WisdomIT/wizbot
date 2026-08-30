@@ -104,7 +104,8 @@ export function StreamersView() {
                         <AvatarFallback>{streamer.channelName.slice(0, 2)}</AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
-                        <span className="font-medium">{streamer.channelName}</span>
+                        {/* 이름을 누르면 그 스트리머의 콘솔을 어드민이 대행으로 연다 (#71) */}
+                        <a href={`/admin/streamers/${streamer.id}/enter`} className="font-medium hover:underline">{streamer.channelName}</a>
                         <span className="font-mono text-xs text-muted-foreground">
                           {streamer.channelId}
                         </span>

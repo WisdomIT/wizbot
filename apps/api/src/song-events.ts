@@ -45,8 +45,19 @@ async function resolveUserId(req: Request): Promise<number | null> {
 
   try {
     const { payload } = await jwtVerify(sessionToken, new TextEncoder().encode(jwtSecret));
-    if (payload.role !== 'streamer' || typeof payload.id !== 'number') return null;
-    return payload.id;
+    if (typeof payload.id !== 'number') return null;
+    if (payload.role === 'streamer') return payload.id;
+    //  어드민 대행 (#71) — 콘솔의 플레이어 바가 대행 대상의 재생 이벤트를 받는다. admin 세션 + 대행 쿠키일 때만
+    if (payload.role === 'admin') {
+      const acting = cookieHeader
+        .split(';')
+        .map((part) => part.trim())
+        .find((part) => part.startsWith('admin-acting-as='))
+        ?.slice('admin-acting-as='.length);
+      const userId = Number(acting);
+      return Number.isInteger(userId) && userId > 0 ? userId : null;
+    }
+    return null;
   } catch {
     return null;
   }
