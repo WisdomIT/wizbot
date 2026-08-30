@@ -1,10 +1,9 @@
-import { z } from 'zod';
-
 import { ChzzkError } from 'chzzk-open-sdk';
+import { z } from 'zod';
 
 import chatbot from '../chatbot';
 import { clampChatMessage } from '../chatbot/lib';
-import { getChzzkClientForUser, repeatService } from '../services';
+import { getChzzkClientForUser, repeatService, signupService } from '../services';
 import { internalProcedure, publicProcedure, t } from '../trpc';
 
 export const chatbotRouter = t.router({
@@ -12,16 +11,38 @@ export const chatbotRouter = t.router({
     return process.env.CHZZK_BOT_CHANNEL_ID;
   }),
   getChannels: internalProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.user.findMany({
-      // 챗봇을 끈 채널은 목록에서 빠진다 → 워커의 diff 동기화가 연결을 정리한다 (#7)
-      where: { userSetting: { is: { chatbotActive: true } } },
-      select: {
-        id: true,
-        channelId: true,
-        channelName: true,
-      },
-    });
+    const [users, notice] = await Promise.all([
+      ctx.prisma.user.findMany({
+        // 챗봇을 끈 채널은 목록에서 빠진다 → 워커의 diff 동기화가 연결을 정리한다 (#7)
+        where: { userSetting: { is: { chatbotActive: true } } },
+        select: {
+          id: true,
+          channelId: true,
+          channelName: true,
+        },
+      }),
+      signupService.pendingNoticeChannelIds(ctx.prisma),
+    ]);
+    return users.map((user) => ({
+      ...user,
+      /** 신청 승인 후 아직 로그인하지 않은 채널 — 워커가 1시간마다 채팅으로 안내한다 (#151) */
+      pendingNotice: notice.has(user.channelId),
+    }));
   }),
+  /** 승인 안내 채팅 — 문구는 API 가 만든다 (PUBLIC_SITE_URL 은 워커에 없다) (#151) */
+  sendApprovalNotice: internalProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const site = process.env.PUBLIC_SITE_URL ?? 'https://bot.wisdomit.co.kr';
+      const message = `위즈봇 사용 승인이 완료됐습니다. ${site} 에서 치지직으로 로그인하면 명령어와 설정을 관리할 수 있습니다.`;
+      try {
+        await getChzzkClientForUser(ctx.prisma, input.userId).chats.send(clampChatMessage(message));
+        return { ok: true as const };
+      } catch (error) {
+        if (error instanceof ChzzkError) return { ok: false as const, message: error.message };
+        throw error;
+      }
+    }),
   /** 채팅 1건 처리 — 명령어 생성/삭제·방송 설정 변경 등 부수효과 + 긴 본문이 URL(GET)에 실리면 안 되므로 mutation (#19) */
   message: internalProcedure
     .input(

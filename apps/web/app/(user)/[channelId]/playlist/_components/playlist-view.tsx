@@ -132,7 +132,7 @@ export function PlaylistView({ channelId }: { channelId: string }) {
               <CardContent className="flex flex-col gap-3">
                 {data.commands.map((command) => (
                   <div key={command.command} className="flex flex-col gap-1">
-                    <code className="w-fit rounded bg-muted px-2 py-1 font-mono text-sm">
+                    <code className="w-fit rounded bg-primary px-2 py-1 font-mono text-sm text-primary-foreground">
                       {command.usageString}
                     </code>
                     <span className="text-sm text-muted-foreground">{command.description}</span>

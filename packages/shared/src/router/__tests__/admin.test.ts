@@ -6,8 +6,8 @@ vi.mock('../../lib/nodemailer', () => ({
 }));
 
 import { sendMail } from '../../lib/nodemailer';
-import { appRouter } from '..';
 import type { Context } from '../../trpc';
+import { appRouter } from '..';
 
 const ADMIN = { id: 1, email: 'admin@example.com' };
 
@@ -28,6 +28,7 @@ function createCaller(overrides: Partial<Context> = {}) {
       findUnique: vi.fn().mockResolvedValue(null),
     },
     user: { findMany: vi.fn().mockResolvedValue([]) },
+    signupApplication: { findMany: vi.fn().mockResolvedValue([]) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };

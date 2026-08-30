@@ -2,8 +2,9 @@ import { randomInt } from 'node:crypto';
 
 import { z } from 'zod';
 
+import { getChatbotDatabaseInitial } from '../chatbot';
 import { sendMail } from '../lib/nodemailer';
-import { adminUsersService, ServiceError, whitelistService } from '../services';
+import { adminUsersService, ServiceError, signupService, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
 
 /** 패스코드 유효시간 — 넘으면 소모 전이라도 무효 (#20) */
@@ -103,6 +104,27 @@ export const adminRouter = t.router({
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => whitelistService.removeFromWhitelist(ctx.prisma, input.id)),
 
+  /* ── 사용 신청 관리 (#96) ── */
+  listApplications: adminProcedure.query(({ ctx }) =>
+    signupService.listApplications(ctx.prisma),
+  ),
+  approveApplication: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) =>
+      signupService.approve(ctx.prisma, input.id, ctx.user.id, {
+        initialCommands: getChatbotDatabaseInitial,
+      }),
+    ),
+  rejectApplication: adminProcedure
+    .input(z.object({ id: z.number(), reason: z.string().max(500).optional() }))
+    .mutation(({ ctx, input }) =>
+      signupService.reject(ctx.prisma, input.id, ctx.user.id, input.reason),
+    ),
+  getSignupSettings: adminProcedure.query(({ ctx }) => signupService.getSettings(ctx.prisma)),
+  setSignupSettings: adminProcedure
+    .input(z.object({ autoApprove: z.boolean().optional(), askReason: z.boolean().optional() }))
+    .mutation(({ ctx, input }) => signupService.setSettings(ctx.prisma, input)),
+
   /* ── 스트리머 관리 (#10 PR B) ── */
   listStreamers: adminProcedure.query(({ ctx }) => adminUsersService.listStreamers(ctx.prisma)),
   setStreamerHidden: adminProcedure
@@ -111,8 +133,12 @@ export const adminRouter = t.router({
       adminUsersService.setStreamerHidden(ctx.prisma, input.userId, input.hidden),
     ),
   deleteStreamer: adminProcedure
-    .input(z.object({ userId: z.number() }))
-    .mutation(({ ctx, input }) => adminUsersService.deleteStreamer(ctx.prisma, input.userId)),
+    .input(z.object({ userId: z.number(), removeWhitelist: z.boolean().optional() }))
+    .mutation(({ ctx, input }) =>
+      adminUsersService.deleteStreamer(ctx.prisma, input.userId, {
+        removeWhitelist: input.removeWhitelist,
+      }),
+    ),
 
   /* ── 관리자 계정 관리 (#10 PR B) ── */
   listAdmins: adminProcedure.query(({ ctx }) => adminUsersService.listAdmins(ctx.prisma)),

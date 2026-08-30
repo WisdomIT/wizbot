@@ -1,0 +1,29 @@
+{
+  "name": "@wizbot/cafe",
+  "version": "1.0.0",
+  "description": "네이버 카페 대문 자동화 워커",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "license": "ISC",
+  "packageManager": "pnpm@10.5.2",
+  "dependencies": {
+    "@trpc/client": "^11.18.0",
+    "@wizbot/shared": "workspace:^",
+    "dotenv": "^17.4.2",
+    "puppeteer": "^25.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26",
+    "@wizbot/eslint-config": "workspace:^",
+    "eslint": "^9",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.2"
+  }
+}

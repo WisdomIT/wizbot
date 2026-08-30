@@ -1,15 +1,20 @@
 import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
+import { themeInputSchema } from '../lib/theme';
 import {
   accountService,
   adminUsersService,
   createChzzkLoginClient,
   getChzzkAppClient,
   getChzzkClientForUser,
+  provisionService,
+  signupService,
+  themeService,
   userSettingService,
 } from '../services';
 import { internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
+import { notifyAdminsOfApplication } from './signup';
 
 export const userRouter = t.router({
   getChzzkId: publicProcedure.query(() => {
@@ -25,10 +30,14 @@ export const userRouter = t.router({
   }),
   /** 로그인한 스트리머 본인 정보 */
   me: streamerProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.user.findFirst({
+    const user = await ctx.prisma.user.findFirst({
       where: { id: ctx.user.id },
       select: { id: true, channelId: true, channelName: true, channelImageUrl: true },
     });
+    if (!user) return null;
+    // 콘솔·앱 레이아웃이 테마 래퍼를 그린다 (#77)
+    const theme = await themeService.getTheme(ctx.prisma, user.id);
+    return { ...user, theme };
   }),
   getUsersPublic: publicProcedure.query(async ({ ctx }) => {
     const users = await ctx.prisma.user.findMany({
@@ -80,11 +89,31 @@ export const userRouter = t.router({
               order: 'asc',
             },
           },
+          userTheme: true,
         },
       });
+      if (!user) return null;
 
-      return user;
+      // 시청자 페이지 전체에 스트리머 테마 (#77)
+      const { userTheme, ...rest } = user;
+      return { ...rest, theme: userTheme ? themeService.toInput(userTheme) : null };
     }),
+  /** OBS 오버레이가 스트리머 폰트를 따라가기 위해 — 토큰으로만 조회 (#77) */
+  getThemeBySourceToken: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(({ ctx, input }) => themeService.getThemeBySourceToken(ctx.prisma, input.token)),
+  /** 워커가 30분마다 — 전체 채널명·프로필 이미지를 치지직과 맞춘다 (#77) */
+  refreshChannelProfiles: internalProcedure.mutation(({ ctx }) =>
+    accountService.refreshAllChannelInfo(ctx.prisma),
+  ),
+  /* ── 스트리머 테마 (#77) ── */
+  getTheme: streamerProcedure.query(({ ctx }) => themeService.getTheme(ctx.prisma, ctx.user.id)),
+  updateTheme: streamerProcedure
+    .input(themeInputSchema)
+    .mutation(({ ctx, input }) => themeService.updateTheme(ctx.prisma, ctx.user.id, input)),
+  resetTheme: streamerProcedure.mutation(({ ctx }) =>
+    themeService.resetTheme(ctx.prisma, ctx.user.id),
+  ),
   /** 인가 코드 교환 + 사용자/토큰 upsert — 부수효과가 있으므로 mutation (#19) */
   getChzzkTokenInterlock: publicProcedure
     .input(z.object({ code: z.string(), state: z.string() }))
@@ -97,71 +126,46 @@ export const userRouter = t.router({
 
       const { channelId } = await loginClient.users.me();
 
-      const findMe = await ctx.prisma.whitelist.findFirst({
-        where: {
-          channelId,
-        },
-      });
-      if (!findMe) {
-        throw new Error(
-          '화이트리스트에 등록되지 않은 채널입니다. 하단 신청하기를 통해 신청해주세요.',
-        );
-      }
-
       const channels = await getChzzkAppClient().channels.get([channelId]);
       if (channels.length === 0) {
         throw new Error('치지직 채널 정보를 가져오지 못했습니다.');
       }
       const { channelName, channelImageUrl } = channels[0];
 
-      const user = await ctx.prisma.user.upsert({
-        where: { channelId },
-        update: {
-          channelName,
-          channelImageUrl,
-        },
-        create: {
-          channelId,
-          channelName,
-          channelImageUrl,
-        },
-      });
-
-      const findSetting = await ctx.prisma.userSetting.findFirst({
-        where: {
-          userId: user.id,
-        },
-      });
-      if (!findSetting) {
-        await ctx.prisma.userSetting.create({
-          data: {
-            userId: user.id,
-          },
-        });
+      // 화이트리스트에 없으면 에러로 끝내지 않는다 — OAuth 로 본인이 확인된 상태이므로
+      // 신청 레코드를 만들고 신청자 세션으로 보낸다 (#96)
+      const identity = { channelId, channelName, channelImageUrl: channelImageUrl ?? null };
+      const whitelisted = await ctx.prisma.whitelist.findUnique({ where: { channelId } });
+      if (!whitelisted) {
+        if (await signupService.getAutoApprove(ctx.prisma)) {
+          // 자동 승인 — 등록하고 아래 일반 로그인 경로를 그대로 탄다
+          await signupService.autoApprove(ctx.prisma, identity);
+        } else {
+          // 토큰도 함께 맡긴다 — 대기 중 갱신해 두면 승인 즉시 봇이 붙는다 (#151)
+          const { application, created } = await signupService.upsertOnLogin(
+            ctx.prisma,
+            identity,
+            tokenSet,
+          );
+          if (created) void notifyAdminsOfApplication(ctx.prisma, application);
+          return {
+            kind: 'applicant' as const,
+            applicationId: application.id,
+            status: application.status,
+          };
+        }
       }
 
-      // 발급받은 토큰을 해당 유저의 DB TokenStore 로 영속화
-      await getChzzkClientForUser(ctx.prisma, user.id).auth.setTokens(tokenSet);
-
-      //functionCommand에 데이터가 하나도 없다면 기본값 세팅 (첫 로그인 시)
-      const findCommand = await ctx.prisma.chatbotFunctionCommand.findFirst({
-        where: {
-          userId: user.id,
-        },
+      // User·UserSetting·토큰·기본 명령어 — 신청 승인 경로와 같은 함수 (#151)
+      const user = await provisionService.provisionStreamer(ctx.prisma, identity, {
+        tokens: tokenSet,
+        initialCommands: getChatbotDatabaseInitial,
       });
-
-      const { initialFunction, initialEcho } = getChatbotDatabaseInitial(user.id);
-
-      if (!findCommand) {
-        await ctx.prisma.chatbotFunctionCommand.createMany({
-          data: initialFunction,
-        });
-        await ctx.prisma.chatbotEchoCommand.createMany({
-          data: initialEcho,
-        });
-      }
+      // 승인 후 첫 로그인이면 채팅 안내를 멈춘다
+      await signupService.acknowledge(ctx.prisma, channelId);
 
       return {
+        kind: 'streamer' as const,
         userId: user.id,
         channelId,
         channelName,

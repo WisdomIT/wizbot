@@ -38,6 +38,25 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await getChzzkTokenInterlock({ code, state });
 
+    // 화이트리스트에 없는 채널 — 신청 화면으로. OAuth 로 본인이 확인됐으므로 신청 레코드
+    // id 를 담은 짧은 세션(1시간)을 준다. 상태 조회·사유 제출만 할 수 있는 역할이다 (#96)
+    if (auth.kind === 'applicant') {
+      const token = await signJwt({ id: auth.applicationId, role: 'applicant' }, '1h');
+      // ⚠ /apply 로 곧장 302 하면 안 된다. 타 사이트(치지직)에서 시작된 내비게이션과 그 리다이렉트
+      // 체인에는 브라우저가 SameSite=Strict 쿠키를 붙이지 않아 첫 화면이 비로그인으로 그려지고
+      // 새로고침해야 상태가 보인다 (#96 피드백). 스트리머 경로와 같이 클라이언트 페이지를 한 번
+      // 거쳐 같은 사이트 내비게이션으로 만든다.
+      const response = redirectTo('/login/redirect?to=/apply');
+      response.headers.append(
+        'Set-Cookie',
+        `session-token=${token}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict${
+          isProduction ? '; Secure' : ''
+        }`,
+      );
+      response.headers.append('Set-Cookie', clearStateCookie);
+      return response;
+    }
+
     const { userId } = auth;
 
     const token = await signJwt({ id: userId, role: 'streamer' });

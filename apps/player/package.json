@@ -10,15 +10,18 @@
     "start": "electron .",
     "dev": "pnpm build && electron .",
     "package": "pnpm build && electron-builder",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@trpc/client": "^11.18.0",
     "@types/node": "^26.2.0",
+    "@wizbot/eslint-config": "workspace:^",
     "@wizbot/shared": "workspace:^",
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.6.2",
+    "eslint": "^9",
     "tsup": "^8.5.1",
     "typescript": "^5.8.2"
   },

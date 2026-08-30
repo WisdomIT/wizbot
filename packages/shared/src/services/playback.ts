@@ -3,7 +3,6 @@ import { randomBytes } from 'node:crypto';
 import type { PrismaClient, SongSourceType } from '@prisma/client';
 
 import { ServiceError } from './errors';
-import * as songFavoriteService from './songFavorite';
 import {
   getSourcePresence,
   isActiveSession,
@@ -11,6 +10,7 @@ import {
   SOURCE_TIMEOUT_MS,
   touchSource,
 } from './songEvents';
+import * as songFavoriteService from './songFavorite';
 
 /** 재생 제어·송출 소스 중재 (#5 2단계) */
 

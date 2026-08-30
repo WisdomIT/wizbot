@@ -3,18 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   advanceToNext,
-  setShortcuts,
-  togglePlay,
-  playSongNow,
-  seek,
   getSourceStatus,
   isSessionActive,
+  playSongNow,
   reportEnded,
   reportPosition,
+  seek,
+  setShortcuts,
   skipToNext,
+  togglePlay,
   touchSourceSession,
 } from '../playback';
-import { SOURCE_TIMEOUT_MS, clearSource, subscribeSongEvents } from '../songEvents';
+import { clearSource, SOURCE_TIMEOUT_MS, subscribeSongEvents } from '../songEvents';
 
 const USER_ID = 1;
 

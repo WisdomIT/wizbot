@@ -1,8 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { appRouter } from '..';
 import type { Context } from '../../trpc';
+import { appRouter } from '..';
 
 function createCaller(overrides: Partial<Context> = {}) {
   const prisma = {
@@ -17,6 +17,8 @@ function createCaller(overrides: Partial<Context> = {}) {
       findFirst: vi.fn().mockResolvedValue(null),
       findUnique: vi.fn().mockResolvedValue(null),
     },
+    // getChannels 가 승인 안내 대상을 함께 조회한다 (#151)
+    signupApplication: { findMany: vi.fn().mockResolvedValue([]) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };

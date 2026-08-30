@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useActingAs } from '@/components/acting-context';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,8 +24,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useTRPC } from '@/src/utils/trpc-react';
 
-/** 계정 설정 (#7) — 채널 정보, 목록 노출, 챗봇 사용, 탈퇴 */
-export function AccountSettingsView() {
+/** 계정 설정 (#7) — 채널 정보, 테마(슬롯), 목록 노출, 챗봇 사용, 탈퇴 */
+export function AccountSettingsView({ themeSlot }: { themeSlot?: ReactNode }) {
+  //  어드민 대행(#71) 중에는 탈퇴를 여기서 하지 않는다 — 스트리머 목록의 탈퇴 처리로
+  const acting = useActingAs();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(trpc.user.getAccount.queryOptions());
@@ -117,6 +120,9 @@ export function AccountSettingsView() {
         </CardContent>
       </Card>
 
+      {/* 테마는 채널 정보 바로 다음 — 외형 설정이 한 묶음으로 보이도록 (#77) */}
+      {themeSlot}
+
       <Card>
         <CardHeader>
           <CardTitle>공개 설정</CardTitle>
@@ -139,17 +145,21 @@ export function AccountSettingsView() {
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/40">
-        <CardHeader>
-          <CardTitle className="text-destructive">위험 구역</CardTitle>
-          <CardDescription>
-            탈퇴하면 명령어·반복 메시지·설정·치지직 연동이 모두 삭제되며 복구할 수 없습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DeleteAccountDialog channelName={data.channelName} />
-        </CardContent>
-      </Card>
+      {acting ? (
+        <p className="text-sm text-muted-foreground">탈퇴 처리는 어드민의 스트리머 목록에서 합니다.</p>
+      ) : (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-destructive">위험 구역</CardTitle>
+            <CardDescription>
+              탈퇴하면 명령어·반복 메시지·설정·치지직 연동이 모두 삭제되며 복구할 수 없습니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DeleteAccountDialog channelName={data.channelName} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

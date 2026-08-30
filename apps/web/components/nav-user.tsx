@@ -22,6 +22,7 @@ import {
 export function NavUser({
   user,
   viewerUrl,
+  hideLogout = false,
 }: {
   user: {
     nickname: string;
@@ -30,6 +31,8 @@ export function NavUser({
   };
   /** 있으면 드롭다운에 '내 시청자 페이지' 항목을 노출한다 (#7) */
   viewerUrl?: string;
+  /** 어드민 대행(#71) — 여기서 로그아웃하면 어드민 자신의 세션이 끊기므로 숨긴다 */
+  hideLogout?: boolean;
 }) {
   const { isMobile } = useSidebar();
 
@@ -69,14 +72,16 @@ export function NavUser({
                 <DropdownMenuSeparator />
               </>
             )}
-            <DropdownMenuItem
-              onClick={() => {
-                location.href = '/login/logout';
-              }}
-            >
-              <LogOut />
-              로그아웃
-            </DropdownMenuItem>
+            {!hideLogout && (
+              <DropdownMenuItem
+                onClick={() => {
+                  location.href = '/login/logout';
+                }}
+              >
+                <LogOut />
+                로그아웃
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

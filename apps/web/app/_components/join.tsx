@@ -3,7 +3,6 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { CONTACT_URL } from '@/src/data/wizbot';
 
 export default function Join() {
   return (
@@ -21,16 +20,12 @@ export default function Join() {
               </CardTitle>
             </CardHeader>
             <CardContent className="lg:w-[80%] text-sm md:text-lg font-bold text-muted-foreground mb-8">
-              위즈봇을 사용하고 싶으시다면 아래 링크로 신청하세요! 🚀
+              치지직 계정으로 로그인하면 바로 신청됩니다! 🚀
             </CardContent>
 
             <CardFooter>
               <Button asChild className="px-4 font-bold hover:gap-4">
-                <Link
-                  href={CONTACT_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <Link href="/apply">
                   신청하기
                   <ArrowRight className="size-5 group-hover/arrow:translate-x-1 transition-transform" />
                 </Link>

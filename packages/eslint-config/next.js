@@ -9,10 +9,10 @@ import pluginReact from "eslint-plugin-react";
 import pluginReactHooks from "eslint-plugin-react-hooks";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 
+import { commonRules, ignores } from "./base.js";
+
 export default [
-  {
-    ignores: ["**/node_modules/", "**/dist/", "**/public/", "**/.next/"],
-  },
+  { ignores },
   {
     name: "next",
     languageOptions: {
@@ -42,15 +42,12 @@ export default [
       ...pluginReact.configs.recommended.rules,
       ...pluginReactHooks.configs.recommended.rules,
       ...pluginJsxA11y.configs.recommended.rules,
-      "simple-import-sort/imports": "warn",
-      "simple-import-sort/exports": "warn",
+      ...commonRules,
       "react/react-in-jsx-scope": "off",
       "react/prop-types": "off",
       "react/jsx-uses-react": "off",
       "@next/next/no-img-element": "off",
       "react/hook-use-state": "off",
-      "no-console": "warn",
-      eqeqeq: ["error", "smart"],
     },
   },
 ];

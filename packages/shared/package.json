@@ -6,10 +6,17 @@
     "./services": "./src/services/index.ts",
     "./chatbot": "./src/chatbot/index.ts",
     "./chatbot/definitions": "./src/chatbot/definitions.ts",
-    "./trpc": "./src/trpc.ts"
+    "./trpc": "./src/trpc.ts",
+    "./lib/theme": "./src/lib/theme.ts",
+    "./lib/cafe": "./src/lib/cafe.ts",
+    "./lib/cafeLayout": "./src/lib/cafeLayout.ts",
+    "./lib/cafeGate": "./src/lib/cafeGate.ts",
+    "./lib/cafePolicy": "./src/lib/cafePolicy.ts",
+    "./lib/chzzkLive": "./src/lib/chzzkLive.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "description": "",
   "keywords": [],
@@ -21,6 +28,8 @@
     "@trpc/server": "^11.18.0",
     "@types/node": "^26",
     "@types/nodemailer": "^6.4.17",
+    "@wizbot/eslint-config": "workspace:^",
+    "eslint": "^9",
     "typescript": "^5.8.2",
     "zod": "^3.24.2"
   },

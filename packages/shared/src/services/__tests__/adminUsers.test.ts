@@ -16,7 +16,8 @@ function createPrisma() {
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
   };
-  return { prisma: { admin, user } as unknown as PrismaClient, admin, user };
+  const whitelist = { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) };
+  return { prisma: { admin, user, whitelist } as unknown as PrismaClient, admin, user, whitelist };
 }
 
 describe('removeAdmin 보호 장치', () => {
@@ -73,10 +74,18 @@ describe('스트리머 관리', () => {
     await expect(deleteStreamer(prisma, 99)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('탈퇴 처리는 user.delete (cascade 는 스키마가 보장)', async () => {
-    const { prisma, user } = createPrisma();
-    user.findUnique.mockResolvedValue({ id: 1, channelName: '테스트' });
+  it('탈퇴 처리는 user.delete (cascade 는 스키마가 보장) — 기본은 화이트리스트를 남긴다', async () => {
+    const { prisma, user, whitelist } = createPrisma();
+    user.findUnique.mockResolvedValue({ id: 1, channelId: 'abc', channelName: '테스트' });
     await deleteStreamer(prisma, 1);
     expect(user.delete).toHaveBeenCalledWith({ where: { id: 1 } });
+    expect(whitelist.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('removeWhitelist 면 화이트리스트도 채널 ID 로 지운다', async () => {
+    const { prisma, user, whitelist } = createPrisma();
+    user.findUnique.mockResolvedValue({ id: 1, channelId: 'abc', channelName: '테스트' });
+    await deleteStreamer(prisma, 1, { removeWhitelist: true });
+    expect(whitelist.deleteMany).toHaveBeenCalledWith({ where: { channelId: 'abc' } });
   });
 });

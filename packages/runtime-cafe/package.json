@@ -1,0 +1,9 @@
+{
+  "name": "@wizbot/runtime-cafe",
+  "version": "0.0.0",
+  "private": true,
+  "description": "cafe 이미지의 런타임 node_modules 전용 (#134). 번들은 puppeteer 만 external 이므로 이것만 --prod 로 설치해 apps/cafe/node_modules 로 복사한다. 버전은 apps/cafe 와 맞춘다.",
+  "dependencies": {
+    "puppeteer": "^25.9.0"
+  }
+}

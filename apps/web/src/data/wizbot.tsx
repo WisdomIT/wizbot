@@ -35,4 +35,3 @@ export const functionsList: WizbotFunction[] = [
 ];
 
 /** 도입 문의 — 랜딩의 「신청하기」와 같은 곳으로 보낸다 */
-export const CONTACT_URL = 'http://discord.com/users/901304044767834123/';

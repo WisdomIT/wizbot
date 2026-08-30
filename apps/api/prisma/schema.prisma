@@ -46,10 +46,54 @@ enum SongHistoryStatus {
   FAILED    // 재생 시도했으나 실패
 }
 
+/// 사용 신청 처리 상태 (#96)
+enum SignupStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// 스트리머 테마의 라이트/다크 (#77)
+enum ThemeScheme {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
 model Whitelist {
   id         Int    @id @default(autoincrement())
   nickname   String @db.VarChar(50)
   channelId  String @unique @db.VarChar(32)
+}
+
+/// 사이트 내 사용 신청 (#96). 치지직 OAuth 로 본인 확인된 채널만 만들어진다.
+/// 화이트리스트와 독립이다 — 승인이 화이트리스트 등록을 일으키지만, 해제해도 이 레코드는 남는다.
+model SignupApplication {
+  id              Int          @id @default(autoincrement())
+  channelId       String       @unique @db.VarChar(32)
+  channelName     String       @db.VarChar(50)
+  channelImageUrl String?      @db.Text
+  /// 신청자가 적는 사유 (선택)
+  reason          String?      @db.VarChar(500)
+  status          SignupStatus @default(PENDING)
+  rejectReason    String?      @db.VarChar(500)
+  createdAt       DateTime     @default(now()) @db.DateTime(6)
+  updatedAt       DateTime     @updatedAt @db.DateTime(6)
+  processedAt     DateTime?    @db.DateTime(6)
+  processedById   Int?
+  processedBy     Admin?       @relation(fields: [processedById], references: [id], onDelete: SetNull)
+
+  /// 신청 시점의 OAuth 토큰 (#151). 대기 중에도 갱신해 승인 즉시 봇이 붙게 한다.
+  /// 거절·30일 경과·갱신 실패 시 지운다. 승인 시 OAuthCredential 로 옮기고 지운다.
+  accessToken      String?   @db.Text
+  refreshToken     String?   @db.Text
+  tokenType        String?   @db.VarChar(20)
+  tokenExpiresAt   DateTime? @db.DateTime(0)
+  tokenRefreshedAt DateTime? @db.DateTime(0)
+  /// 승인 후 스트리머가 처음 로그인한 시각 — 찍히면 채팅 안내를 멈춘다
+  acknowledgedAt   DateTime? @db.DateTime(6)
+
+  @@index([status, createdAt])
 }
 
 model Admin {
@@ -57,6 +101,7 @@ model Admin {
   email    String @unique @db.VarChar(250)
 
   passcode AdminLogin?
+  processedApplications SignupApplication[]
 }
 
 model AdminLogin {
@@ -79,6 +124,7 @@ model User {
 
   // Relations
   userSetting       UserSetting?
+  userTheme         UserTheme?
   userShortcuts     UserShortcut[]
   echoCommands      ChatbotEchoCommand[]
   functionCommands  ChatbotFunctionCommand[]
@@ -87,8 +133,24 @@ model User {
   songHistories     SongHistory[]
   songPlayback      SongPlayback?
   playlists         SongFavorite[]
-  cafeChzzks        CafeChzzk[]
-  cafeYoutubes      CafeYoutube[]
+  cafeIntegration   CafeIntegration?
+}
+
+/// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
+model UserTheme {
+  id              Int         @id @default(autoincrement())
+  userId          Int         @unique
+  /// #rrggbb. null 이면 서비스 기본색
+  /// 강조 색 — 활성 메뉴·버튼·명령어 배경. 컬럼명은 토큰명(--primary)을 따른다
+  primaryColor    String?     @db.VarChar(7)
+  backgroundColor String?     @db.VarChar(7)
+  sidebarColor    String?     @db.VarChar(7)
+  colorScheme     ThemeScheme @default(SYSTEM)
+  /// packages/shared/src/lib/theme.ts 의 THEME_FONTS 키
+  fontKey         String      @default("suit") @db.VarChar(32)
+  updatedAt       DateTime    @updatedAt @db.DateTime(6)
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserSetting {
@@ -271,22 +333,105 @@ model SongFavoriteItem {
   @@index([favoriteId, order])
 }
 
-model CafeChzzk {
-  id         Int     @id @default(autoincrement())
-  userId     Int
-  channelId  String  @db.VarChar(32)
-  background String  @db.Text
-  title      String? @db.Text
-  category   String? @db.Text
-  openDate   String? @db.Text
-
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// 네이버 카페 연동 상태 (#9). 봇 계정이 카페 매니저가 되는 과정을 따라간다.
+/// 가입은 운영자가 봇 계정으로 직접 한다 — 카페 가입 폼에 보안문자(CAPTCHA)가 있어 자동화할 수 없다 (실측 2026-08-29).
+enum CafeLinkStatus {
+  NONE
+  /// 스트리머가 요청함 → 운영자 가입 대기
+  JOIN_REQUESTED
+  /// 운영자가 가입 신청을 마침 → 스트리머 승인·스탭 지정 대기
+  JOINED
+  JOIN_FAILED
+  PERMISSION_OK
+  PERMISSION_FAILED
+  ACTIVE
 }
 
-model CafeYoutube {
-  id         Int     @id @default(autoincrement())
-  userId     Int
-  channelId  String  @db.VarChar(24)
+/// 워커에게 시키는 일. 처리하면 null 로 돌아온다
+enum CafeAction {
+  VERIFY
+  /// 대문 HTML 읽어오기 — 스트리머가 삽입 위치를 고르기 위해
+  FETCH_GATE
+  /// gatePicks 를 대문에 반영
+  SAVE_GATE
+}
 
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+/// 네이버 봇 계정 세션 — 어드민이 관리하는 단일 행 (#9).
+/// 환경변수가 아닌 이유: 세션이 만료됐다고 재배포할 수는 없다. 워커는 API(internal)로 받는다.
+model NaverBotSession {
+  id           Int       @id @default(1)
+  /// 스트리머 안내용 (카페에서 승인할 계정 이름)
+  displayName  String    @db.VarChar(50)
+  nidAut       String    @db.Text
+  nidSes       String    @db.Text
+  updatedAt    DateTime  @updatedAt @db.DateTime(6)
+  /// 워커의 마지막 유효성 검사
+  checkedAt    DateTime? @db.DateTime(6)
+  valid        Boolean?
+  checkMessage String?   @db.VarChar(500)
+  /// 만료 알림 메일을 보낸 시각 — 유효로 돌아오면 비운다 (한 번만 보내기 위해)
+  alertedAt    DateTime? @db.DateTime(6)
+}
+
+/// 스트리머별 카페 연동 (#9). 기본 꺼짐 — 선택 기능이다.
+model CafeIntegration {
+  id               Int            @id @default(autoincrement())
+  userId           Int            @unique
+  enabled          Boolean        @default(false)
+  cafeUrl          String?        @db.VarChar(200)
+  clubId           String?        @db.VarChar(32)
+  cafeName         String?        @db.VarChar(100)
+  status           CafeLinkStatus @default(NONE)
+  statusMessage    String?        @db.VarChar(500)
+  pendingAction    CafeAction?
+  requestedAt      DateTime?      @db.DateTime(6)
+  /// 유튜브 업로드 재생목록 embed — 채널 주소를 해석한 채널 ID(UC…). 크기는 대문에서 고른 영역을 따른다
+  youtubeChannelId String?        @db.VarChar(24)
+  youtubeTitle     String?        @db.VarChar(100)
+  youtubeUrl       String?        @db.VarChar(200)
+  /// 대문 이미지 레이아웃 — packages/shared/src/lib/cafeLayout.ts 의 CafeLayout
+  layout           Json?
+  /// 저장 일련번호. 이미지 URL 의 ?v= 가 되어 네이버 캐시를 무효화한다. 워커가 저장할 때마다 +1
+  lastSaveSerial   Int            @default(0)
+  /// 마지막 저장 시점의 방송 상태 — 같은 v 는 항상 같은 그림이어야 하므로 렌더는 이걸 그린다
+  lastSnapshot     Json?
+  /// 갱신 정책용 (#9 PR3b): 마지막 저장 판정 시각·그때의 시청자 구간, 대문에 실제로 써진 일련번호, 마지막 시도 시각
+  lastSavedAt      DateTime?      @db.DateTime(6)
+  lastViewerBucket Int?
+  gateSerial       Int            @default(0)
+  saveAttemptedAt  DateTime?      @db.DateTime(6)
+  /// 워커가 대문을 실제로 바꾼 마지막 시각 (반영 현황 표시용)
+  gateUpdatedAt    DateTime?      @db.DateTime(6)
+  /// 워커가 마지막으로 읽어온 대문 HTML — 스트리머가 삽입 위치를 고를 때 렌더한다 (#9 PR3)
+  gateHtml         String?        @db.MediumText
+  gateFetchedAt    DateTime?      @db.DateTime(6)
+  /// 워커가 gateHtml 을 836px 로 렌더한 스크린샷(PNG)과 요소별 좌표 — 콘솔이 네이버와 같은 모양 위에서 자리를 고르게 (#9)
+  gateImage        Bytes?         @db.LongBlob
+  gateBoxes        Json?
+  gateWidth        Int?
+  gateHeight       Int?
+  /// 스트리머가 고른 자리 — lib/cafeGate.ts 의 GatePicks. 설정이 미완이면 경로만 들고 있다가 완료되면 반영
+  gatePicks        Json?
+  updatedAt        DateTime       @updatedAt @db.DateTime(6)
+
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets           CafeAsset[]
+}
+
+/// 대문 이미지 배경 (#9 PR2). 파일이 아니라 DB — web(렌더)·api(업로드)가 공유 볼륨 없이 접근한다.
+/// 스트리머당 장면(live/offline)별 1장, 2MB 제한.
+model CafeAsset {
+  id            Int             @id @default(autoincrement())
+  integrationId Int
+  /// 'live' | 'offline'
+  scene         String          @db.VarChar(16)
+  mimeType      String          @db.VarChar(64)
+  width         Int
+  height        Int
+  data          Bytes
+  createdAt     DateTime        @default(now()) @db.DateTime(6)
+
+  integration   CafeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, scene])
 }
