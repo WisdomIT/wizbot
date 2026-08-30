@@ -51,6 +51,8 @@ export function initUpdater(onReady: () => void) {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = true;
+  //  NSIS 단일 exe 라 웹 인스톨러는 쓰지 않는다 — 명시하지 않으면 매 확인마다 경고를 찍고, 다음 버전에서 기본값이 바뀐다 (Windows 실측)
+  autoUpdater.disableWebInstaller = true;
   //  종료할 때 자동 설치되는 기본 동작은 그대로 둔다 — 트레이 메뉴는 그걸 앞당기는 수단이다
   autoUpdater.autoInstallOnAppQuit = true;
 
