@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { getMe } from '@/app/_lib/me';
 import { ActingBanner } from '@/components/acting-banner';
+import { ActingProvider } from '@/components/acting-context';
 import AppSidebarStreamer from '@/components/app-sidebar-streamer';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -25,6 +26,7 @@ export default async function ActingLayout({ children, params }: { children: Rea
 
   const user = { nickname: me.channelName, id: me.channelId, avatar: me.channelImageUrl ?? '' };
   return (
+    <ActingProvider>
     <StreamerThemeScope theme={me.theme} className="flex min-h-0 flex-1 flex-col">
       {/* 중첩 Provider 의 min-h-svh 를 풀고 바깥(inset) 본문 높이를 채운다 — 100svh 를 강제하면 바깥 여백만큼 넘쳐 스크롤이 생긴다 */}
       <SidebarProvider className="min-h-0 flex-1">
@@ -34,5 +36,6 @@ export default async function ActingLayout({ children, params }: { children: Rea
         </AppSidebarStreamer>
       </SidebarProvider>
     </StreamerThemeScope>
+    </ActingProvider>
   );
 }

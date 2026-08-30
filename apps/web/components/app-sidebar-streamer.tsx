@@ -159,7 +159,7 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
           <NavMenu title="설정" items={menus.setting} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
-          <NavUser user={user} viewerUrl={`/${user.id}/command`} />
+          <NavUser user={user} viewerUrl={`/${user.id}/command`} hideLogout={nested} />
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className={nested ? 'min-h-0' : undefined}>
