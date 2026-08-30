@@ -42,35 +42,60 @@ export default function Page() {
       <Alert>
         <ShieldAlert />
         <AlertTitle>처음 실행할 때 경고가 뜹니다</AlertTitle>
-        <AlertDescription className="flex flex-col gap-3">
-          <p>
-            코드 서명 인증서가 없어 운영체제가 &ldquo;확인되지 않은 앱&rdquo;으로 막습니다. 아래대로
-            한 번만 허용하면 다음부터는 그냥 실행됩니다.
-          </p>
-          <div className="flex flex-col gap-1">
-            <strong className="text-foreground">Windows</strong>
-            <p>
-              「Windows의 PC 보호」 화면에서 <strong>추가 정보</strong> →{' '}
-              <strong>실행</strong> 을 누릅니다.
-            </p>
-          </div>
-          <div className="flex flex-col gap-1">
-            <strong className="text-foreground">macOS</strong>
-            <p>
-              앱을 <strong>우클릭 → 열기</strong> 로 실행하고 한 번 더 <strong>열기</strong> 를
-              누릅니다. 그래도 막히면 <strong>시스템 설정 → 개인정보 보호 및 보안</strong> 아래쪽의{' '}
-              <strong>확인 없이 열기</strong> 를 누릅니다.
-            </p>
-            <p>
-              &ldquo;손상되었기 때문에 열 수 없습니다&rdquo; 가 뜨면 터미널에서 다음을 한 번 실행한 뒤 다시
-              여세요 (다운로드 격리 표시를 지웁니다):
-            </p>
-            <code className="rounded bg-muted px-2 py-1 font-mono text-xs">
-              xattr -cr &quot;/Applications/wizbot player.app&quot;
-            </code>
-          </div>
+        <AlertDescription>
+          코드 서명 인증서가 없어 운영체제가 &ldquo;확인되지 않은 앱&rdquo;으로 막습니다. 아래대로 한 번만
+          허용하면 다음부터는 그냥 실행됩니다.
         </AlertDescription>
       </Alert>
+
+      <section className="flex flex-col gap-3 text-sm text-muted-foreground">
+        <h2 className="text-base font-semibold text-foreground">Windows 설치</h2>
+        <ol className="flex flex-col gap-2 list-decimal pl-5 leading-relaxed">
+          <li>받은 <code>wizbot-player-win-x64.exe</code> 를 실행합니다.</li>
+          <li>
+            「Windows의 PC 보호」 화면이 뜨면 <strong>추가 정보</strong> → <strong>실행</strong> 을 누릅니다.
+          </li>
+          <li>설치 위치를 고르고 설치를 마치면 트레이에 아이콘이 생깁니다.</li>
+        </ol>
+      </section>
+
+      <section className="flex flex-col gap-3 text-sm text-muted-foreground">
+        <h2 className="text-base font-semibold text-foreground">macOS 설치</h2>
+        <p>
+          받은 dmg 를 열어 앱을 <strong>응용 프로그램</strong> 폴더로 끌어다 놓은 뒤, 처음 한 번은 아래 순서로
+          허용합니다 (macOS 15 이후 기준 — 우클릭 → 열기로는 허용되지 않습니다).
+        </p>
+        <ol className="flex flex-col gap-6 list-decimal pl-5 leading-relaxed">
+          <li className="flex flex-col gap-2">
+            <span>
+              앱을 열면 <strong>&lsquo;wizbot player&rsquo;을(를) 열지 않음</strong> 창이 뜹니다. <strong>완료</strong> 를
+              누릅니다 (휴지통으로 이동은 누르지 마세요).
+            </span>
+            <img src="/images/download/mac-step-1.png" alt="'wizbot player'을(를) 열지 않음 — 완료 버튼" className="w-full max-w-sm rounded-lg border" />
+          </li>
+          <li className="flex flex-col gap-2">
+            <span>
+              <strong>시스템 설정 → 개인정보 보호 및 보안</strong> 으로 가서 아래로 내리면 &ldquo;Mac을 보호하기 위해
+              &lsquo;wizbot player&rsquo;을(를) 차단했습니다&rdquo; 줄이 있습니다. <strong>그래도 열기</strong> 를
+              누릅니다.
+            </span>
+            <img src="/images/download/mac-step-2.png" alt="시스템 설정 → 개인정보 보호 및 보안 — 그래도 열기" className="w-full rounded-lg border" />
+          </li>
+          <li className="flex flex-col gap-2">
+            <span>
+              확인 창에서 다시 <strong>그래도 열기</strong> 를 누르면 실행됩니다. 이후로는 바로 열립니다.
+            </span>
+            <img src="/images/download/mac-step-3.png" alt="'wizbot player'을(를) 열겠습니까? — 그래도 열기" className="w-full max-w-sm rounded-lg border" />
+          </li>
+        </ol>
+        <p>
+          &ldquo;손상되었기 때문에 열 수 없습니다&rdquo; 가 뜨면 터미널에서 다음을 한 번 실행한 뒤 다시 여세요
+          (다운로드 격리 표시를 지웁니다):
+        </p>
+        <code className="w-fit rounded bg-muted px-2 py-1 font-mono text-xs">
+          xattr -cr &quot;/Applications/wizbot player.app&quot;
+        </code>
+      </section>
 
       <section className="flex flex-col gap-3 text-sm text-muted-foreground">
         <h2 className="text-base font-semibold text-foreground">쓰기 전에</h2>
@@ -84,7 +109,11 @@ export default function Page() {
             <strong>먼저 잡은 쪽이 계속 재생</strong>하고, 그쪽을 끄면 15초 안에 다른 쪽이
             이어받습니다.
           </li>
-          <li>새 버전이 나오면 앱이 알아서 받아둡니다. 트레이 메뉴에서 바로 적용할 수 있습니다.</li>
+          <li>
+            새 버전이 나오면 Windows 는 앱이 알아서 받아 트레이 메뉴에서 바로 적용할 수 있습니다. macOS 는 트레이에{' '}
+            <strong>새 버전 받기</strong> 가 뜨며, 내려받은 dmg 를 위 순서로 다시 설치합니다 (서명 인증서가 없어 자동
+            설치는 되지 않습니다).
+          </li>
         </ul>
       </section>
     </main>

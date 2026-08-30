@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BotMessageSquare, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BotMessageSquare, Download, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -61,6 +61,13 @@ const data = {
       url: '/streamer/song/history',
       icon: <FileAudio2 />,
     },
+    {
+      //  설치 경로가 노래 설정 모달 안에만 있어 찾기 어려웠다 — 메뉴에서 바로 (#117)
+      name: '플레이어 앱 설치',
+      url: '/download',
+      icon: <Download />,
+      popup: true,
+    },
   ],
   cafe: [
     {
@@ -104,7 +111,7 @@ interface AppSidebarStreamerProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 /** 메뉴 정의는 /streamer 기준 — 접두어만 바꿔 대행 콘솔에서도 같은 메뉴를 쓴다 */
-function withBase(items: { name: string; url: string; icon: React.JSX.Element }[], basePath: string) {
+function withBase(items: { name: string; url: string; icon: React.JSX.Element; popup?: boolean }[], basePath: string) {
   return items.map((item) => ({ ...item, url: item.url.replace(/^\/streamer/, basePath) }));
 }
 
