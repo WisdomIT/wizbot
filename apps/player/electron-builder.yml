@@ -34,7 +34,14 @@ mac:
     - target: dmg
       arch: [arm64, x64]
   category: public.app-category.music
-  identity: null
+  # ⚠️ 서명 인증서는 없지만 **ad-hoc 서명은 해야 한다.** Apple Silicon 은 서명 없는 arm64 앱을
+  # "손상되었기 때문에 열 수 없습니다" 로 아예 막는다 (v1.2.0 실측 — 인텔은 경고만 뜬다).
+  # electron-builder 26 은 identity: null 이면 서명을 통째로 건너뛰고, "-" 를 줘야 ad-hoc 으로 서명한다
+  # (app-builder-lib mac/MacTargetHelper.js). ad-hoc 이면 Gatekeeper 가 "확인되지 않은 개발자" 로만 막아
+  # 우클릭 → 열기로 실행된다. hardenedRuntime 은 공증 없이는 의미가 없고 ad-hoc 과 함께 쓰면
+  # 라이브러리 검증 예외 entitlement 를 요구하므로 끈다.
+  identity: "-"
+  hardenedRuntime: false
 dmg:
   artifactName: wizbot-player-mac-${arch}.dmg
 publish:
