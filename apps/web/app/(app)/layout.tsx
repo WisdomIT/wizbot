@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { getMe } from '@/app/_lib/me';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
+import { SESSION_EXPIRED_REDIRECT } from '@/lib/session-expired';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
 /**
@@ -19,8 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const me = await getMe();
   if (!me) {
-    // 앱은 켜자마자 여기로 온다 — 첫 로그인이 오류처럼 보이지 않도록 안내 문구를 붙이지 않는다
-    redirect('/login');
+    //  쿠키는 있는데 사용자가 없으면(환경 분리·탈퇴 뒤 남은 세션) 쿠키를 지우고 안내와 함께 로그인으로 —
+    //  아니면 로그인 페이지 ↔ /app/player 무한 루프로 앱이 검정 화면만 보인다 (#185).
+    //  쿠키가 없는 첫 실행은 오류처럼 보이지 않도록 안내 문구 없이
+    const hasCookie = !!(await cookies()).get('session-token');
+    redirect(hasCookie ? SESSION_EXPIRED_REDIRECT : '/login');
   }
 
   return (

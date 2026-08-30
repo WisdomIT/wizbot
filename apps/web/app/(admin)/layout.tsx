@@ -1,7 +1,9 @@
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import AppSidebarAdmin from '@/components/app-sidebar-admin';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { SESSION_EXPIRED_REDIRECT } from '@/lib/session-expired';
 import { trpc } from '@/src/utils/trpc';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
@@ -18,7 +20,9 @@ export default async function RootLayout({
   // 미들웨어가 admin 세션을 보장하지만, 계정 정보는 여기(RSC)서 한 번 조회해 내려준다 (#10)
   const me = await trpc.admin.me.query().catch(() => null);
   if (!me) {
-    redirect('/login?error=' + encodeURIComponent('로그인 후 이용해주세요.'));
+    //  쿠키는 있는데 관리자가 없으면 쿠키를 지우고 보낸다 — 아니면 로그인 페이지와 무한 루프 (#185)
+    const hasCookie = !!(await cookies()).get('session-token');
+    redirect(hasCookie ? SESSION_EXPIRED_REDIRECT : '/login?error=' + encodeURIComponent('로그인 후 이용해주세요.'));
   }
 
   return (
