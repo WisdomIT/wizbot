@@ -58,8 +58,10 @@ export function initUpdater(onReady: () => void) {
     downloaded = true;
     onReady();
   });
-  autoUpdater.on('error', () => {
-    /* 확인·다운로드 실패는 무시한다 (오프라인·릴리즈 없음 등) */
+  //  사용자에게 띄우진 않지만 로그엔 남긴다 — "ZIP file not provided" 같은 설정 오류를 콘솔에서 바로 알 수 있게 (#117)
+  autoUpdater.on('error', (error) => {
+    // eslint-disable-next-line no-console
+    console.error('[wizbot] 업데이트 확인/다운로드 실패:', error instanceof Error ? error.message : error);
   });
 
   setTimeout(check, FIRST_CHECK_MS);
