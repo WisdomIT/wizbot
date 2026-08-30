@@ -30,9 +30,14 @@ nsis:
 mac:
   # ⚠️ arch 를 주지 않으면 러너 아키텍처(macos-latest = Apple Silicon)만 빌드되어
   # 인텔 맥 사용자가 받아도 실행되지 않는다. universal 은 한 파일에 둘을 담아 용량이 두 배다.
+  # ⚠️ electron-updater 는 macOS 에서 **zip 으로만** 업데이트를 설치한다 (Squirrel.Mac). dmg 만 있으면
+  # latest-mac.yml 에 zip 항목이 없어 "ZIP file not provided" 로 실패한다 (v1.2.1 실측). dmg 는 수동 설치용.
   target:
     - target: dmg
       arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  artifactName: wizbot-player-mac-${arch}.${ext}
   category: public.app-category.music
   # ⚠️ 서명 인증서는 없지만 **ad-hoc 서명은 해야 한다.** Apple Silicon 은 서명 없는 arm64 앱을
   # "손상되었기 때문에 열 수 없습니다" 로 아예 막는다 (v1.2.0 실측 — 인텔은 경고만 뜬다).
