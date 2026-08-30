@@ -214,7 +214,9 @@ async function poll(): Promise<void> {
   try {
     const session = await getSession();
     if (!session) {
+      //  세션이 없어도 워커는 살아 있다 — 헬스체크(lastPollAt)는 여기서도 갱신한다 (운영 첫 기동에서 unhealthy 로 뜨던 문제)
       console.warn('⏸ 봇 계정 세션이 등록되지 않았습니다 — 어드민 > 네이버 봇 계정');
+      lastPollAt = new Date();
       return;
     }
     if (!(await syncSession(session))) {
