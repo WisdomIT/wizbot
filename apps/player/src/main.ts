@@ -23,7 +23,7 @@ import {
   SOURCE_WINDOW_SIZE,
 } from './config';
 import { appIconPath, loadTrayIcon } from './icons';
-import { initUpdater, installUpdateNow, isUpdateReady, stopUpdater } from './updater';
+import { getAvailableUpdate, initUpdater, installUpdateNow, isUpdateReady, openManualDownload, stopUpdater } from './updater';
 
 /**
  * wizbot player (#85).
@@ -309,6 +309,14 @@ function buildTrayMenu(state: PlayerState | null) {
     items.push(
       { type: 'separator' },
       { label: '업데이트 설치하고 다시 시작', click: installUpdateNow },
+    );
+  }
+  //  macOS 는 자동 설치가 불가능하다(updater.ts 참고) — 새 버전을 알리고 dmg 를 열어 준다
+  const manual = getAvailableUpdate();
+  if (manual) {
+    items.push(
+      { type: 'separator' },
+      { label: `새 버전 ${manual.version} 받기 (설치는 직접)`, click: openManualDownload },
     );
   }
 

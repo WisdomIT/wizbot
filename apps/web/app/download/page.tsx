@@ -68,6 +68,10 @@ export default function Page() {
             <code className="rounded bg-muted px-2 py-1 font-mono text-xs">
               xattr -cr &quot;/Applications/wizbot player.app&quot;
             </code>
+            <p>
+              macOS 는 새 버전이 나오면 트레이 메뉴에 <strong>새 버전 받기</strong> 가 뜹니다. 내려받은 dmg 를
+              다시 설치해주세요 (서명 인증서가 없어 자동 설치는 되지 않습니다). Windows 는 자동으로 설치됩니다.
+            </p>
           </div>
         </AlertDescription>
       </Alert>

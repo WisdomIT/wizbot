@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 
 /**
@@ -14,7 +14,26 @@ import { autoUpdater } from 'electron-updater';
  *
  * 프리릴리즈(v1.3.0-alpha.1 등)는 기본값 allowPrerelease: false 라 내려오지 않는다 —
  * 알파 태그를 올려도 일반 사용자에게 밀리지 않는다.
+ *
+ * ⚠️ macOS 는 **확인만 하고 설치하지 않는다.** Squirrel.Mac 은 새 앱이 실행 중인 앱의 서명 요구 사항을
+ * 만족해야 교체하는데, 우리는 Developer ID 인증서 없이 ad-hoc 서명이라 원리상 통과할 수 없다
+ * (v1.2.2 실측: "Code signature … did not pass validation"). 대신 트레이에 「새 버전 받기」를 띄워
+ * dmg 를 내려받아 수동 설치하게 한다. Windows 는 서명 검증이 없어 자동 설치 그대로.
  */
+const MANUAL_INSTALL = process.platform === 'darwin';
+
+/** macOS 에서 확인된 새 버전 — 트레이 메뉴가 「받기」 항목을 그린다 */
+let available: { version: string } | null = null;
+
+export function getAvailableUpdate() {
+  return MANUAL_INSTALL ? available : null;
+}
+
+/** 현재 아키텍처의 dmg 를 브라우저로 내려받게 한다 — 설치는 사용자가 드래그로 */
+export function openManualDownload() {
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  void shell.openExternal(`https://github.com/WisdomIT/wizbot/releases/latest/download/wizbot-player-mac-${arch}.dmg`);
+}
 
 /** 첫 확인은 창이 뜬 뒤 여유를 두고 (기동 직후 네트워크가 안 잡힐 수 있다) */
 const FIRST_CHECK_MS = 10_000;
@@ -50,7 +69,8 @@ export function initUpdater(onReady: () => void) {
   //  개발 실행에서는 app-update.yml 이 없어 매번 실패한다
   if (!app.isPackaged) return;
 
-  autoUpdater.autoDownload = true;
+  //  macOS 는 받아도 설치할 수 없으므로 확인만 (위 주석)
+  autoUpdater.autoDownload = !MANUAL_INSTALL;
   //  NSIS 단일 exe 라 웹 인스톨러는 쓰지 않는다 — 명시하지 않으면 매 확인마다 경고를 찍고, 다음 버전에서 기본값이 바뀐다 (Windows 실측)
   autoUpdater.disableWebInstaller = true;
   //  종료할 때 자동 설치되는 기본 동작은 그대로 둔다 — 트레이 메뉴는 그걸 앞당기는 수단이다
@@ -59,6 +79,14 @@ export function initUpdater(onReady: () => void) {
   autoUpdater.on('update-downloaded', () => {
     downloaded = true;
     onReady();
+  });
+  autoUpdater.on('update-available', (info) => {
+    if (!MANUAL_INSTALL) return;
+    available = { version: info.version };
+    onReady();
+  });
+  autoUpdater.on('update-not-available', () => {
+    available = null;
   });
   //  사용자에게 띄우진 않지만 로그엔 남긴다 — "ZIP file not provided" 같은 설정 오류를 콘솔에서 바로 알 수 있게 (#117)
   autoUpdater.on('error', (error) => {
