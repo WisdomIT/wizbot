@@ -61,6 +61,13 @@ export default function Page() {
               누릅니다. 그래도 막히면 <strong>시스템 설정 → 개인정보 보호 및 보안</strong> 아래쪽의{' '}
               <strong>확인 없이 열기</strong> 를 누릅니다.
             </p>
+            <p>
+              &ldquo;손상되었기 때문에 열 수 없습니다&rdquo; 가 뜨면 터미널에서 다음을 한 번 실행한 뒤 다시
+              여세요 (다운로드 격리 표시를 지웁니다):
+            </p>
+            <code className="rounded bg-muted px-2 py-1 font-mono text-xs">
+              xattr -cr &quot;/Applications/wizbot player.app&quot;
+            </code>
           </div>
         </AlertDescription>
       </Alert>
