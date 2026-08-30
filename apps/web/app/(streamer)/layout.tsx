@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { getMe } from '@/app/_lib/me';
 import AppSidebarStreamer from '@/components/app-sidebar-streamer';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { SESSION_EXPIRED_REDIRECT } from '@/lib/session-expired';
 import { TRPCReactProvider } from '@/src/utils/trpc-react';
 
 // 인증 콘솔은 요청마다 세션으로 렌더돼야 한다. 명시하지 않으면 빌드 시(API 부재)
@@ -27,7 +29,9 @@ export default async function RootLayout({
   // (기존: 사이드바가 useEffect 로 서버 액션 호출 → 렌더 후 워터폴 + 빈 상태 깜빡임)
   const me = await getMe();
   if (!me) {
-    redirect('/login?error=' + encodeURIComponent('로그인 후 이용해주세요.'));
+    //  쿠키는 있는데 사용자가 없으면(환경 분리·탈퇴 뒤 남은 세션) 쿠키를 지우고 보낸다 — 아니면 로그인 페이지와 무한 루프 (#185)
+    const hasCookie = !!(await cookies()).get('session-token');
+    redirect(hasCookie ? SESSION_EXPIRED_REDIRECT : '/login?error=' + encodeURIComponent('로그인 후 이용해주세요.'));
   }
 
   const user = {
