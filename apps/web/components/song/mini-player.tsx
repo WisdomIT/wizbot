@@ -1,6 +1,6 @@
 'use client';
 
-import { ListMusic, Maximize2, Music, Pause, Play, Repeat1, SkipForward, Volume2 } from 'lucide-react';
+import { ArrowDownCircle, ListMusic, Maximize2, Music, Pause, Play, Repeat1, SkipForward, Volume2 } from 'lucide-react';
 
 import { formatTime, type PlaybackView, type PlayerControls } from '@/components/song/song-player';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,8 @@ export function MiniPlayer({
   onPlaySong,
   platform,
   windowControls,
+  update,
+  onApplyUpdate,
 }: {
   playback: PlaybackView;
   controls: PlayerControls;
@@ -48,13 +50,28 @@ export function MiniPlayer({
   onPlaySong: (song: MiniQueueItem) => void;
   platform: string;
   windowControls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
+  /** 설치할 수 있는 새 버전 (#117) — 미니는 공간이 없어 타이틀바 아이콘으로만 알린다 */
+  update?: { version: string } | null;
+  onApplyUpdate?: () => void;
 }) {
   const playing = playback.status === 'PLAYING';
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-background" style={DRAG}>
       {/* macOS 는 신호등 버튼 자리를, Windows 는 우리 창 제어 버튼을 여기에 둔다 */}
-      <AppTitleBar platform={platform} controls={windowControls} canMaximize={false} compact />
+      <AppTitleBar platform={platform} controls={windowControls} canMaximize={false} compact>
+        {update && (
+          <button
+            type="button"
+            aria-label={`새 버전 (${update.version}) 설치`}
+            title={`새 버전 (${update.version}) 설치`}
+            onClick={onApplyUpdate}
+            className="flex size-6 items-center justify-center rounded text-blue-500 transition-colors hover:bg-muted"
+          >
+            <ArrowDownCircle className="size-4" />
+          </button>
+        )}
+      </AppTitleBar>
 
       <div className="flex shrink-0 flex-col gap-1.5 px-4 pt-0 pb-1">
         <div className="flex items-center gap-2">

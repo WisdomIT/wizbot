@@ -26,6 +26,15 @@ contextBridge.exposeInMainWorld('wizbotApp', {
   getYoutubeLogin: (): Promise<boolean> => ipcRenderer.invoke('app:get-youtube-login'),
   youtubeLogout: (): Promise<void> => ipcRenderer.invoke('app:youtube-logout'),
 
+  /** 새 버전 (#117) — Windows 는 설치·재시작, macOS 는 dmg 다운로드를 연다 */
+  getUpdate: (): Promise<{ version: string } | null> => ipcRenderer.invoke('app:get-update'),
+  applyUpdate: () => ipcRenderer.send('app:apply-update'),
+  onUpdateChanged: (callback: (state: { version: string } | null) => void) => {
+    const listener = (_event: unknown, state: { version: string } | null) => callback(state);
+    ipcRenderer.on('app:update-changed', listener);
+    return () => ipcRenderer.removeListener('app:update-changed', listener);
+  },
+
   minimize: () => ipcRenderer.send('app:window', 'minimize'),
   toggleMaximize: () => ipcRenderer.send('app:window', 'toggle-maximize'),
   close: () => ipcRenderer.send('app:window', 'close'),
