@@ -146,7 +146,8 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
   let currentPage: string | undefined = undefined;
 
   for (const [key, items] of Object.entries(menus)) {
-    const found = items.find((item) => item.url === pathname);
+    //  상세 경로(/streamer/notice/3 등)도 해당 메뉴로 — 경계('/')를 지켜 접두어 매칭 (#206)
+    const found = items.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
     if (found) {
       currentGroup = group[key as keyof typeof group];
       currentPage = found.name;

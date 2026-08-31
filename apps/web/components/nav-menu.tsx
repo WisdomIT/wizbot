@@ -34,7 +34,7 @@ export function NavMenu({
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton asChild isActive={pathname === item.url}>
+            <SidebarMenuButton asChild isActive={pathname === item.url || pathname.startsWith(`${item.url}/`)}>
               <Link
                 href={item.url}
                 target={popup || item.popup ? '_blank' : undefined}
