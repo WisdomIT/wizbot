@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@trpc/client": "^11.18.0",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "@wizbot/eslint-config": "workspace:^",
     "@wizbot/shared": "workspace:^",
     "electron": "^43.4.1",

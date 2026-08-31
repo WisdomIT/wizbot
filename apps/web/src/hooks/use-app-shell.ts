@@ -19,7 +19,13 @@ interface WizbotApp {
   minimize: () => void;
   toggleMaximize: () => void;
   close: () => void;
+  /** 새 버전 (#117) — 구버전 앱에는 없어 optional. Windows 는 설치·재시작, macOS 는 dmg 다운로드를 연다 */
+  getUpdate?: () => Promise<AppUpdate>;
+  applyUpdate?: () => void;
+  onUpdateChanged?: (callback: (state: AppUpdate) => void) => () => void;
 }
+
+export type AppUpdate = { version: string } | null;
 
 declare global {
   interface Window {
@@ -39,6 +45,8 @@ export function useAppShell() {
   const [autoLaunch, setAutoLaunchState] = useState(false);
   /** 유튜브(프리미엄) 로그인 여부 — 로그인은 별도 창에서 이뤄진다 (#118) */
   const [youtubeLoggedIn, setYoutubeLoggedIn] = useState(false);
+  /** 설치할 수 있는 새 버전 (#117) — 앱이 알려준다 */
+  const [update, setUpdate] = useState<AppUpdate>(null);
 
   useEffect(() => {
     const app = window.wizbotApp;
@@ -56,11 +64,16 @@ export function useAppShell() {
 
     void app.getAutoLaunch().then(setAutoLaunchState);
     void app.getYoutubeLogin().then(setYoutubeLoggedIn);
+    void app.getUpdate?.().then(setUpdate);
+    const unsubscribe = app.onUpdateChanged?.(setUpdate);
 
     // 로그인은 다른 창에서 하므로, 이 창으로 돌아왔을 때 상태를 다시 읽는다
     const refresh = () => void app.getYoutubeLogin().then(setYoutubeLoggedIn);
     window.addEventListener('focus', refresh);
-    return () => window.removeEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      unsubscribe?.();
+    };
   }, []);
 
   const setMode = useCallback(
@@ -119,6 +132,9 @@ export function useAppShell() {
         }
       : undefined,
     platform: bridge?.platform ?? '',
+    /** 설치할 수 있는 새 버전 — 없으면 null */
+    update: bridge ? update : null,
+    applyUpdate: () => bridge?.applyUpdate?.(),
     mode: bridge ? mode : ('desktop' as WindowMode),
     setMode,
     queueOpen,
