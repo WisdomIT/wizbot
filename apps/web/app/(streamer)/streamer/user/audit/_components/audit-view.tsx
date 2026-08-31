@@ -55,7 +55,12 @@ export function AuditView() {
 /** 한 페이지(50건) — 각 페이지가 자기 쿼리를 들고 있어 누적 state 가 필요 없다 */
 function AuditPage({ cursor, isLast, onMore }: { cursor: number | null; isLast: boolean; onMore: (next: number) => void }) {
   const trpc = useTRPC();
-  const { data, isPending, error } = useQuery(trpc.audit.logs.queryOptions({ limit: PAGE_SIZE, cursor }));
+  const { data, isPending, error } = useQuery({
+    ...trpc.audit.logs.queryOptions({ limit: PAGE_SIZE, cursor }),
+    //  콘솔 공통 staleTime(30초) 캐시를 쓰면 방금 바꾼 설정이 안 보인다 — 기록은 들어올 때마다 새로 읽는다
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
 
   if (isPending) {
     return (
