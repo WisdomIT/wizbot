@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BotMessageSquare, Download, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -96,6 +96,11 @@ const data = {
       name: '링크 설정',
       url: '/streamer/user/link',
       icon: <Link />,
+    },
+    {
+      name: '변경 기록',
+      url: '/streamer/user/audit',
+      icon: <History />,
     },
   ],
 };

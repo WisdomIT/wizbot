@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { initTRPC, TRPCError } from '@trpc/server';
 
+import { AUDIT_EXCLUDED, sanitizeAuditInput } from './lib/audit';
 import { isServiceError, ServiceErrorCode } from './services/errors';
 
 /**
@@ -78,11 +79,44 @@ const mapServiceErrors = t.middleware(async ({ next }) => {
 export const publicProcedure = t.procedure.use(mapServiceErrors);
 
 /**
+ * 감사 로그 (#175) — 스트리머 스코프의 mutation 을 전부 남긴다. 성공한 것만, 재생 조작(AUDIT_EXCLUDED)은 제외.
+ * 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라 본인 변경도 똑같이 남긴다.
+ * 기록 실패가 원래 작업을 되돌리진 못하므로(이미 성공) 콘솔에만 남긴다.
+ */
+const auditMutations = t.middleware(async ({ ctx, next, type, path, getRawInput }) => {
+  const result = await next();
+  const user = ctx.user;
+  if (result.ok && type === 'mutation' && !AUDIT_EXCLUDED.has(path) && user) {
+    const acting = user.role === 'admin' ? ctx.actingAs : null;
+    const targetUserId = acting ? acting.userId : user.id;
+    try {
+      const rawInput = await getRawInput();
+      //  Prisma 의 Json 쓰기 타입은 최상위 null 을 받지 않는다 — 입력이 없으면 컬럼을 비운다
+      const input = rawInput === undefined ? null : sanitizeAuditInput(rawInput);
+      await ctx.prisma.auditLog.create({
+        data: {
+          userId: targetUserId,
+          actorType: acting ? 'ADMIN' : 'STREAMER',
+          actorId: acting ? acting.adminId : user.id,
+          procedure: path,
+          ...(input === null ? {} : { input }),
+        },
+      });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[audit] 기록 실패:', path, error);
+    }
+  }
+  return result;
+});
+
+/**
  * 로그인한 스트리머 전용. ctx.user가 non-null로 좁혀진다.
  * 어드민이 대행 중(#71)이면 ctx.user 를 대행 대상 스트리머로 바꿔 통과시킨다 — 89개 스트리머 프로시저가
  * 수정 없이 그 스트리머 스코프로 동작한다. 실제 세션이 admin 일 때만 가능하므로 스트리머가 쿠키를 흉내내도 소용없다.
+ * ⚠ 감사 미들웨어는 원래 세션(ctx.user)을 봐야 하므로 user 를 좁히기 **전에** 둔다.
  */
-export const streamerProcedure = publicProcedure.use(({ ctx, next }) => {
+export const streamerProcedure = publicProcedure.use(auditMutations).use(({ ctx, next }) => {
   if (ctx.user?.role === 'streamer') {
     return next({ ctx: { ...ctx, user: ctx.user } });
   }
