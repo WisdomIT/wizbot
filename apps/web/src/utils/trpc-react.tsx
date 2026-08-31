@@ -19,8 +19,10 @@ export function TRPCReactProvider({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // 콘솔 데이터는 본인만 수정하므로 짧은 staleTime 으로 재요청을 줄인다
-            staleTime: 30 * 1000,
+            // 콘솔 데이터는 본인 외에도 어드민 대행(#71)·챗봇 명령이 바꾼다 — 페이지에 들어올 때마다
+            // 항상 최신을 읽는다 (#175 변경 기록에서 30초 캐시로 낡은 화면이 떴던 문제의 일반화)
+            staleTime: 0,
+            refetchOnMount: 'always',
             retry: 1,
           },
         },
