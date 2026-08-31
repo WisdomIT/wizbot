@@ -122,6 +122,28 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
+/// 운영 알림용 디스코드 웹훅 (#207). 종류별로 채널을 나눠 받도록 엔드포인트를 따로 두고,
+/// 재배포 없이 바꾸도록 환경변수가 아니라 DB(어드민 페이지)로 관리한다.
+model DiscordWebhook {
+  kind      NotifyKind @id
+  url       String     @db.VarChar(300)
+  enabled   Boolean    @default(true)
+  updatedAt DateTime   @updatedAt @db.DateTime(6)
+}
+
+enum NotifyKind {
+  /// 네이버 봇 세션 만료 (#9)
+  SESSION_EXPIRED
+  /// 신규 사용 신청 (#96)
+  SIGNUP
+  /// 카페 봇 가입 요청 (#9)
+  CAFE_JOIN
+  /// 문의사항 등록·추가 (#206)
+  INQUIRY
+  /// 워커·API 의 심각한 오류 — 발생처는 앞으로 넓힌다
+  ERROR
+}
+
 /// 문의사항 (#206 3/3). 스트리머가 쓰고 어드민이 답한다 — 본문은 마크다운(GFM), 메시지 스레드.
 model Inquiry {
   id             Int           @id @default(autoincrement())
