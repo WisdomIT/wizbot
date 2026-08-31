@@ -122,6 +122,18 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
+/// SMTP 설정 (#215) — 단일 행(id=1). 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+/// 행이 없으면 SMTP_* 환경변수로 폴백 — 관리자 로그인이 패스코드 메일에 의존하므로 env 가 잠금 방지 탈출구다.
+model MailSettings {
+  id        Int      @id @default(1)
+  host      String   @db.VarChar(255)
+  port      Int      @default(465)
+  user      String   @db.VarChar(255)
+  pass      String   @db.VarChar(255)
+  sender    String   @db.VarChar(255)
+  updatedAt DateTime @updatedAt @db.DateTime(6)
+}
+
 /// 운영 알림용 디스코드 웹훅 (#207). 종류별로 채널을 나눠 받도록 엔드포인트를 따로 두고,
 /// 재배포 없이 바꾸도록 환경변수가 아니라 DB(어드민 페이지)로 관리한다.
 model DiscordWebhook {

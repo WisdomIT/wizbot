@@ -17,4 +17,19 @@ export const notifyRouter = t.router({
   test: adminProcedure
     .input(z.object({ kind: kindInput }))
     .mutation(({ ctx, input }) => notifyService.testWebhook(ctx.prisma, input.kind)),
+
+  /* ── 메일(SMTP) 설정 (#215) — 비밀번호는 설정 여부만 내려간다 ── */
+  mailSettings: adminProcedure.query(({ ctx }) => notifyService.getMailSettings(ctx.prisma)),
+  setMailSettings: adminProcedure
+    .input(z.object({
+      host: z.string().max(255),
+      port: z.number().int().min(1).max(65535),
+      user: z.string().max(255),
+      /** 비워 두면 저장된 비밀번호 유지 */
+      pass: z.string().max(255),
+      sender: z.string().max(255),
+    }))
+    .mutation(({ ctx, input }) => notifyService.setMailSettings(ctx.prisma, input)),
+  resetMailSettings: adminProcedure.mutation(({ ctx }) => notifyService.resetMailSettings(ctx.prisma)),
+  testMail: adminProcedure.mutation(({ ctx }) => notifyService.testMailSettings(ctx.prisma)),
 });

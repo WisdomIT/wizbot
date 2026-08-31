@@ -38,6 +38,7 @@ function db(webhook: { url: string; enabled: boolean } | null) {
   return {
     admin: { findMany: vi.fn().mockResolvedValue([]) },
     discordWebhook: { findUnique: vi.fn().mockResolvedValue(webhook && { kind: 'SIGNUP', ...webhook }) },
+    mailSettings: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaClient;
 }
 
