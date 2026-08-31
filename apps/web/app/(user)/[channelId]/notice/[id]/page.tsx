@@ -4,7 +4,7 @@ import { NoticeArticle } from '@/components/notice/notice-article';
 export default async function Page({ params }: { params: Promise<{ channelId: string; id: string }> }) {
   const { channelId, id } = await params;
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <NoticeArticle id={id} backHref={`/${channelId}/notice`} />
     </div>
   );

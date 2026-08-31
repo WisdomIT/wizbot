@@ -106,6 +106,20 @@ model Notice {
   popup     Boolean  @default(false)
   createdAt DateTime @default(now()) @db.DateTime(6)
   updatedAt DateTime @updatedAt @db.DateTime(6)
+
+  reads NoticeRead[]
+}
+
+/// 공지 읽음 기록 (#206). 팝업 공지의 "확인하면 다시 안 뜸"과 사이드바 새 글 표시를 겸한다.
+model NoticeRead {
+  noticeId Int
+  userId   Int
+  readAt   DateTime @default(now()) @db.DateTime(6)
+
+  notice Notice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([noticeId, userId])
 }
 
 /// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
@@ -176,6 +190,7 @@ model User {
   playlists         SongFavorite[]
   cafeIntegration   CafeIntegration?
   auditLogs         AuditLog[]
+  noticeReads       NoticeRead[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.

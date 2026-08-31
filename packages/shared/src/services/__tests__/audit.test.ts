@@ -57,6 +57,7 @@ describe('감사 미들웨어 — streamerProcedure 의 mutation 기록', () => 
     await caller['song.seek']({ positionSeconds: 3 });
     //  대기열에 곡을 넣고 빼는 것도 제외 — 재생 기록이 이미 남는다 (사용자 확정)
     expect(AUDIT_EXCLUDED.has('song.addToQueue')).toBe(true);
+    expect(AUDIT_EXCLUDED.has('notice.markAllRead')).toBe(true);
     await caller['song.addToQueue']({ url: 'x' });
     expect(create).not.toHaveBeenCalled();
   });

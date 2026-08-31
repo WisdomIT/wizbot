@@ -19,6 +19,8 @@ export function NavSecondary({
     name: string;
     url: string;
     icon: JSX.Element;
+    /** 새 글 표시 (#206) */
+    dot?: boolean;
   }[];
   pathname: string;
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
@@ -32,6 +34,7 @@ export function NavSecondary({
                 <Link href={item.url}>
                   {item.icon}
                   <span>{item.name}</span>
+                  {item.dot && <span aria-label="새 글" className="ml-auto size-2 shrink-0 rounded-full bg-red-500" />}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
