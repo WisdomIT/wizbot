@@ -265,6 +265,7 @@ export function PlayerView() {
                 />
               )}
               <SettingsDialog
+                isApp={shell.isApp}
                 settings={{
                   sourceType: source.sourceType,
                   sourceToken: source.sourceToken,

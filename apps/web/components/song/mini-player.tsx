@@ -164,7 +164,8 @@ export function MiniPlayer({
             <Repeat1 />
           </Button>
 
-          <Volume2 className="ml-1 size-4 shrink-0 text-muted-foreground" />
+          {/* 볼륨이 남는 폭을 전부 차지하면 손잡이(드래그 영역)가 사라진다 — 오른쪽에 고정 폭으로 (#202) */}
+          <Volume2 className="ml-auto size-4 shrink-0 text-muted-foreground" />
           <input
             type="range"
             aria-label="볼륨"
@@ -174,7 +175,7 @@ export function MiniPlayer({
             onMouseUp={(event) => controls.onVolume(Number(event.currentTarget.value))}
             onTouchEnd={(event) => controls.onVolume(Number(event.currentTarget.value))}
             onKeyUp={(event) => controls.onVolume(Number(event.currentTarget.value))}
-            className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+            className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
           />
         </div>
       </div>
