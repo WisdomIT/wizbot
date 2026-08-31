@@ -122,6 +122,47 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
+/// 문의사항 (#206 3/3). 스트리머가 쓰고 어드민이 답한다 — 본문은 마크다운(GFM), 메시지 스레드.
+model Inquiry {
+  id             Int           @id @default(autoincrement())
+  userId         Int
+  title          String        @db.VarChar(200)
+  /// OPEN = 답변 대기(스트리머가 마지막), ANSWERED = 답변 완료(어드민이 마지막)
+  status         InquiryStatus @default(OPEN)
+  /// 새 글 표시용 — 각자 스레드를 연 마지막 시각과 상대 메시지 시각을 비교한다
+  streamerReadAt DateTime?     @db.DateTime(6)
+  adminReadAt    DateTime?     @db.DateTime(6)
+  createdAt      DateTime      @default(now()) @db.DateTime(6)
+  updatedAt      DateTime      @updatedAt @db.DateTime(6)
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages InquiryMessage[]
+
+  @@index([userId, id])
+}
+
+enum InquiryStatus {
+  OPEN
+  ANSWERED
+}
+
+model InquiryMessage {
+  id        Int           @id @default(autoincrement())
+  inquiryId Int
+  author    InquiryAuthor
+  body      String        @db.MediumText
+  createdAt DateTime      @default(now()) @db.DateTime(6)
+
+  inquiry Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+
+  @@index([inquiryId, id])
+}
+
+enum InquiryAuthor {
+  STREAMER
+  ADMIN
+}
+
 /// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
 /// 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라, 스트리머 본인도 자기 기록을 본다.
 model AuditLog {
@@ -191,6 +232,7 @@ model User {
   cafeIntegration   CafeIntegration?
   auditLogs         AuditLog[]
   noticeReads       NoticeRead[]
+  inquiries         Inquiry[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
