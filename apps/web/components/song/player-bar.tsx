@@ -98,7 +98,12 @@ function useInterpolatedPosition(
 ) {
   const [position, setPosition] = useState(positionSeconds);
 
-  useEffect(() => setPosition(positionSeconds), [positionSeconds]);
+  //  서버 위치가 바뀌면 보간 기준을 갈아끼운다 — effect 대신 렌더 중 보정 (#200)
+  const [prevServerSeconds, setPrevServerSeconds] = useState(positionSeconds);
+  if (prevServerSeconds !== positionSeconds) {
+    setPrevServerSeconds(positionSeconds);
+    setPosition(positionSeconds);
+  }
 
   useEffect(() => {
     if (!playing) return;

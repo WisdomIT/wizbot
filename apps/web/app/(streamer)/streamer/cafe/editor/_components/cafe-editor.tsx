@@ -51,6 +51,11 @@ type Patches = Record<string, Partial<CafeElement>>;
  * 배경 위에 텍스트 영역·썸네일 영역을 놓는다 — 도형은 없다, 장식은 배경에 이미 있다.
  * 2a: 드래그 이동·리사이즈·수치 패널·두 장면. 2b: 스냅 가이드·다중 선택(Shift+클릭, 영역 드래그)·정렬/분배·방향키·되돌리기.
  */
+/** 새 요소 id — 이벤트 핸들러에서만 호출된다 (#200: 렌더 경로 밖으로 분리) */
+function makeElementId(kind: CafeElementKind) {
+  return `${kind}-${Date.now().toString(36)}`;
+}
+
 export function CafeEditor({ channelId }: { channelId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -88,7 +93,7 @@ export function CafeEditor({ channelId }: { channelId: string }) {
     applyPatches({ [id]: patch });
   }
   function addElement(kind: CafeElementKind) {
-    const id = `${kind}-${Date.now().toString(36)}`;
+    const id = makeElementId(kind);
     const base = { id, x: 40, y: 40 + current.elements.length * 20, w: kind === 'thumbnail' ? 320 : 480, h: kind === 'thumbnail' ? Math.round(320 / THUMBNAIL_RATIO) : 60 };
     const element = cafeElementSchema.parse(kind === 'thumbnail' ? { ...base, kind } : { ...base, kind, color: '#ffffff' });
     updateScene((elements) => [...elements, element]);
@@ -189,7 +194,8 @@ export function CafeEditor({ channelId }: { channelId: string }) {
   if (isPending) return <Skeleton className="h-[600px] w-full" />;
 
   const usedKinds = new Set(current.elements.map((e) => e.kind));
-  const previewUrl = `/cafe/${channelId}.png?preview=1&scene=${scene}&t=${Date.now()}`;
+  //  캐시 무효화 타임스탬프는 클릭 시점에 붙인다 — 렌더 중 Date.now 호출 제거 (#200)
+  const previewPath = `/cafe/${channelId}.png?preview=1&scene=${scene}`;
 
   return (
     <div className="flex min-w-0 flex-col gap-4 py-4">
@@ -209,7 +215,15 @@ export function CafeEditor({ channelId }: { channelId: string }) {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>
-            <a href={previewUrl} target="_blank" rel="noreferrer">실제 렌더 미리보기</a>
+            <a
+                href={previewPath}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.open(`${previewPath}&t=${Date.now()}`, '_blank', 'noreferrer');
+                }}
+              >실제 렌더 미리보기</a>
           </Button>
           <Button size="sm" onClick={handleSave} disabled={!dirty || save.isPending}>저장</Button>
         </div>

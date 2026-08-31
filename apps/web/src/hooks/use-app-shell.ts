@@ -48,6 +48,9 @@ export function useAppShell() {
   /** 설치할 수 있는 새 버전 (#117) — 앱이 알려준다 */
   const [update, setUpdate] = useState<AppUpdate>(null);
 
+  /* eslint-disable react-hooks/set-state-in-effect --
+     Electron 브리지(window.wizbotApp)·localStorage 는 하이드레이션 뒤에만 읽을 수 있고,
+     첫 렌더는 서버 렌더(웹 모드)와 같아야 한다. 마운트 후 1회 동기화가 의도된 동작 (#200) */
   useEffect(() => {
     const app = window.wizbotApp;
     if (!app) return;
@@ -75,6 +78,7 @@ export function useAppShell() {
       unsubscribe?.();
     };
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const setMode = useCallback(
     (next: WindowMode) => {

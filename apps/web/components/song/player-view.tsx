@@ -444,7 +444,12 @@ function QueueCard({
   // 드래그 직후 서버 응답을 기다리지 않고 바로 보여주기 위해 로컬 사본을 둔다
   const [items, setItems] = useState(queue);
   const [clearing, setClearing] = useState(false);
-  useEffect(() => setItems(queue), [queue]);
+  //  서버 큐를 로컬 사본에 반영 — effect 대신 렌더 중 보정 (#200)
+  const [prevQueue, setPrevQueue] = useState(queue);
+  if (queue !== prevQueue) {
+    setPrevQueue(queue);
+    setItems(queue);
+  }
 
   const sensors = useSensors(
     // 살짝 눌린 정도로는 드래그가 시작되지 않게 — 삭제/재생 버튼 클릭을 방해하지 않는다

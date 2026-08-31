@@ -56,13 +56,13 @@ export default function UpdateCommand({
     permission: 'STREAMER',
   });
 
-  useEffect(() => {
-    if (!getCommand) return;
-
+  //  서버에서 온 명령을 폼에 반영 — effect 대신 렌더 중 보정 (#200, react.dev 「이전 렌더 값 저장」 패턴)
+  const [prevCommandData, setPrevCommandData] = useState(getCommand);
+  if (getCommand && prevCommandData !== getCommand) {
+    setPrevCommandData(getCommand);
     setCommand(getCommand.command);
     setType(getCommand.type);
     setEcho(getCommand.type === 'echo' ? getCommand.response : '');
-
     if (getCommand.type === 'function' && isChatbotFunctionKey(getCommand.function)) {
       setFunctionArgs({
         type: chatbotFunctionDefinitionMap[getCommand.function].type,
@@ -71,7 +71,7 @@ export default function UpdateCommand({
         option: getCommand.option ?? undefined,
       });
     }
-  }, [getCommand]);
+  }
 
   async function handleClose() {
     setUpdateTarget(null);

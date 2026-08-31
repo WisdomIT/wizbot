@@ -301,14 +301,16 @@ function SongOverlay({
   const [visible, setVisible] = useState(true);
 
   // TIMED 면 곡이 바뀔 때만 잠깐 보여준다 (일시정지/재개로는 다시 뜨지 않는다)
+  //  다시 보이기는 렌더 중 보정으로, 숨기기 타이머만 effect 로 (#200)
   const title = now?.title ?? null;
+  const overlayKey = `${setting.mode}|${title ?? ''}`;
+  const [prevOverlayKey, setPrevOverlayKey] = useState(overlayKey);
+  if (overlayKey !== prevOverlayKey) {
+    setPrevOverlayKey(overlayKey);
+    if (title) setVisible(true);
+  }
   useEffect(() => {
-    if (!title) return;
-    if (setting.mode === 'ALWAYS') {
-      setVisible(true);
-      return;
-    }
-    setVisible(true);
+    if (!title || setting.mode === 'ALWAYS') return;
     const timer = setTimeout(() => setVisible(false), setting.durationSeconds * 1000);
     return () => clearTimeout(timer);
   }, [title, setting.mode, setting.durationSeconds]);

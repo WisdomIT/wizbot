@@ -49,10 +49,14 @@ export function CafeSettingsView() {
   const requestGateFetch = useMutation(trpc.cafe.requestGateFetch.mutationOptions());
   const savePicks = useMutation(trpc.cafe.savePicks.mutationOptions());
 
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    if (data) setUrl(data.cafeUrl ?? '');
-  }, [data]);
+  //  서버의 카페 주소를 입력칸에 반영 — effect 대신 렌더 중 보정 (#200)
+  const serverCafeUrl = data?.cafeUrl ?? '';
+  const [url, setUrl] = useState(serverCafeUrl);
+  const [prevServerCafeUrl, setPrevServerCafeUrl] = useState(serverCafeUrl);
+  if (prevServerCafeUrl !== serverCafeUrl) {
+    setPrevServerCafeUrl(serverCafeUrl);
+    setUrl(serverCafeUrl);
+  }
 
   if (isPending) return <Skeleton className="h-96 w-full" />;
   if (error) return <div className="py-8 text-sm text-muted-foreground">설정을 불러오지 못했습니다: {error.message}</div>;
