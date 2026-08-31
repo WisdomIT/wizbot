@@ -6,6 +6,7 @@ import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
 import { inquiryRouter } from './inquiry';
 import { noticeRouter } from './notice';
+import { notifyRouter } from './notify';
 import { shortcutRouter } from './shortcut';
 import { signupRouter } from './signup';
 import { songRouter } from './song';
@@ -16,6 +17,7 @@ export const appRouter = t.router({
   audit: auditRouter,
   notice: noticeRouter,
   inquiry: inquiryRouter,
+  notify: notifyRouter,
   admin: adminRouter,
   cafe: cafeRouter,
   chatbot: chatbotRouter,

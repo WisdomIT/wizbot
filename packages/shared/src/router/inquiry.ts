@@ -1,29 +1,22 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { sendMail } from '../lib/nodemailer';
-import { inquiryService } from '../services';
+import { inquiryService, notifyService } from '../services';
 import { adminProcedure, streamerProcedure, t } from '../trpc';
 
-/** 새 문의·추가 문의는 관리자 전원에게 메일 — 실패해도 문의 자체는 성공 (#206, 가입 요청 메일과 같은 패턴) */
-async function notifyAdminsOfInquiry(
+/** 새 문의·추가 문의 알림 (#206) — 실패해도 문의 자체는 성공 */
+function notifyAdminsOfInquiry(
   prisma: PrismaClient,
   inquiry: { id: number; title: string },
   channelName: string,
   kind: '새 문의' | '추가 문의',
 ) {
-  try {
-    const admins = await prisma.admin.findMany({ select: { email: true } });
-    if (admins.length === 0) return;
-    const site = process.env.PUBLIC_SITE_URL ?? '';
-    await sendMail({
-      to: admins.map((admin) => admin.email).join(','),
-      subject: `[위즈봇] ${kind}: ${inquiry.title}`,
-      text: [`${channelName} 채널이 문의를 남겼습니다.`, `제목: ${inquiry.title}`, '', `답변: ${site}/admin/inquiries/${inquiry.id}`].join('\n'),
-    });
-  } catch {
-    /* 알림 실패는 문의와 무관하다 */
-  }
+  const site = process.env.PUBLIC_SITE_URL ?? '';
+  return notifyService.notifyAdmins(prisma, 'INQUIRY', {
+    title: `${kind}: ${inquiry.title}`,
+    lines: [`${channelName} 채널이 문의를 남겼습니다.`, `제목: ${inquiry.title}`],
+    link: { label: '답변', url: `${site}/admin/inquiries/${inquiry.id}` },
+  });
 }
 
 const bodyInput = z.string().trim().min(1, '내용을 입력해주세요.').max(64 * 1024);
