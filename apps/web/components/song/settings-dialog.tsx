@@ -58,6 +58,7 @@ export function SettingsDialog({
   onChangeShortcuts,
   autoLaunch,
   youtube,
+  isApp = false,
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
@@ -71,6 +72,8 @@ export function SettingsDialog({
   autoLaunch?: { enabled: boolean; onChange: (enabled: boolean) => void };
   /** 데스크톱 앱에서만 — 유튜브 로그인은 앱이 띄우는 별도 창에서 한다 */
   youtube?: { loggedIn: boolean; login: () => void; logout: () => void };
+  /** 전역 단축키·화면 테마·로그아웃은 앱 전용 설정이라 앱에서만 보인다 (#202) */
+  isApp?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -176,62 +179,68 @@ export function SettingsDialog({
             </>
           )}
 
-          <Separator />
+          {/* 앱 전용 — 전역 단축키·화면 테마·로그아웃은 웹 콘솔에서 의미가 없거나(단축키·테마는 앱 창 것) 사이드바에 이미 있다(로그아웃) */}
+          {isApp && (
+            <>
+            <Separator />
 
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col">
+                  <Label htmlFor="setting-shortcut">전역 단축키</Label>
+                  <span className="text-xs text-muted-foreground">
+                    위즈봇 플레이어 앱을 설치했다면, 창을 열지 않고도 다른 프로그램을 쓰는 중에
+                    조작할 수 있습니다.
+                  </span>
+                </div>
+                <Switch
+                  id="setting-shortcut"
+                  checked={settings.keyboardShortcut}
+                  onCheckedChange={onChangeKeyboardShortcut}
+                />
+              </div>
+
+              {settings.keyboardShortcut && (
+                <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3">
+                  {SHORTCUT_ACTIONS.map((action) => (
+                    <div key={action.key} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">{action.label}</span>
+                      <ShortcutInput
+                        value={settings.shortcuts[action.key]}
+                        onChange={(accelerator) =>
+                          onChangeShortcuts({ ...settings.shortcuts, [action.key]: accelerator })
+                        }
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-muted-foreground">
+                    버튼을 누른 뒤 원하는 조합을 입력하세요. ⌘/Ctrl · Alt · Shift 중 하나 이상을
+                    포함해야 합니다.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <ThemeSection />
+
+            <Separator />
+
+            <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col">
-                <Label htmlFor="setting-shortcut">전역 단축키</Label>
+                <Label>로그아웃</Label>
                 <span className="text-xs text-muted-foreground">
-                  위즈봇 플레이어 앱을 설치했다면, 창을 열지 않고도 다른 프로그램을 쓰는 중에
-                  조작할 수 있습니다.
+                  앱에서 로그아웃합니다.
                 </span>
               </div>
-              <Switch
-                id="setting-shortcut"
-                checked={settings.keyboardShortcut}
-                onCheckedChange={onChangeKeyboardShortcut}
-              />
+              <Button variant="outline" onClick={() => (location.href = '/login/logout')}>
+                <LogOut /> 로그아웃
+              </Button>
             </div>
 
-            {settings.keyboardShortcut && (
-              <div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3">
-                {SHORTCUT_ACTIONS.map((action) => (
-                  <div key={action.key} className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{action.label}</span>
-                    <ShortcutInput
-                      value={settings.shortcuts[action.key]}
-                      onChange={(accelerator) =>
-                        onChangeShortcuts({ ...settings.shortcuts, [action.key]: accelerator })
-                      }
-                    />
-                  </div>
-                ))}
-                <p className="text-[11px] text-muted-foreground">
-                  버튼을 누른 뒤 원하는 조합을 입력하세요. ⌘/Ctrl · Alt · Shift 중 하나 이상을
-                  포함해야 합니다.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <Separator />
-
-          <ThemeSection />
-
-          <Separator />
-
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-col">
-              <Label>로그아웃</Label>
-              <span className="text-xs text-muted-foreground">
-                이 브라우저(또는 앱)에서 로그아웃합니다.
-              </span>
-            </div>
-            <Button variant="outline" onClick={() => (location.href = '/login/logout')}>
-              <LogOut /> 로그아웃
-            </Button>
-          </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>
