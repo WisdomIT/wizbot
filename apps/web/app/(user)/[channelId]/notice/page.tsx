@@ -4,7 +4,7 @@ import { NoticeList } from '@/components/notice/notice-list';
 export default async function Page({ params }: { params: Promise<{ channelId: string }> }) {
   const { channelId } = await params;
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-3xl">
       <NoticeList base={`/${channelId}/notice`} />
     </div>
   );

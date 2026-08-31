@@ -85,7 +85,8 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
 
   useEffect(() => {
     for (const [key, items] of Object.entries(data)) {
-      const found = items.find((item) => item.url === pathname);
+      //  상세 경로(/{channelId}/notice/3 등)도 해당 메뉴로 (#206)
+      const found = items.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
       if (found) {
         setCurrentGroup(group[key as keyof typeof group]);
         setCurrentPage(found.name);
