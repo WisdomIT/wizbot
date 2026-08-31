@@ -26,6 +26,7 @@ export function WebhooksView() {
 
   return (
     <div className="flex max-w-2xl flex-col gap-4 py-4">
+      <ChannelTogglesCard />
       <Card>
         <CardHeader>
           <CardTitle>디스코드 웹훅</CardTitle>
@@ -42,6 +43,53 @@ export function WebhooksView() {
       </Card>
       <MailSettingsCard />
     </div>
+  );
+}
+
+/** 알림 채널 토글 — 켜진 채널로만 운영 알림 발송. 관리자 로그인 메일 등 기본 동작은 영향 없다 */
+function ChannelTogglesCard() {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const { data, isPending } = useQuery(trpc.notify.channels.queryOptions());
+  const setChannel = useMutation(trpc.notify.setChannel.mutationOptions());
+
+  if (isPending || !data) return <Skeleton className="h-28 w-full" />;
+
+  const rows = [
+    { channel: 'email' as const, label: '이메일 알림 발송', enabled: data.email },
+    { channel: 'discord' as const, label: '디스코드 알림 발송', enabled: data.discord },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>알림 채널</CardTitle>
+        <CardDescription>
+          꺼진 채널로는 운영 알림이 발송되지 않습니다. 관리자 로그인 메일 등 기본 동작과 「테스트 발송」은 토글과 무관합니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col divide-y">
+        {rows.map((row) => (
+          <div key={row.channel} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+            <span className="text-sm font-medium">{row.label}</span>
+            <Switch
+              checked={row.enabled}
+              disabled={setChannel.isPending}
+              onCheckedChange={(checked) =>
+                toast.promise(setChannel.mutateAsync({ channel: row.channel, enabled: checked }), {
+                  loading: '변경 중...',
+                  success: () => {
+                    void queryClient.invalidateQueries(trpc.notify.channels.queryFilter());
+                    return checked ? `${row.label}을 켰습니다.` : `${row.label}을 껐습니다.`;
+                  },
+                  error: (err) => (err instanceof Error ? err.message : String(err)),
+                })
+              }
+            />
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

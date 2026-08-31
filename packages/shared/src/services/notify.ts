@@ -92,12 +92,35 @@ async function sendAdminMail(prisma: PrismaClient, message: NotifyMessage) {
   return true;
 }
 
+/* ── 채널 토글 — 켜진 채널로만 운영 알림 발송. 기본 켜짐, SiteSetting 재사용이라 마이그레이션 불필요 ── */
+
+const CHANNEL_KEYS = { email: 'notify.email', discord: 'notify.discord' } as const;
+export type NotifyChannel = keyof typeof CHANNEL_KEYS;
+
+export async function getNotifyChannels(prisma: PrismaClient): Promise<Record<NotifyChannel, boolean>> {
+  const rows = await prisma.siteSetting.findMany({ where: { key: { in: Object.values(CHANNEL_KEYS) } } });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  //  값이 없으면 켜짐 — 꺼짐만 명시적으로 저장한다
+  return { email: byKey.get(CHANNEL_KEYS.email) !== '0', discord: byKey.get(CHANNEL_KEYS.discord) !== '0' };
+}
+
+export async function setNotifyChannel(prisma: PrismaClient, channel: NotifyChannel, enabled: boolean) {
+  const key = CHANNEL_KEYS[channel];
+  const value = enabled ? '1' : '0';
+  await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+}
+
 /**
- * 운영자에게 알린다 — 메일 + 디스코드. throw 하지 않고(실패는 콘솔에만) 채널별 발송 여부를 돌려준다.
+ * 운영자에게 알린다 — 켜진 채널(메일·디스코드)로만. throw 하지 않고(실패는 콘솔에만) 채널별 발송 여부를 돌려준다.
  * 호출부가 「알림이 실제로 나갔을 때만」 해야 하는 일(예: 세션 만료 alertedAt)은 반환값으로 판단한다.
+ * 토글은 이 계층에만 적용된다 — 관리자 로그인 패스코드 메일 등 기본 동작은 sendMail 직접 호출이라 영향 없다.
  */
 export async function notifyAdmins(prisma: PrismaClient, kind: NotifyKind, message: NotifyMessage, fetchImpl: FetchLike = fetch) {
-  const [mail, discord] = await Promise.allSettled([sendAdminMail(prisma, message), sendDiscord(prisma, kind, message, fetchImpl)]);
+  const channels = await getNotifyChannels(prisma).catch(() => ({ email: true, discord: true }));
+  const [mail, discord] = await Promise.allSettled([
+    channels.email ? sendAdminMail(prisma, message) : Promise.resolve(false),
+    channels.discord ? sendDiscord(prisma, kind, message, fetchImpl) : Promise.resolve(false),
+  ]);
   // eslint-disable-next-line no-console
   if (mail.status === 'rejected') console.error('[notify] 메일 실패:', kind, mail.reason);
   // eslint-disable-next-line no-console

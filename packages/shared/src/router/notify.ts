@@ -7,6 +7,12 @@ const kindInput = z.enum(['SESSION_EXPIRED', 'SIGNUP', 'CAFE_JOIN', 'INQUIRY', '
 
 /** 디스코드 웹훅 관리 (#207) — 어드민 전용. URL 은 비밀값이라 끝 4자만 내려간다 */
 export const notifyRouter = t.router({
+  /* ── 채널 토글 — 켜진 채널로만 운영 알림 발송 ── */
+  channels: adminProcedure.query(({ ctx }) => notifyService.getNotifyChannels(ctx.prisma)),
+  setChannel: adminProcedure
+    .input(z.object({ channel: z.enum(['email', 'discord']), enabled: z.boolean() }))
+    .mutation(({ ctx, input }) => notifyService.setNotifyChannel(ctx.prisma, input.channel, input.enabled)),
+
   webhooks: adminProcedure.query(({ ctx }) => notifyService.listWebhooks(ctx.prisma)),
   setWebhook: adminProcedure
     .input(z.object({ kind: kindInput, url: z.string().max(300).nullable(), enabled: z.boolean().default(true) }))
