@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { noticeService } from '../services';
-import { adminProcedure, publicProcedure, t } from '../trpc';
+import { adminProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
 const noticeInput = z.object({
   title: z.string().trim().min(1, '제목을 입력해주세요.').max(200),
@@ -17,6 +17,13 @@ export const noticeRouter = t.router({
   get: publicProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ ctx, input }) => noticeService.getPublic(ctx.prisma, input.id)),
+
+  /* ── 스트리머: 읽음·팝업 (#206 2/3) ── */
+  unread: streamerProcedure.query(({ ctx }) => noticeService.unreadFor(ctx.prisma, ctx.user.id)),
+  markRead: streamerProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(({ ctx, input }) => noticeService.markRead(ctx.prisma, ctx.user.id, input.id)),
+  markAllRead: streamerProcedure.mutation(({ ctx }) => noticeService.markAllRead(ctx.prisma, ctx.user.id)),
 
   adminList: adminProcedure.query(({ ctx }) => noticeService.listAdmin(ctx.prisma)),
   create: adminProcedure.input(noticeInput).mutation(({ ctx, input }) => noticeService.create(ctx.prisma, input)),

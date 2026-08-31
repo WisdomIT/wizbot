@@ -1,11 +1,13 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { FileAudio2, Headphones, Info, Megaphone, SquareChevronRight } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { JSX, useEffect, useState } from 'react';
 
 import { NavSecondary } from '@/components/nav-secondary';
+import { VIEWER_NOTICE_SEEN_EVENT, VIEWER_NOTICE_SEEN_KEY } from '@/components/notice/notice-seen';
 import {
   Sidebar,
   SidebarContent,
@@ -13,6 +15,7 @@ import {
   SidebarHeader,
   SidebarInset,
 } from '@/components/ui/sidebar';
+import { useTRPC } from '@/src/utils/trpc-react';
 
 import BodyBreadcrumb from './body-breadcrumb';
 import { NavLogin } from './nav-login';
@@ -44,6 +47,25 @@ interface AppSidebarUserProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSidebarUserProps) {
+  //  새 공지 점 표시 (#206) — 비로그인 시청자도 있어 localStorage(마지막으로 본 공지 id) 기준
+  const trpc = useTRPC();
+  const { data: latestNotices } = useQuery(trpc.notice.list.queryOptions({ limit: 1 }));
+  const latestId = latestNotices?.[0]?.id ?? 0;
+  const [seenId, setSeenId] = useState(Number.MAX_SAFE_INTEGER);
+  useEffect(() => {
+    const read = () => {
+      try {
+        setSeenId(Number(localStorage.getItem(VIEWER_NOTICE_SEEN_KEY) ?? 0));
+      } catch {
+        setSeenId(Number.MAX_SAFE_INTEGER);
+      }
+    };
+    read();
+    window.addEventListener(VIEWER_NOTICE_SEEN_EVENT, read);
+    return () => window.removeEventListener(VIEWER_NOTICE_SEEN_EVENT, read);
+  }, []);
+  const hasNewNotice = latestId > seenId;
+
   const data = {
     bot: [
       {
@@ -69,6 +91,7 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
         name: '공지사항',
         url: `/${channel.channelId}/notice`,
         icon: <Megaphone />,
+        dot: hasNewNotice,
       },
       {
         name: '사이트 정보',
