@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -23,6 +23,7 @@ const group = {
   song: '노래',
   cafe: '카페 대문 연동',
   setting: '설정',
+  news: '소식',
 };
 
 const title = {
@@ -103,6 +104,14 @@ const data = {
       icon: <History />,
     },
   ],
+  news: [
+    {
+      name: '공지사항',
+      url: '/notice',
+      icon: <Megaphone />,
+      popup: true,
+    },
+  ],
 };
 
 interface AppSidebarStreamerProps extends React.ComponentProps<typeof Sidebar> {
@@ -127,6 +136,7 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
     song: withBase(data.song, basePath),
     cafe: withBase(data.cafe, basePath),
     setting: withBase(data.setting, basePath),
+    news: data.news,
   };
 
   // 경로에 해당하는 item과 group 찾기
@@ -169,6 +179,7 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
           <NavMenu title="노래" items={menus.song} pathname={pathname} />
           <NavMenu title="카페 대문 연동" items={menus.cafe} pathname={pathname} />
           <NavMenu title="설정" items={menus.setting} pathname={pathname} />
+          <NavMenu title="소식" items={menus.news} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
           <NavUser user={user} viewerUrl={`/${user.id}/command`} hideLogout={nested} />

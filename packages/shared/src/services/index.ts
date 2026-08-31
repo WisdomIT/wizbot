@@ -5,6 +5,7 @@ export * as cafeService from './cafe';
 export * from './chzzkClient';
 export * as commandService from './command';
 export * from './errors';
+export * as noticeService from './notice';
 export * as playbackService from './playback';
 export * as provisionService from './provision';
 export * as repeatService from './repeat';

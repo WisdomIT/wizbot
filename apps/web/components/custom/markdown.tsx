@@ -1,10 +1,13 @@
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import * as Typo from './typography';
 
 export default function Markdown({ ...props }: React.ComponentProps<typeof ReactMarkdown>) {
   return (
     <ReactMarkdown
+      //  표·체크박스·취소선·자동 링크 (#206)
+      remarkPlugins={[remarkGfm]}
       {...props}
       components={{
         h1: Typo.TypographyH1,

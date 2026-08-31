@@ -96,6 +96,18 @@ model SignupApplication {
   @@index([status, createdAt])
 }
 
+/// 공지사항 (#206). 어드민이 작성하고 랜딩·스트리머 콘솔·시청자 페이지에 마크다운(GFM)으로 표시된다.
+model Notice {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.VarChar(200)
+  /// 마크다운 본문
+  body      String   @db.MediumText
+  /// 팝업 공지 — 스트리머 콘솔 첫 접속 시 모달로 (확인 기록은 다음 PR)
+  popup     Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.DateTime(6)
+  updatedAt DateTime @updatedAt @db.DateTime(6)
+}
+
 /// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
 /// 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라, 스트리머 본인도 자기 기록을 본다.
 model AuditLog {
