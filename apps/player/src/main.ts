@@ -12,6 +12,7 @@ import {
   Tray,
 } from 'electron';
 
+import { notifyAboutWindow, openAboutWindow, registerAboutIpc } from './about';
 import { api, fetchState, type PlayerState } from './api';
 import {
   DESKTOP,
@@ -23,7 +24,7 @@ import {
   SOURCE_WINDOW_SIZE,
 } from './config';
 import { appIconPath, loadTrayIcon } from './icons';
-import { getAvailableUpdate, initUpdater, installUpdateNow, isUpdateReady, openManualDownload, stopUpdater } from './updater';
+import { applyUpdate, getUpdateState, initUpdater, stopUpdater } from './updater';
 
 /**
  * wizbot player (#85).
@@ -304,24 +305,18 @@ function buildTrayMenu(state: PlayerState | null) {
     });
   }
 
-  //  받아둔 업데이트가 있을 때만 나타난다 — 종료할 때 자동 설치되지만, 지금 적용하고 싶은 사용자를 위해
-  if (isUpdateReady()) {
+  //  설치할 수 있는 새 버전이 있을 때만 — Windows 는 그 자리에서 설치·재시작, macOS 는 dmg 다운로드를 연다
+  const update = getUpdateState();
+  if (update) {
     items.push(
       { type: 'separator' },
-      { label: '업데이트 설치하고 다시 시작', click: installUpdateNow },
-    );
-  }
-  //  macOS 는 자동 설치가 불가능하다(updater.ts 참고) — 새 버전을 알리고 dmg 를 열어 준다
-  const manual = getAvailableUpdate();
-  if (manual) {
-    items.push(
-      { type: 'separator' },
-      { label: `새 버전 ${manual.version} 받기 (설치는 직접)`, click: openManualDownload },
+      { label: `새 버전 (${update.version}) 설치`, click: applyUpdate },
     );
   }
 
   items.push(
     { type: 'separator' },
+    { label: '앱 정보', click: () => openAboutWindow(join(__dirname, 'preload.js')) },
     {
       label: '종료',
       click: () => {
@@ -462,8 +457,14 @@ if (!app.requestSingleInstanceLock()) {
     void poll();
     setInterval(() => void poll(), POLL_MS);
 
-    //  업데이트가 준비되면 다음 poll 을 기다리지 않고 트레이 메뉴를 바로 갱신한다
-    initUpdater(() => tray?.setContextMenu(buildTrayMenu(lastState)));
+    registerAboutIpc();
+    ipcMain.on('app:apply-update', () => applyUpdate());
+    //  새 버전 상태가 바뀌면 트레이·웹뷰·정보 창을 곧바로 갱신한다
+    initUpdater((state) => {
+      tray?.setContextMenu(buildTrayMenu(lastState));
+      mainWindow?.webContents.send('app:update-changed', state);
+      notifyAboutWindow(state);
+    });
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

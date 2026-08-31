@@ -191,6 +191,8 @@ export function PlayerView() {
         }
         platform={shell.platform}
         windowControls={shell.windowControls}
+        update={shell.update}
+        onApplyUpdate={shell.applyUpdate}
       />
     );
   }
@@ -222,6 +224,14 @@ export function PlayerView() {
             <Minimize2 />
           </Button>
         </AppTitleBar>
+      )}
+
+      {/* 새 버전 안내 (#117) — 앱 안에서만. 트레이에도 있지만 눈에 띄는 곳에 함께 */}
+      {shell.isApp && shell.update && (
+        <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 py-2 text-sm">
+          <span>새 버전 ({shell.update.version})이 나왔습니다.</span>
+          <Button size="sm" onClick={shell.applyUpdate}>새 버전 ({shell.update.version}) 설치</Button>
+        </div>
       )}
 
       {shell.isApp ? (
