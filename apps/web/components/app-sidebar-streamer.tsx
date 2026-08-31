@@ -107,9 +107,8 @@ const data = {
   news: [
     {
       name: '공지사항',
-      url: '/notice',
+      url: '/streamer/notice',
       icon: <Megaphone />,
-      popup: true,
     },
   ],
 };
@@ -131,12 +130,15 @@ function withBase(items: { name: string; url: string; icon: React.JSX.Element; p
 
 export default function AppSidebarStreamer({ children, user, basePath = '/streamer', exitHref, ...props }: AppSidebarStreamerProps) {
   const pathname = usePathname();
+  //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다 (아래 collapsible="none" 주석 참고)
+  const nested = !!exitHref;
   const menus = {
     bot: withBase(data.bot, basePath),
     song: withBase(data.song, basePath),
     cafe: withBase(data.cafe, basePath),
     setting: withBase(data.setting, basePath),
-    news: data.news,
+    //  대행 콘솔(#71)에는 공지 미러가 없다 — 공개 페이지를 새 창으로
+    news: nested ? [{ ...data.news[0], url: '/notice', popup: true }] : data.news,
   };
 
   // 경로에 해당하는 item과 group 찾기
@@ -152,11 +154,10 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
     }
   }
 
-  //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다. 기본 Sidebar 는 position:fixed 로 화면 왼쪽에 그려져
-  //  바깥 사이드바와 겹치므로, 흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식).
-  //  높이는 화면에 묶고(sticky, 바깥 inset 여백 0.5rem×2 를 뺀 100svh) — 부모가 넘치지 않으면서 내용만 스크롤되고,
+  //  기본 Sidebar 는 position:fixed 로 화면 왼쪽에 그려져 바깥 사이드바와 겹치므로, 중첩(nested)일 때는
+  //  흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식). 높이는 화면에 묶고(sticky,
+  //  바깥 inset 여백 0.5rem×2 를 뺀 100svh) — 부모가 넘치지 않으면서 내용만 스크롤되고,
   //  메뉴가 길면 SidebarContent(overflow-auto) 안에서 자체 스크롤된다
-  const nested = !!exitHref;
   return (
     <>
       <Sidebar

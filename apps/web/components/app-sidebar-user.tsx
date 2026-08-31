@@ -67,7 +67,7 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
     navSecondary: [
       {
         name: '공지사항',
-        url: '/notice',
+        url: `/${channel.channelId}/notice`,
         icon: <Megaphone />,
       },
       {
