@@ -7,7 +7,7 @@ export default async function Page({ params }: { params: Promise<{ channelId: st
   const { channelId } = await params;
   const [latest] = await trpc.notice.list.query({ limit: 1 }).catch(() => []);
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       {latest && <NoticeSeen latestId={latest.id} />}
       <NoticeList base={`/${channelId}/notice`} />
     </div>
