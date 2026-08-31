@@ -1,5 +1,6 @@
 import { publicProcedure, t } from '../trpc';
 import { adminRouter } from './admin';
+import { auditRouter } from './audit';
 import { cafeRouter } from './cafe';
 import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
@@ -10,6 +11,7 @@ import { songFavoriteRouter } from './songFavorite';
 import { userRouter } from './user';
 
 export const appRouter = t.router({
+  audit: auditRouter,
   admin: adminRouter,
   cafe: cafeRouter,
   chatbot: chatbotRouter,
