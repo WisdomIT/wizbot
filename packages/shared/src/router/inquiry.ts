@@ -8,14 +8,16 @@ import { adminProcedure, streamerProcedure, t } from '../trpc';
 function notifyAdminsOfInquiry(
   prisma: PrismaClient,
   inquiry: { id: number; title: string },
-  channelName: string,
+  channel: { channelName: string; channelImageUrl: string | null } | null,
   kind: '새 문의' | '추가 문의',
 ) {
   const site = process.env.PUBLIC_SITE_URL ?? '';
   return notifyService.notifyAdmins(prisma, 'INQUIRY', {
     title: `${kind}: ${inquiry.title}`,
-    lines: [`${channelName} 채널이 문의를 남겼습니다.`, `제목: ${inquiry.title}`],
+    lines: [`${channel?.channelName ?? ''} 채널이 문의를 남겼습니다.`, `제목: ${inquiry.title}`],
     link: { label: '답변', url: `${site}/admin/inquiries/${inquiry.id}` },
+    fields: [{ name: '채널', value: channel?.channelName ?? '' }],
+    thumbnail: channel?.channelImageUrl,
   });
 }
 
@@ -33,16 +35,16 @@ export const inquiryRouter = t.router({
     .input(z.object({ title: z.string().trim().min(1, '제목을 입력해주세요.').max(200), body: bodyInput }))
     .mutation(async ({ ctx, input }) => {
       const inquiry = await inquiryService.create(ctx.prisma, ctx.user.id, input);
-      const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id }, select: { channelName: true } });
-      void notifyAdminsOfInquiry(ctx.prisma, inquiry, user?.channelName ?? '', '새 문의');
+      const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id }, select: { channelName: true, channelImageUrl: true } });
+      void notifyAdminsOfInquiry(ctx.prisma, inquiry, user, '새 문의');
       return inquiry;
     }),
   reply: streamerProcedure
     .input(z.object({ id: z.number().int().positive(), body: bodyInput }))
     .mutation(async ({ ctx, input }) => {
       const inquiry = await inquiryService.reply(ctx.prisma, ctx.user.id, input.id, input.body);
-      const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id }, select: { channelName: true } });
-      void notifyAdminsOfInquiry(ctx.prisma, inquiry, user?.channelName ?? '', '추가 문의');
+      const user = await ctx.prisma.user.findUnique({ where: { id: ctx.user.id }, select: { channelName: true, channelImageUrl: true } });
+      void notifyAdminsOfInquiry(ctx.prisma, inquiry, user, '추가 문의');
       return inquiry;
     }),
 
