@@ -34,10 +34,12 @@ describe('디스코드 payload (#207)', () => {
   });
 });
 
-function db(webhook: { url: string; enabled: boolean } | null) {
+function db(webhook: { url: string; enabled: boolean } | null, channels: { key: string; value: string }[] = []) {
   return {
     admin: { findMany: vi.fn().mockResolvedValue([]) },
     discordWebhook: { findUnique: vi.fn().mockResolvedValue(webhook && { kind: 'SIGNUP', ...webhook }) },
+    mailSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    siteSetting: { findMany: vi.fn().mockResolvedValue(channels) },
   } as unknown as PrismaClient;
 }
 
@@ -57,6 +59,33 @@ describe('notifyAdmins', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     //  등록·활성인데 디스코드가 죽어 있어도 throw 없이 discordSent: false
     await expect(notifyAdmins(db({ url: 'https://discord.com/api/webhooks/1/x', enabled: true }), 'SIGNUP', message, fetchMock)).resolves.toMatchObject({ discordSent: false });
+  });
+});
+
+describe('채널 토글', () => {
+  const webhook = { url: 'https://discord.com/api/webhooks/1/x', enabled: true };
+  it('디스코드 토글이 꺼져 있으면 웹훅이 등록·활성이어도 보내지 않는다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const sent = await notifyAdmins(db(webhook, [{ key: 'notify.discord', value: '0' }]), 'SIGNUP', message, fetchMock);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sent.discordSent).toBe(false);
+  });
+  it('이메일 토글이 꺼져 있으면 관리자 조회조차 하지 않는다', async () => {
+    const prisma = db(webhook, [{ key: 'notify.email', value: '0' }]);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const sent = await notifyAdmins(prisma, 'SIGNUP', message, fetchMock);
+    expect(prisma.admin.findMany).not.toHaveBeenCalled();
+    expect(sent.mailSent).toBe(false);
+    expect(sent.discordSent).toBe(true); // 디스코드는 그대로
+  });
+  it('둘 다 꺼져 있으면 아무것도 보내지 않는다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const sent = await notifyAdmins(
+      db(webhook, [{ key: 'notify.email', value: '0' }, { key: 'notify.discord', value: '0' }]),
+      'SIGNUP', message, fetchMock,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sent).toEqual({ mailSent: false, discordSent: false });
   });
 });
 

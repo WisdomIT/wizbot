@@ -48,7 +48,7 @@ export const adminRouter = t.router({
       update: { passcode: randomCode, createdAt: new Date() },
     });
 
-    await sendMail({
+    await sendMail(ctx.prisma, {
       to: email,
       subject: '위즈봇 관리자 로그인',
       text: `위즈봇 관리자 로그인 링크입니다. 아래 링크를 클릭하여 로그인하세요. (10분간 유효)\n\n${

@@ -1,6 +1,6 @@
 import type { NotifyKind, PrismaClient } from '@prisma/client';
 
-import { sendMail } from '../lib/nodemailer';
+import { resolveMailConfig, sendMail } from '../lib/nodemailer';
 import { ServiceError } from './errors';
 
 /**
@@ -84,7 +84,7 @@ async function sendDiscord(prisma: PrismaClient, kind: NotifyKind, message: Noti
 async function sendAdminMail(prisma: PrismaClient, message: NotifyMessage) {
   const admins = await prisma.admin.findMany({ select: { email: true } });
   if (admins.length === 0) return false;
-  await sendMail({
+  await sendMail(prisma, {
     to: admins.map((admin) => admin.email).join(','),
     subject: `[위즈봇] ${message.title}`,
     text: [...message.lines.filter(Boolean), ...(message.link ? ['', `${message.link.label}: ${message.link.url}`] : [])].join('\n'),
@@ -92,12 +92,35 @@ async function sendAdminMail(prisma: PrismaClient, message: NotifyMessage) {
   return true;
 }
 
+/* ── 채널 토글 — 켜진 채널로만 운영 알림 발송. 기본 켜짐, SiteSetting 재사용이라 마이그레이션 불필요 ── */
+
+const CHANNEL_KEYS = { email: 'notify.email', discord: 'notify.discord' } as const;
+export type NotifyChannel = keyof typeof CHANNEL_KEYS;
+
+export async function getNotifyChannels(prisma: PrismaClient): Promise<Record<NotifyChannel, boolean>> {
+  const rows = await prisma.siteSetting.findMany({ where: { key: { in: Object.values(CHANNEL_KEYS) } } });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  //  값이 없으면 켜짐 — 꺼짐만 명시적으로 저장한다
+  return { email: byKey.get(CHANNEL_KEYS.email) !== '0', discord: byKey.get(CHANNEL_KEYS.discord) !== '0' };
+}
+
+export async function setNotifyChannel(prisma: PrismaClient, channel: NotifyChannel, enabled: boolean) {
+  const key = CHANNEL_KEYS[channel];
+  const value = enabled ? '1' : '0';
+  await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+}
+
 /**
- * 운영자에게 알린다 — 메일 + 디스코드. throw 하지 않고(실패는 콘솔에만) 채널별 발송 여부를 돌려준다.
+ * 운영자에게 알린다 — 켜진 채널(메일·디스코드)로만. throw 하지 않고(실패는 콘솔에만) 채널별 발송 여부를 돌려준다.
  * 호출부가 「알림이 실제로 나갔을 때만」 해야 하는 일(예: 세션 만료 alertedAt)은 반환값으로 판단한다.
+ * 토글은 이 계층에만 적용된다 — 관리자 로그인 패스코드 메일 등 기본 동작은 sendMail 직접 호출이라 영향 없다.
  */
 export async function notifyAdmins(prisma: PrismaClient, kind: NotifyKind, message: NotifyMessage, fetchImpl: FetchLike = fetch) {
-  const [mail, discord] = await Promise.allSettled([sendAdminMail(prisma, message), sendDiscord(prisma, kind, message, fetchImpl)]);
+  const channels = await getNotifyChannels(prisma).catch(() => ({ email: true, discord: true }));
+  const [mail, discord] = await Promise.allSettled([
+    channels.email ? sendAdminMail(prisma, message) : Promise.resolve(false),
+    channels.discord ? sendDiscord(prisma, kind, message, fetchImpl) : Promise.resolve(false),
+  ]);
   // eslint-disable-next-line no-console
   if (mail.status === 'rejected') console.error('[notify] 메일 실패:', kind, mail.reason);
   // eslint-disable-next-line no-console
@@ -153,4 +176,56 @@ export async function testWebhook(prisma: PrismaClient, kind: NotifyKind, fetchI
     body: JSON.stringify(buildDiscordPayload(kind, { title: `테스트 — ${NOTIFY_KIND_LABEL[kind]}`, lines: [], fields: [{ name: '확인', value: '이 채널로 알림이 옵니다.' }] })),
   });
   if (!response.ok) throw new ServiceError('INVALID_INPUT', `디스코드가 거부했습니다 (HTTP ${response.status}). URL 을 확인해주세요.`);
+}
+
+/* ── 어드민: 메일(SMTP) 설정 (#215) ── */
+
+/** 어드민 화면용 — 비밀번호는 값 대신 설정 여부만 내려간다 */
+export async function getMailSettings(prisma: PrismaClient) {
+  const config = await resolveMailConfig(prisma);
+  return {
+    source: config.source,
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    sender: config.sender,
+    hasPass: !!config.pass,
+  };
+}
+
+export async function setMailSettings(
+  prisma: PrismaClient,
+  input: { host: string; port: number; user: string; pass: string; sender: string },
+) {
+  const host = input.host.trim();
+  const user = input.user.trim();
+  const sender = input.sender.trim();
+  const pass = input.pass.trim();
+  if (!host || !user || !sender) throw new ServiceError('INVALID_INPUT', '호스트·계정·보내는 주소를 모두 입력해주세요.');
+  const existing = await prisma.mailSettings.findUnique({ where: { id: 1 } });
+  //  비밀번호를 비워 두면 저장된 값을 유지한다 (호스트만 바꿀 때 재입력 불필요)
+  const nextPass = pass || existing?.pass;
+  if (!nextPass) throw new ServiceError('INVALID_INPUT', '비밀번호를 입력해주세요.');
+  const data = { host, port: input.port, user, pass: nextPass, sender };
+  await prisma.mailSettings.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
+}
+
+/** DB 설정 삭제 → SMTP_* 환경변수로 폴백 (잘못 저장했을 때의 탈출구) */
+export async function resetMailSettings(prisma: PrismaClient) {
+  await prisma.mailSettings.deleteMany({ where: { id: 1 } });
+}
+
+/** 현재 유효한 설정(DB 또는 env)으로 관리자 전원에게 테스트 메일 */
+export async function testMailSettings(prisma: PrismaClient) {
+  const admins = await prisma.admin.findMany({ select: { email: true } });
+  if (admins.length === 0) throw new ServiceError('NOT_FOUND', '관리자 계정이 없습니다.');
+  try {
+    await sendMail(prisma, {
+      to: admins.map((admin) => admin.email).join(','),
+      subject: '[위즈봇] 메일 설정 테스트',
+      text: '이 메일이 도착했다면 SMTP 설정이 올바릅니다.',
+    });
+  } catch (error) {
+    throw new ServiceError('INVALID_INPUT', `발송 실패: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
