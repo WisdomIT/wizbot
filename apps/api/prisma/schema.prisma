@@ -96,6 +96,136 @@ model SignupApplication {
   @@index([status, createdAt])
 }
 
+/// 공지사항 (#206). 어드민이 작성하고 랜딩·스트리머 콘솔·시청자 페이지에 마크다운(GFM)으로 표시된다.
+model Notice {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.VarChar(200)
+  /// 마크다운 본문
+  body      String   @db.MediumText
+  /// 팝업 공지 — 스트리머 콘솔 첫 접속 시 모달로 (확인 기록은 다음 PR)
+  popup     Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.DateTime(6)
+  updatedAt DateTime @updatedAt @db.DateTime(6)
+
+  reads NoticeRead[]
+}
+
+/// 공지 읽음 기록 (#206). 팝업 공지의 "확인하면 다시 안 뜸"과 사이드바 새 글 표시를 겸한다.
+model NoticeRead {
+  noticeId Int
+  userId   Int
+  readAt   DateTime @default(now()) @db.DateTime(6)
+
+  notice Notice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([noticeId, userId])
+}
+
+/// SMTP 설정 (#215) — 단일 행(id=1). 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+/// 행이 없으면 SMTP_* 환경변수로 폴백 — 관리자 로그인이 패스코드 메일에 의존하므로 env 가 잠금 방지 탈출구다.
+model MailSettings {
+  id        Int      @id @default(1)
+  host      String   @db.VarChar(255)
+  port      Int      @default(465)
+  user      String   @db.VarChar(255)
+  pass      String   @db.VarChar(255)
+  sender    String   @db.VarChar(255)
+  updatedAt DateTime @updatedAt @db.DateTime(6)
+}
+
+/// 운영 알림용 디스코드 웹훅 (#207). 종류별로 채널을 나눠 받도록 엔드포인트를 따로 두고,
+/// 재배포 없이 바꾸도록 환경변수가 아니라 DB(어드민 페이지)로 관리한다.
+model DiscordWebhook {
+  kind      NotifyKind @id
+  url       String     @db.VarChar(300)
+  enabled   Boolean    @default(true)
+  updatedAt DateTime   @updatedAt @db.DateTime(6)
+}
+
+enum NotifyKind {
+  /// 네이버 봇 세션 만료 (#9)
+  SESSION_EXPIRED
+  /// 신규 사용 신청 (#96)
+  SIGNUP
+  /// 카페 봇 가입 요청 (#9)
+  CAFE_JOIN
+  /// 문의사항 등록·추가 (#206)
+  INQUIRY
+  /// 워커·API 의 심각한 오류 — 발생처는 앞으로 넓힌다
+  ERROR
+}
+
+/// 문의사항 (#206 3/3). 스트리머가 쓰고 어드민이 답한다 — 본문은 마크다운(GFM), 메시지 스레드.
+model Inquiry {
+  id             Int           @id @default(autoincrement())
+  userId         Int
+  title          String        @db.VarChar(200)
+  /// OPEN = 답변 대기(스트리머가 마지막), ANSWERED = 답변 완료(어드민이 마지막)
+  status         InquiryStatus @default(OPEN)
+  /// 새 글 표시용 — 각자 스레드를 연 마지막 시각과 상대 메시지 시각을 비교한다
+  streamerReadAt DateTime?     @db.DateTime(6)
+  adminReadAt    DateTime?     @db.DateTime(6)
+  createdAt      DateTime      @default(now()) @db.DateTime(6)
+  updatedAt      DateTime      @updatedAt @db.DateTime(6)
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages InquiryMessage[]
+
+  @@index([userId, id])
+}
+
+enum InquiryStatus {
+  OPEN
+  ANSWERED
+}
+
+model InquiryMessage {
+  id        Int           @id @default(autoincrement())
+  inquiryId Int
+  author    InquiryAuthor
+  body      String        @db.MediumText
+  createdAt DateTime      @default(now()) @db.DateTime(6)
+
+  inquiry Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+
+  @@index([inquiryId, id])
+}
+
+enum InquiryAuthor {
+  STREAMER
+  ADMIN
+}
+
+/// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
+/// 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라, 스트리머 본인도 자기 기록을 본다.
+model AuditLog {
+  id        Int        @id @default(autoincrement())
+  /// 대상 스트리머
+  userId    Int
+  actorType AuditActor
+  /// STREAMER 면 userId, ADMIN 이면 Admin.id. CHATBOT 은 계정 id 가 없어 null
+  actorId   Int?
+  /// CHATBOT — 채팅으로 호출한 사람 (닉네임 · 치지직 채널 id)
+  actorName String?    @db.VarChar(120)
+  /// tRPC 경로 (command.create 등)
+  procedure String     @db.VarChar(100)
+  /// 정리된 입력 — 토큰류 키 제거·대용량 값 절단 (lib/audit.ts)
+  input     Json?
+  createdAt DateTime   @default(now()) @db.DateTime(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, id])
+}
+
+enum AuditActor {
+  STREAMER
+  ADMIN
+  /// 챗봇 명령(!추가 등)으로 바꾼 경우 — 호출한 채팅 계정을 actorName 에 남긴다
+  CHATBOT
+}
+
 model Admin {
   id       Int    @id @default(autoincrement())
   email    String @unique @db.VarChar(250)
@@ -134,6 +264,9 @@ model User {
   songPlayback      SongPlayback?
   playlists         SongFavorite[]
   cafeIntegration   CafeIntegration?
+  auditLogs         AuditLog[]
+  noticeReads       NoticeRead[]
+  inquiries         Inquiry[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.

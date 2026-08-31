@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { getMe } from '@/app/_lib/me';
 import AppSidebarStreamer from '@/components/app-sidebar-streamer';
+import { NoticePopup } from '@/components/notice/notice-popup';
 import { StreamerThemeScope } from '@/components/theme/streamer-theme-scope';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { SESSION_EXPIRED_REDIRECT } from '@/lib/session-expired';
@@ -46,6 +47,8 @@ export default async function RootLayout({
       <StreamerThemeScope theme={me.theme} className="min-h-svh">
         <SidebarProvider>
           <AppSidebarStreamer user={user}>{children}</AppSidebarStreamer>
+          {/* 확인 안 한 팝업 공지 — 확인하면 다시 안 뜬다 (#206) */}
+          <NoticePopup />
         </SidebarProvider>
       </StreamerThemeScope>
     </TRPCReactProvider>

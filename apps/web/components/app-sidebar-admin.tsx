@@ -1,6 +1,7 @@
 'use client';
 
-import { ClipboardList, Inbox, KeyRound, ShieldCheck, Users } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { BellRing, ClipboardList, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -11,6 +12,7 @@ import {
   SidebarHeader,
   SidebarInset,
 } from '@/components/ui/sidebar';
+import { useTRPC } from '@/src/utils/trpc-react';
 
 import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
@@ -50,6 +52,21 @@ const menu = [
     url: '/admin/naver-bot',
     icon: <KeyRound />,
   },
+  {
+    name: '공지사항',
+    url: '/admin/notices',
+    icon: <Megaphone />,
+  },
+  {
+    name: '문의사항',
+    url: '/admin/inquiries',
+    icon: <MessageCircleQuestion />,
+  },
+  {
+    name: '알림 설정',
+    url: '/admin/webhooks',
+    icon: <BellRing />,
+  },
 ];
 
 interface AppSidebarAdminProps extends React.ComponentProps<typeof Sidebar> {
@@ -59,7 +76,11 @@ interface AppSidebarAdminProps extends React.ComponentProps<typeof Sidebar> {
 
 export default function AppSidebarAdmin({ children, email, ...props }: AppSidebarAdminProps) {
   const pathname = usePathname();
-  const currentPage = menu.find((item) => item.url === pathname)?.name;
+  //  새 문의 점 표시 (#206 3/3) — 스레드를 열면 읽음 처리돼 꺼진다
+  const trpc = useTRPC();
+  const { data: inquiryUnread } = useQuery(trpc.inquiry.adminUnread.queryOptions());
+  const items = menu.map((item) => (item.url === '/admin/inquiries' ? { ...item, dot: (inquiryUnread?.count ?? 0) > 0 } : item));
+  const currentPage = menu.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`))?.name;
   //  어드민 대행 콘솔(#71) 안에서는 스트리머 사이드바가 자기 헤더를 그리므로 바깥 헤더를 생략한다
   const acting = /^\/admin\/streamers\/\d+(\/|$)/.test(pathname);
 
@@ -70,7 +91,7 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
           <NavTitle data={title} />
         </SidebarHeader>
         <SidebarContent>
-          <NavMenu title="운영" items={menu} pathname={pathname} />
+          <NavMenu title="운영" items={items} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
           <NavUser user={{ nickname: '관리자', id: email, avatar: '' }} />

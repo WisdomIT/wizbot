@@ -1,36 +1,33 @@
 import type { PrismaClient, SignupApplication } from '@prisma/client';
 import { z } from 'zod';
 
-import { sendMail } from '../lib/nodemailer';
-import { signupService } from '../services';
+import { notifyService, signupService } from '../services';
 import { applicantProcedure, internalProcedure, t } from '../trpc';
 
 /**
  * 새 신청(또는 재신청)이 들어오면 관리자 전원에게 메일. 실패해도 신청 흐름을 막지 않는다 —
  * SMTP 가 비어 있는 환경(개발)에서는 매번 실패하는 게 정상이다.
  */
-export async function notifyAdminsOfApplication(
+export function notifyAdminsOfApplication(
   prisma: PrismaClient,
-  application: Pick<SignupApplication, 'channelName' | 'channelId' | 'reason'>,
+  application: Pick<SignupApplication, 'channelName' | 'channelId' | 'reason' | 'channelImageUrl'>,
 ) {
-  try {
-    const admins = await prisma.admin.findMany({ select: { email: true } });
-    if (admins.length === 0) return;
-    const site = process.env.PUBLIC_SITE_URL ?? '';
-    await sendMail({
-      to: admins.map((admin) => admin.email).join(','),
-      subject: `[위즈봇] 사용 신청: ${application.channelName}`,
-      text: [
-        `${application.channelName} 채널이 위즈봇 사용을 신청했습니다.`,
-        `채널 ID: ${application.channelId}`,
-        application.reason ? `사유: ${application.reason}` : '사유: (없음)',
-        '',
-        `처리: ${site}/admin/applications`,
-      ].join('\n'),
-    });
-  } catch {
-    /* 알림 실패는 신청과 무관하다 */
-  }
+  const site = process.env.PUBLIC_SITE_URL ?? '';
+  return notifyService.notifyAdmins(prisma, 'SIGNUP', {
+    title: `사용 신청: ${application.channelName}`,
+    lines: [
+      `${application.channelName} 채널이 위즈봇 사용을 신청했습니다.`,
+      `채널 ID: ${application.channelId}`,
+      application.reason ? `사유: ${application.reason}` : '사유: (없음)',
+    ],
+    link: { label: '처리', url: `${site}/admin/applications` },
+    fields: [
+      { name: '채널명', value: application.channelName },
+      { name: '채널 ID', value: application.channelId },
+      application.reason ? { name: '사유', value: application.reason } : null,
+    ],
+    thumbnail: application.channelImageUrl,
+  });
 }
 
 /** 사용 신청자(applicant 세션) 전용 (#96) */

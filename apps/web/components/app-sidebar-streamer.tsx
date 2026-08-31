@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowLeft, BotMessageSquare, Download, FileAudio2, Image as ImageIcon, Link, ListPlus, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -11,6 +12,7 @@ import {
   SidebarHeader,
   SidebarInset,
 } from '@/components/ui/sidebar';
+import { useTRPC } from '@/src/utils/trpc-react';
 
 import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
@@ -23,6 +25,7 @@ const group = {
   song: '노래',
   cafe: '카페 대문 연동',
   setting: '설정',
+  news: '소식',
 };
 
 const title = {
@@ -97,6 +100,23 @@ const data = {
       url: '/streamer/user/link',
       icon: <Link />,
     },
+    {
+      name: '변경 기록',
+      url: '/streamer/user/audit',
+      icon: <History />,
+    },
+  ],
+  news: [
+    {
+      name: '공지사항',
+      url: '/streamer/notice',
+      icon: <Megaphone />,
+    },
+    {
+      name: '문의사항',
+      url: '/streamer/inquiry',
+      icon: <MessageCircleQuestion />,
+    },
   ],
 };
 
@@ -117,11 +137,27 @@ function withBase(items: { name: string; url: string; icon: React.JSX.Element; p
 
 export default function AppSidebarStreamer({ children, user, basePath = '/streamer', exitHref, ...props }: AppSidebarStreamerProps) {
   const pathname = usePathname();
+  //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다 (아래 collapsible="none" 주석 참고)
+  const nested = !!exitHref;
+  //  안 읽은 공지·답변 — 사이드바 점 표시 (#206). 각 목록/스레드를 열면 해당 쿼리가 무효화된다
+  const trpc = useTRPC();
+  const { data: unread } = useQuery(trpc.notice.unread.queryOptions());
+  const hasUnread = (unread?.count ?? 0) > 0;
+  const { data: inquiryUnread } = useQuery(trpc.inquiry.unread.queryOptions());
+  const hasInquiryUnread = (inquiryUnread?.count ?? 0) > 0;
   const menus = {
     bot: withBase(data.bot, basePath),
     song: withBase(data.song, basePath),
     cafe: withBase(data.cafe, basePath),
     setting: withBase(data.setting, basePath),
+    //  대행 콘솔(#71)에는 공지 미러가 없다 — 공개 페이지를 새 창으로
+    //  대행 콘솔(#71): 공지는 공개 페이지 새 창, 문의는 어드민 자신의 화면(/admin/inquiries)이 있어 뺀다
+    news: nested
+      ? [{ ...data.news[0], url: '/notice', popup: true, dot: hasUnread }]
+      : [
+          { ...data.news[0], dot: hasUnread },
+          { ...data.news[1], dot: hasInquiryUnread },
+        ],
   };
 
   // 경로에 해당하는 item과 group 찾기
@@ -129,7 +165,8 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
   let currentPage: string | undefined = undefined;
 
   for (const [key, items] of Object.entries(menus)) {
-    const found = items.find((item) => item.url === pathname);
+    //  상세 경로(/streamer/notice/3 등)도 해당 메뉴로 — 경계('/')를 지켜 접두어 매칭 (#206)
+    const found = items.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
     if (found) {
       currentGroup = group[key as keyof typeof group];
       currentPage = found.name;
@@ -137,11 +174,10 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
     }
   }
 
-  //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다. 기본 Sidebar 는 position:fixed 로 화면 왼쪽에 그려져
-  //  바깥 사이드바와 겹치므로, 흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식).
-  //  높이는 화면에 묶고(sticky, 바깥 inset 여백 0.5rem×2 를 뺀 100svh) — 부모가 넘치지 않으면서 내용만 스크롤되고,
+  //  기본 Sidebar 는 position:fixed 로 화면 왼쪽에 그려져 바깥 사이드바와 겹치므로, 중첩(nested)일 때는
+  //  흐름 안에 그리는 collapsible="none" 으로 (shadcn 의 중첩 사이드바 방식). 높이는 화면에 묶고(sticky,
+  //  바깥 inset 여백 0.5rem×2 를 뺀 100svh) — 부모가 넘치지 않으면서 내용만 스크롤되고,
   //  메뉴가 길면 SidebarContent(overflow-auto) 안에서 자체 스크롤된다
-  const nested = !!exitHref;
   return (
     <>
       <Sidebar
@@ -164,6 +200,7 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
           <NavMenu title="노래" items={menus.song} pathname={pathname} />
           <NavMenu title="카페 대문 연동" items={menus.cafe} pathname={pathname} />
           <NavMenu title="설정" items={menus.setting} pathname={pathname} />
+          <NavMenu title="소식" items={menus.news} pathname={pathname} />
         </SidebarContent>
         <SidebarFooter>
           <NavUser user={user} viewerUrl={`/${user.id}/command`} hideLogout={nested} />

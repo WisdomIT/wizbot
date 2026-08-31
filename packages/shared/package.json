@@ -2,17 +2,19 @@
   "name": "@wizbot/shared",
   "version": "1.0.0",
   "exports": {
-    "./router": "./src/router/index.ts",
-    "./services": "./src/services/index.ts",
     "./chatbot": "./src/chatbot/index.ts",
     "./chatbot/definitions": "./src/chatbot/definitions.ts",
-    "./trpc": "./src/trpc.ts",
-    "./lib/theme": "./src/lib/theme.ts",
+    "./lib/audit": "./src/lib/audit.ts",
     "./lib/cafe": "./src/lib/cafe.ts",
-    "./lib/cafeLayout": "./src/lib/cafeLayout.ts",
     "./lib/cafeGate": "./src/lib/cafeGate.ts",
+    "./lib/cafeLayout": "./src/lib/cafeLayout.ts",
     "./lib/cafePolicy": "./src/lib/cafePolicy.ts",
-    "./lib/chzzkLive": "./src/lib/chzzkLive.ts"
+    "./lib/chzzkLive": "./src/lib/chzzkLive.ts",
+    "./lib/theme": "./src/lib/theme.ts",
+    "./router": "./src/router/index.ts",
+    "./services": "./src/services/index.ts",
+    "./services/inquiry": "./src/services/inquiry.ts",
+    "./trpc": "./src/trpc.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -3,8 +3,7 @@ import { z } from 'zod';
 
 import { gatePicksSchema } from '../lib/cafeGate';
 import { CAFE_SCENES, cafeLayoutSchema, cafeSnapshotSchema } from '../lib/cafeLayout';
-import { sendMail } from '../lib/nodemailer';
-import { cafeService } from '../services';
+import { cafeService, notifyService } from '../services';
 import { adminProcedure, internalProcedure, publicProcedure, streamerProcedure, t } from '../trpc';
 
 const gateBoxSchema = z.object({
@@ -24,48 +23,44 @@ const gateRenderSchema = z.object({
 });
 const linkStatus = z.enum(['NONE', 'JOIN_REQUESTED', 'JOINED', 'JOIN_FAILED', 'PERMISSION_OK', 'PERMISSION_FAILED', 'ACTIVE']);
 
-/** 운영자에게 가입 요청 알림. 실패해도 요청은 성공이다 (SMTP 없는 개발 환경) */
-async function notifyAdminsOfJoinRequest(
+/** 운영자에게 가입 요청 알림 (#9) — 실패해도 요청은 성공이다 */
+function notifyAdminsOfJoinRequest(
   prisma: PrismaClient,
   request: { channelName: string; cafeName: string | null; clubId: string | null },
 ) {
-  try {
-    const admins = await prisma.admin.findMany({ select: { email: true } });
-    if (admins.length === 0) return;
-    const site = process.env.PUBLIC_SITE_URL ?? '';
-    await sendMail({
-      to: admins.map((admin) => admin.email).join(','),
-      subject: `[위즈봇] 카페 가입 요청: ${request.cafeName ?? request.clubId}`,
-      text: [
-        `${request.channelName} 채널이 카페 대문 자동화를 위해 봇 계정의 카페 가입을 요청했습니다.`,
-        `카페: ${request.cafeName ?? ''} (clubid ${request.clubId})`,
-        `가입 페이지: https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join`,
-        '',
-        `처리: ${site}/admin/naver-bot`,
-      ].join('\n'),
-    });
-  } catch {
-    /* 알림 실패는 요청과 무관하다 */
-  }
+  const site = process.env.PUBLIC_SITE_URL ?? '';
+  return notifyService.notifyAdmins(prisma, 'CAFE_JOIN', {
+    title: `카페 가입 요청: ${request.cafeName ?? request.clubId}`,
+    lines: [
+      `${request.channelName} 채널이 카페 대문 자동화를 위해 봇 계정의 카페 가입을 요청했습니다.`,
+      `카페: ${request.cafeName ?? ''} (clubid ${request.clubId})`,
+      `가입 페이지: https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join`,
+    ],
+    link: { label: '처리', url: `${site}/admin/naver-bot` },
+    fields: [
+      { name: '채널', value: request.channelName },
+      { name: '카페', value: `${request.cafeName ?? ''} (clubid ${request.clubId})` },
+      { name: '가입 페이지', value: `https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join` },
+    ],
+  });
 }
 
-/** 봇 세션 만료 알림 (#9 PR4) — 전체 스트리머의 대문 갱신이 멈추므로 운영자 전원에게. 실패해도 검사 결과는 기록된다 */
+/** 봇 세션 만료 알림 (#9 PR4) — 전체 스트리머의 대문 갱신이 멈추므로 운영자 전원에게. 한 번만(alertedAt) */
 async function notifyAdminsOfSessionExpiry(prisma: PrismaClient, message: string | null) {
   try {
-    const admins = await prisma.admin.findMany({ select: { email: true } });
-    if (admins.length === 0) return;
     const site = process.env.PUBLIC_SITE_URL ?? '';
-    await sendMail({
-      to: admins.map((admin) => admin.email).join(','),
-      subject: '[위즈봇] 네이버 봇 계정 세션 만료 — 카페 대문 갱신 중단',
-      text: [
+    const sent = await notifyService.notifyAdmins(prisma, 'SESSION_EXPIRED', {
+      title: '네이버 봇 계정 세션 만료 — 카페 대문 갱신 중단',
+      lines: [
         '네이버 봇 계정의 세션(NID_AUT / NID_SES)이 만료됐습니다. 모든 스트리머의 카페 대문 갱신이 멈춰 있습니다.',
-        message ? `워커 메시지: ${message}` : '',
-        '',
-        `어드민 > 네이버 봇 계정에서 새 쿠키를 등록하면 즉시 다시 검사하고 자동으로 재개됩니다: ${site}/admin/naver-bot`,
-      ].join('\n'),
+        message ? `워커 메시지: ${message}` : null,
+        '새 쿠키를 등록하면 즉시 다시 검사하고 자동으로 재개됩니다.',
+      ],
+      link: { label: '처리', url: `${site}/admin/naver-bot` },
+      fields: [message ? { name: '워커 메시지', value: message } : null],
     });
-    await cafeService.markSessionAlerted(prisma);
+    //  한 채널이라도 나갔을 때만 기록 — 전부 실패면 다음 검사에서 다시 알린다
+    if (sent.mailSent || sent.discordSent) await cafeService.markSessionAlerted(prisma);
   } catch {
     /* 알림 실패는 다음 검사에서 다시 시도된다 (alertedAt 이 비어 있으므로) */
   }

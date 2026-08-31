@@ -24,6 +24,8 @@ export function NavMenu({
     icon: JSX.Element;
     /** 이 항목만 새 창으로 (그룹 전체 popup 과 별개) */
     popup?: boolean;
+    /** 새 글 표시 — 안 읽은 것이 있을 때 점을 띄운다 (#206) */
+    dot?: boolean;
   }[];
   pathname: string;
   popup?: boolean;
@@ -34,7 +36,7 @@ export function NavMenu({
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton asChild isActive={pathname === item.url}>
+            <SidebarMenuButton asChild isActive={pathname === item.url || pathname.startsWith(`${item.url}/`)}>
               <Link
                 href={item.url}
                 target={popup || item.popup ? '_blank' : undefined}
@@ -42,6 +44,7 @@ export function NavMenu({
               >
                 {item.icon}
                 <span>{item.name}</span>
+                {item.dot && <span aria-label="새 글" className="ml-auto size-2 shrink-0 rounded-full bg-red-500" />}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

@@ -3,7 +3,6 @@
 import { Music, Pause, Play, Repeat1, SkipForward, Square, Volume2 } from 'lucide-react';
 import { type ReactNode,useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -91,10 +90,8 @@ export function SongPlayer({
 
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <div className="flex min-w-0 flex-1 flex-col">
-              <span className="flex items-center gap-2 truncate font-bold">
-                {playback.title ?? '재생 중인 곡이 없습니다.'}
-                {playback.status === 'PAUSED' && <Badge variant="secondary">일시정지</Badge>}
-              </span>
+              {/* 일시정지 여부는 컨트롤 버튼 모양으로 충분하다 — 시청자 페이지에만 글로 남긴다 (#202) */}
+              <span className="truncate font-bold">{playback.title ?? '재생 중인 곡이 없습니다.'}</span>
               <span className="truncate text-sm text-muted-foreground">
                 {playback.videoUploader}
                 {playback.requester ? ` · 신청: ${playback.requester}` : ''}
@@ -154,8 +151,11 @@ export function SongPlayer({
               </Button>
             </div>
 
+            {/* 재생 바와 같은 폭이 되도록 양끝 라벨을 재생 바(w-10)와 맞춘다 (#202) */}
             <div className="flex items-center gap-2">
-              <Volume2 className="size-4 text-muted-foreground" />
+              <span className="flex w-10 justify-end">
+                <Volume2 className="size-4 text-muted-foreground" />
+              </span>
               <input
                 type="range"
                 aria-label="볼륨"
@@ -167,7 +167,7 @@ export function SongPlayer({
                 onKeyUp={(event) => controls.onVolume(Number(event.currentTarget.value))}
                 className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
-              <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">
+              <span className="w-10 text-xs tabular-nums text-muted-foreground">
                 {controls.volume}
               </span>
             </div>

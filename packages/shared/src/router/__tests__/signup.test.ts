@@ -47,6 +47,6 @@ describe('signup 라우터 (#96)', () => {
     await expect(caller.signup.submit({ reason: '다시' })).resolves.toMatchObject({ status: 'PENDING' });
     // 알림은 fire-and-forget 이라 한 틱 기다린다
     await new Promise((resolve) => setImmediate(resolve));
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'a@b.c,d@e.f' }));
+    expect(sendMail).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ to: 'a@b.c,d@e.f' }));
   });
 });
