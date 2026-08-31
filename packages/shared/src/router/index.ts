@@ -4,6 +4,7 @@ import { auditRouter } from './audit';
 import { cafeRouter } from './cafe';
 import { chatbotRouter } from './chatbot';
 import { commandRouter } from './command';
+import { inquiryRouter } from './inquiry';
 import { noticeRouter } from './notice';
 import { shortcutRouter } from './shortcut';
 import { signupRouter } from './signup';
@@ -14,6 +15,7 @@ import { userRouter } from './user';
 export const appRouter = t.router({
   audit: auditRouter,
   notice: noticeRouter,
+  inquiry: inquiryRouter,
   admin: adminRouter,
   cafe: cafeRouter,
   chatbot: chatbotRouter,

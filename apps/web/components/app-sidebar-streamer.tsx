@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -112,6 +112,11 @@ const data = {
       url: '/streamer/notice',
       icon: <Megaphone />,
     },
+    {
+      name: '문의사항',
+      url: '/streamer/inquiry',
+      icon: <MessageCircleQuestion />,
+    },
   ],
 };
 
@@ -134,17 +139,25 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
   const pathname = usePathname();
   //  어드민 대행(#71)에서는 어드민 사이드바 안쪽에 중첩된다 (아래 collapsible="none" 주석 참고)
   const nested = !!exitHref;
-  //  안 읽은 공지 — 사이드바 점 표시 (#206). 목록을 열면 markAllRead 가 이 쿼리를 무효화한다
+  //  안 읽은 공지·답변 — 사이드바 점 표시 (#206). 각 목록/스레드를 열면 해당 쿼리가 무효화된다
   const trpc = useTRPC();
   const { data: unread } = useQuery(trpc.notice.unread.queryOptions());
   const hasUnread = (unread?.count ?? 0) > 0;
+  const { data: inquiryUnread } = useQuery(trpc.inquiry.unread.queryOptions());
+  const hasInquiryUnread = (inquiryUnread?.count ?? 0) > 0;
   const menus = {
     bot: withBase(data.bot, basePath),
     song: withBase(data.song, basePath),
     cafe: withBase(data.cafe, basePath),
     setting: withBase(data.setting, basePath),
     //  대행 콘솔(#71)에는 공지 미러가 없다 — 공개 페이지를 새 창으로
-    news: (nested ? [{ ...data.news[0], url: '/notice', popup: true }] : data.news).map((item) => ({ ...item, dot: hasUnread })),
+    //  대행 콘솔(#71): 공지는 공개 페이지 새 창, 문의는 어드민 자신의 화면(/admin/inquiries)이 있어 뺀다
+    news: nested
+      ? [{ ...data.news[0], url: '/notice', popup: true, dot: hasUnread }]
+      : [
+          { ...data.news[0], dot: hasUnread },
+          { ...data.news[1], dot: hasInquiryUnread },
+        ],
   };
 
   // 경로에 해당하는 item과 group 찾기

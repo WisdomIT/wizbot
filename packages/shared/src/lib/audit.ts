@@ -28,6 +28,9 @@ export const AUDIT_EXCLUDED = new Set([
   //  공지 읽음 표시는 설정 변경이 아니다 (#206)
   'notice.markRead',
   'notice.markAllRead',
+  //  문의는 게시판 활동 — 설정 변경이 아니고 스레드 자체가 기록이다 (#206)
+  'inquiry.create',
+  'inquiry.reply',
 ]);
 
 /** 값이 이보다 길면 잘라 남긴다 — 배경 base64(수 MB)·레이아웃 JSON 이 통째로 쌓이지 않게 */
