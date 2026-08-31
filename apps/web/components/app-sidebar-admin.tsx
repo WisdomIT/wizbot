@@ -1,6 +1,6 @@
 'use client';
 
-import { ClipboardList, Inbox, KeyRound, ShieldCheck, Users } from 'lucide-react';
+import { ClipboardList, Inbox, KeyRound, Megaphone, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -49,6 +49,11 @@ const menu = [
     name: '네이버 봇 계정',
     url: '/admin/naver-bot',
     icon: <KeyRound />,
+  },
+  {
+    name: '공지사항',
+    url: '/admin/notices',
+    icon: <Megaphone />,
   },
 ];
 
