@@ -20,29 +20,41 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
 export interface NotifyMessage {
   /** 메일 제목([위즈봇] 접두)·디스코드 embed 제목 */
   title: string;
-  /** 본문 줄들 — falsy 는 건너뛴다 */
+  /** 메일 본문 줄들(문장형) — falsy 는 건너뛴다. 디스코드에는 쓰이지 않는다 */
   lines: (string | null | undefined | false)[];
-  /** 처리 링크 (메일 마지막 줄 · embed 링크) */
+  /** 처리 링크 (메일 마지막 줄 · 디스코드 embed 제목 링크) */
   link?: { label: string; url: string };
+  /** 디스코드 embed 항목(폼 형식) — falsy 는 건너뛴다. 디스코드는 문장이 아니라 이것만 보낸다 */
+  fields?: ({ name: string; value: string } | null | undefined | false)[];
+  /** 디스코드 embed 썸네일 (예: 채널 이미지) */
+  thumbnail?: string | null;
 }
 
-/** 디스코드 embed description 제한(4096)보다 훨씬 짧게 — 알림은 요약이다 */
-const DISCORD_MAX_DESCRIPTION = 1900;
 const DISCORD_COLOR = 0x3b82f6;
+/** 디스코드 embed field value 제한 */
+const DISCORD_MAX_FIELD = 1024;
 
-/** 디스코드 웹훅 payload — 순수 함수(테스트용) */
+/** 디스코드 웹훅 payload — 순수 함수(테스트용). 문장형 lines 는 메일 전용이고 여기서는 fields 만 쓴다 */
 export function buildDiscordPayload(kind: NotifyKind, message: NotifyMessage) {
-  const body = message.lines.filter((line): line is string => !!line).join('\n');
-  const description = body.length > DISCORD_MAX_DESCRIPTION ? `${body.slice(0, DISCORD_MAX_DESCRIPTION)}…` : body;
+  const fields = (message.fields ?? [])
+    .filter((field): field is { name: string; value: string } => !!field && !!field.value)
+    .slice(0, 25)
+    .map((field) => ({
+      name: field.name.slice(0, 256),
+      value: field.value.length > DISCORD_MAX_FIELD ? `${field.value.slice(0, DISCORD_MAX_FIELD - 1)}…` : field.value,
+      inline: false,
+    }));
   return {
     username: '위즈봇',
     embeds: [
       {
         title: message.title.slice(0, 256),
-        description: [description, message.link ? `\n[${message.link.label}](${message.link.url})` : ''].join(''),
+        ...(message.link ? { url: message.link.url } : {}),
+        fields,
         color: DISCORD_COLOR,
         footer: { text: NOTIFY_KIND_LABEL[kind] },
         timestamp: new Date().toISOString(),
+        ...(message.thumbnail ? { thumbnail: { url: message.thumbnail } } : {}),
       },
     ],
   };
@@ -138,7 +150,7 @@ export async function testWebhook(prisma: PrismaClient, kind: NotifyKind, fetchI
   const response = await fetchImpl(webhook.url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(buildDiscordPayload(kind, { title: `테스트 — ${NOTIFY_KIND_LABEL[kind]}`, lines: ['이 채널로 알림이 옵니다.'] })),
+    body: JSON.stringify(buildDiscordPayload(kind, { title: `테스트 — ${NOTIFY_KIND_LABEL[kind]}`, lines: [], fields: [{ name: '확인', value: '이 채널로 알림이 옵니다.' }] })),
   });
   if (!response.ok) throw new ServiceError('INVALID_INPUT', `디스코드가 거부했습니다 (HTTP ${response.status}). URL 을 확인해주세요.`);
 }

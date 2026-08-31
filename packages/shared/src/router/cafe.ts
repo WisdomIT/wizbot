@@ -37,6 +37,11 @@ function notifyAdminsOfJoinRequest(
       `가입 페이지: https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join`,
     ],
     link: { label: '처리', url: `${site}/admin/naver-bot` },
+    fields: [
+      { name: '채널', value: request.channelName },
+      { name: '카페', value: `${request.cafeName ?? ''} (clubid ${request.clubId})` },
+      { name: '가입 페이지', value: `https://cafe.naver.com/ca-fe/cafes/${request.clubId}/join` },
+    ],
   });
 }
 
@@ -52,6 +57,7 @@ async function notifyAdminsOfSessionExpiry(prisma: PrismaClient, message: string
         '새 쿠키를 등록하면 즉시 다시 검사하고 자동으로 재개됩니다.',
       ],
       link: { label: '처리', url: `${site}/admin/naver-bot` },
+      fields: [message ? { name: '워커 메시지', value: message } : null],
     });
     //  한 채널이라도 나갔을 때만 기록 — 전부 실패면 다음 검사에서 다시 알린다
     if (sent.mailSent || sent.discordSent) await cafeService.markSessionAlerted(prisma);

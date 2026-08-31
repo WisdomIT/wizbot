@@ -3,19 +3,31 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildDiscordPayload, maskWebhookUrl, notifyAdmins, testWebhook } from '../notify';
 
-const message = { title: '사용 신청: 위즈', lines: ['위즈 채널이 신청했습니다.', null, '채널 ID: abc'], link: { label: '처리', url: 'https://bot.test/admin/applications' } };
+const message = {
+  title: '사용 신청: 위즈',
+  lines: ['위즈 채널이 신청했습니다.', '채널 ID: abc'], // 메일 전용
+  link: { label: '처리', url: 'https://bot.test/admin/applications' },
+  fields: [{ name: '채널명', value: '위즈' }, { name: '채널 ID', value: 'abc' }, null],
+  thumbnail: 'https://img.test/ch.png',
+};
 
 describe('디스코드 payload (#207)', () => {
-  it('embed 제목·본문(빈 줄 제거)·링크·종류 라벨', () => {
+  it('폼 형식 — 문장형 lines 없이 fields·제목 링크·썸네일·종류 라벨만', () => {
     const p = buildDiscordPayload('SIGNUP', message);
     expect(p.username).toBe('위즈봇');
     expect(p.embeds[0].title).toBe('사용 신청: 위즈');
-    expect(p.embeds[0].description).toBe('위즈 채널이 신청했습니다.\n채널 ID: abc\n[처리](https://bot.test/admin/applications)');
+    expect(p.embeds[0].url).toBe('https://bot.test/admin/applications');
+    expect(p.embeds[0].fields).toEqual([
+      { name: '채널명', value: '위즈', inline: false },
+      { name: '채널 ID', value: 'abc', inline: false },
+    ]);
+    expect(p.embeds[0].thumbnail).toEqual({ url: 'https://img.test/ch.png' });
+    expect(p.embeds[0]).not.toHaveProperty('description');
     expect(p.embeds[0].footer.text).toBe('사용 신청');
   });
-  it('긴 본문은 잘린다', () => {
-    const p = buildDiscordPayload('ERROR', { title: 't', lines: ['a'.repeat(5000)] });
-    expect(p.embeds[0].description.length).toBeLessThan(2000);
+  it('긴 field 값은 1024자로 잘린다', () => {
+    const p = buildDiscordPayload('ERROR', { title: 't', lines: [], fields: [{ name: 'k', value: 'a'.repeat(5000) }] });
+    expect(p.embeds[0].fields[0].value.length).toBe(1024);
   });
   it('URL 마스킹은 끝 4자만', () => {
     expect(maskWebhookUrl('https://discord.com/api/webhooks/123/abcdWXYZ')).toBe('…WXYZ');

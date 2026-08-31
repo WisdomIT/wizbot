@@ -10,7 +10,7 @@ import { applicantProcedure, internalProcedure, t } from '../trpc';
  */
 export function notifyAdminsOfApplication(
   prisma: PrismaClient,
-  application: Pick<SignupApplication, 'channelName' | 'channelId' | 'reason'>,
+  application: Pick<SignupApplication, 'channelName' | 'channelId' | 'reason' | 'channelImageUrl'>,
 ) {
   const site = process.env.PUBLIC_SITE_URL ?? '';
   return notifyService.notifyAdmins(prisma, 'SIGNUP', {
@@ -21,6 +21,12 @@ export function notifyAdminsOfApplication(
       application.reason ? `사유: ${application.reason}` : '사유: (없음)',
     ],
     link: { label: '처리', url: `${site}/admin/applications` },
+    fields: [
+      { name: '채널명', value: application.channelName },
+      { name: '채널 ID', value: application.channelId },
+      application.reason ? { name: '사유', value: application.reason } : null,
+    ],
+    thumbnail: application.channelImageUrl,
   });
 }
 
