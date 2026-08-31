@@ -67,7 +67,12 @@ export function NoticesView() {
           ) : (
             data!.map((notice) => (
               <TableRow key={notice.id}>
-                <TableCell className="font-medium">{notice.title}</TableCell>
+                <TableCell>
+                  {/* 작성된 공지를 실제 표시 그대로 확인 (#206) */}
+                  <a href={`/notice/${notice.id}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
+                    {notice.title}
+                  </a>
+                </TableCell>
                 <TableCell>{notice.popup && <Badge variant="secondary">팝업</Badge>}</TableCell>
                 <TableCell className="text-muted-foreground">{new Date(notice.createdAt).toLocaleString('ko-KR')}</TableCell>
                 <TableCell>
