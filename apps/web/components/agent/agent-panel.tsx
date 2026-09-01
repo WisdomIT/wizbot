@@ -26,14 +26,35 @@ type DisplayItem =
   | { kind: 'tool'; name: string };
 
 const TOOL_LABEL: Record<string, string> = {
-  list_commands: '명령어 목록',
-  list_repeats: '반복 메시지',
-  get_playback: '플레이어 상태',
-  list_favorites: '즐겨찾기 목록',
-  get_favorite: '즐겨찾기 내용',
-  list_shortcuts: '링크 목록',
-  get_user_setting: '계정 설정',
-  search_audit_log: '변경 기록',
+  list_commands: '명령어 목록 조회',
+  list_repeats: '반복 메시지 조회',
+  get_playback: '플레이어 상태 조회',
+  list_favorites: '즐겨찾기 목록 조회',
+  get_favorite: '즐겨찾기 내용 조회',
+  list_shortcuts: '링크 목록 조회',
+  get_user_setting: '계정 설정 조회',
+  search_audit_log: '변경 기록 조회',
+  list_available_functions: '기능 카탈로그 조회',
+  create_echo_command: '명령어 추가',
+  update_echo_command: '명령어 수정',
+  create_function_command: '기능 명령어 추가',
+  update_function_command: '기능 명령어 수정',
+  set_command_enabled: '명령어 켬/끔',
+  delete_command: '명령어 삭제',
+  create_repeat: '반복 메시지 추가',
+  update_repeat: '반복 메시지 수정',
+  set_repeat_enabled: '반복 메시지 켬/끔',
+  delete_repeat: '반복 메시지 삭제',
+  create_shortcut: '링크 추가',
+  update_shortcut: '링크 수정',
+  delete_shortcut: '링크 삭제',
+  add_song: '곡 추가',
+  control_playback: '재생 제어',
+  set_volume: '볼륨 변경',
+  clear_queue: '대기열 비우기',
+  enqueue_favorite: '즐겨찾기 재생',
+  import_playlist: '재생목록 가져오기',
+  create_inquiry: '문의 작성',
 };
 
 /** DB 에 저장된 Anthropic content 블록 → 화면 아이템 (tool_result·thinking 은 숨긴다) */
@@ -263,7 +284,7 @@ function PanelBody({ onClose }: { onClose: () => void }) {
             {items.map((item, index) =>
               item.kind === 'tool' ? (
                 <div key={index} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Wrench className="size-3" /> {TOOL_LABEL[item.name] ?? item.name} 조회
+                  <Wrench className="size-3" /> {TOOL_LABEL[item.name] ?? item.name}
                 </div>
               ) : item.role === 'user' ? (
                 <div key={index} className="ml-8 self-end rounded-lg bg-primary px-3 py-2 text-sm whitespace-pre-wrap text-primary-foreground">

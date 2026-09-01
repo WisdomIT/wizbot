@@ -107,7 +107,7 @@ export async function agentChatHandler(req: Request, res: Response) {
       for (const toolUse of toolUses) {
         sseSend(res, 'tool', { name: toolUse.name });
         try {
-          const content = await runTool(prisma, userId, toolUse.name, toolUse.input as Record<string, unknown>);
+          const content = await runTool(prisma, userId, conversationId, toolUse.name, toolUse.input as Record<string, unknown>);
           results.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
         } catch (error) {
           results.push({
