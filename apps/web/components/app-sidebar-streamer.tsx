@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useTRPC } from '@/src/utils/trpc-react';
 
+import { AgentPanel } from './agent/agent-panel';
 import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
@@ -211,6 +212,8 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
           {children}
         </BodyBreadcrumb>
         <StreamerPlayerBar />
+        {/* 설정 도우미 (#35) — 어드민에서 켰을 때만 뜬다 */}
+        <AgentPanel />
       </SidebarInset>
     </>
   );

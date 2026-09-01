@@ -1,6 +1,8 @@
 export * as chzzkLiveService from '../lib/chzzkLive';
 export * as accountService from './account';
 export * as adminUsersService from './adminUsers';
+export * as agentService from './agent';
+export { AGENT_MODELS } from './agent';
 export * as cafeService from './cafe';
 export * from './chzzkClient';
 export * as commandService from './command';
