@@ -21,7 +21,10 @@ export type SongEvent =
  */
 export function useSongEvents(onEvent: (event: SongEvent) => void, token?: string) {
   const handlerRef = useRef(onEvent);
-  handlerRef.current = onEvent;
+  //  렌더 중 ref 쓰기 금지 (#200) — 이벤트는 비동기로만 오므로 effect 시점 대입으로 충분하다
+  useEffect(() => {
+    handlerRef.current = onEvent;
+  });
 
   useEffect(() => {
     const url = token ? `/api/song/events?token=${encodeURIComponent(token)}` : '/api/song/events';

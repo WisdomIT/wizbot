@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { FileAudio2, Headphones, Info, Megaphone, SquareChevronRight } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
-import { JSX, useEffect, useState } from 'react';
+import { JSX, useSyncExternalStore } from 'react';
 
 import { NavSecondary } from '@/components/nav-secondary';
 import { VIEWER_NOTICE_SEEN_EVENT, VIEWER_NOTICE_SEEN_KEY } from '@/components/notice/notice-seen';
@@ -23,6 +23,11 @@ import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavTitleSkeleton } from './nav-title-skeleton';
 import { ViewerPlayerBar } from './song/viewer-player-bar';
+
+function subscribeNoticeSeen(onChange: () => void) {
+  window.addEventListener(VIEWER_NOTICE_SEEN_EVENT, onChange);
+  return () => window.removeEventListener(VIEWER_NOTICE_SEEN_EVENT, onChange);
+}
 
 const group = {
   bot: '봇',
@@ -51,19 +56,18 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
   const trpc = useTRPC();
   const { data: latestNotices } = useQuery(trpc.notice.list.queryOptions({ limit: 1 }));
   const latestId = latestNotices?.[0]?.id ?? 0;
-  const [seenId, setSeenId] = useState(Number.MAX_SAFE_INTEGER);
-  useEffect(() => {
-    const read = () => {
+  //  localStorage(마지막으로 본 공지 id)를 외부 스토어로 구독 — 서버 스냅샷은 「새 공지 없음」 (#200)
+  const seenId = useSyncExternalStore(
+    subscribeNoticeSeen,
+    () => {
       try {
-        setSeenId(Number(localStorage.getItem(VIEWER_NOTICE_SEEN_KEY) ?? 0));
+        return Number(localStorage.getItem(VIEWER_NOTICE_SEEN_KEY) ?? 0);
       } catch {
-        setSeenId(Number.MAX_SAFE_INTEGER);
+        return Number.MAX_SAFE_INTEGER;
       }
-    };
-    read();
-    window.addEventListener(VIEWER_NOTICE_SEEN_EVENT, read);
-    return () => window.removeEventListener(VIEWER_NOTICE_SEEN_EVENT, read);
-  }, []);
+    },
+    () => Number.MAX_SAFE_INTEGER,
+  );
   const hasNewNotice = latestId > seenId;
 
   const data = {
@@ -103,21 +107,17 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
 
   const pathname = usePathname();
 
-  const [currentPage, setCurrentPage] = useState<string | null>(null);
-  const [currentGroup, setCurrentGroup] = useState<string | null>(null);
-
-  useEffect(() => {
-    for (const [key, items] of Object.entries(data)) {
-      //  상세 경로(/{channelId}/notice/3 등)도 해당 메뉴로 (#206)
-      const found = items.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
-      if (found) {
-        setCurrentGroup(group[key as keyof typeof group]);
-        setCurrentPage(found.name);
-        break;
-      }
+  //  경로에서 현재 메뉴를 파생한다 — 상세 경로(/{channelId}/notice/3 등)도 해당 메뉴로 (#206, #200: state 대신 파생)
+  let currentPage: string | null = null;
+  let currentGroup: string | null = null;
+  for (const [key, items] of Object.entries(data)) {
+    const found = items.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
+    if (found) {
+      currentGroup = group[key as keyof typeof group];
+      currentPage = found.name;
+      break;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  }
 
   return (
     <>

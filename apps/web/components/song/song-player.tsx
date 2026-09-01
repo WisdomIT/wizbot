@@ -205,11 +205,10 @@ export function usePlayerPosition(
 function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => void): PlayerPosition {
   const [pending, setPending] = useState<{ value: number; at: number } | null>(null);
 
-  // 서버가 내가 옮긴 위치를 따라잡았거나, 너무 오래 기다렸으면 서버 값으로 돌아간다
-  useEffect(() => {
-    if (!pending) return;
-    if (Math.abs(serverPosition - pending.value) <= SEEK_MATCH_SECONDS) setPending(null);
-  }, [serverPosition, pending]);
+  // 서버가 내가 옮긴 위치를 따라잡으면 서버 값으로 돌아간다 — effect 대신 렌더 중 보정 (#200)
+  if (pending && Math.abs(serverPosition - pending.value) <= SEEK_MATCH_SECONDS) {
+    setPending(null);
+  }
 
   useEffect(() => {
     if (!pending) return;
@@ -235,7 +234,12 @@ function useScrubbable(serverPosition: number, onSeek?: (seconds: number) => voi
 function useInterpolatedPosition(positionSeconds: number, durationSeconds: number, playing: boolean) {
   const [position, setPosition] = useState(positionSeconds);
 
-  useEffect(() => setPosition(positionSeconds), [positionSeconds]);
+  //  서버 위치가 바뀌면 보간 기준을 갈아끼운다 — effect 대신 렌더 중 보정 (#200)
+  const [prevServerSeconds, setPrevServerSeconds] = useState(positionSeconds);
+  if (prevServerSeconds !== positionSeconds) {
+    setPrevServerSeconds(positionSeconds);
+    setPosition(positionSeconds);
+  }
 
   useEffect(() => {
     if (!playing) return;

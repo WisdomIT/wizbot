@@ -45,10 +45,13 @@ export function ThemeSettingsView() {
   const update = useMutation(trpc.user.updateTheme.mutationOptions());
   const reset = useMutation(trpc.user.resetTheme.mutationOptions());
 
+  //  서버 테마를 초안에 반영 — effect 대신 렌더 중 보정 (#200)
   const [draft, setDraft] = useState<ThemeInput>(DEFAULT_THEME);
-  useEffect(() => {
-    if (data) setDraft(data);
-  }, [data]);
+  const [prevData, setPrevData] = useState(data);
+  if (data && prevData !== data) {
+    setPrevData(data);
+    setDraft(data);
+  }
 
   const invalidate = () => {
     void queryClient.invalidateQueries(trpc.user.getTheme.queryFilter());
