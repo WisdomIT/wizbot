@@ -1,25 +1,36 @@
-import Anthropic from '@anthropic-ai/sdk';
 import type { Prisma } from '@prisma/client';
 import { agentService, isServiceError } from '@wizbot/shared/services';
 import type { Request, Response } from 'express';
 
 import { prisma } from '../db';
 import { resolveStreamerId } from './auth';
+import { runWithFallback } from './llm/chain';
 import { SYSTEM_PROMPT } from './prompt';
 import { AGENT_TOOLS, runTool } from './tools';
 
 /**
  * 에이전트 채팅 SSE (#35). POST { conversationId, message } → text/tool/done/error 이벤트.
- * 대화는 매 단계 DB 에 저장한다 — replica 어디로 붙어도 이어지고, 중간에 끊겨도 기록이 남는다.
+ * LLM 호출은 프로바이더 폴백 체인(llm/chain)이 담당한다. 대화는 매 단계 DB 에 저장하고,
+ * 턴 사이 히스토리는 텍스트만 다시 보낸다(llm/types 참고 — 토큰 절감·프로바이더 호환).
  */
 
 const MAX_ITERATIONS = 8;
-/** 오래된 대화는 뒤쪽만 보낸다 — 토큰 절약. 전체 기록은 DB·화면에 그대로 남는다 */
-const MAX_HISTORY_MESSAGES = 40;
+/** 오래된 대화는 뒤쪽만 보낸다 — 전체 기록은 DB·화면에 그대로 남는다 */
+const MAX_HISTORY_TURNS = 30;
 const MAX_MESSAGE_CHARS = 4000;
 
 function sseSend(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+/** DB 메시지(블록) → 텍스트만 — 턴 간 히스토리용 */
+function textOf(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return (content as { type?: string; text?: string }[])
+    .filter((block) => block.type === 'text' && block.text)
+    .map((block) => block.text)
+    .join('\n');
 }
 
 export async function agentChatHandler(req: Request, res: Response) {
@@ -37,10 +48,11 @@ export async function agentChatHandler(req: Request, res: Response) {
     return;
   }
 
+  let providers;
   let settings;
   let conversation;
   try {
-    settings = await agentService.assertAvailable(prisma, userId);
+    ({ providers, settings } = await agentService.assertAvailable(prisma, userId));
     conversation = await agentService.getConversation(prisma, userId, conversationId);
   } catch (error) {
     if (isServiceError(error)) {
@@ -61,67 +73,55 @@ export async function agentChatHandler(req: Request, res: Response) {
   const abort = new AbortController();
   req.on('close', () => abort.abort());
 
-  const history = conversation.messages.slice(-MAX_HISTORY_MESSAGES).map(
-    (row) => ({ role: row.role, content: row.content }) as Anthropic.MessageParam,
-  );
-  const messages: Anthropic.MessageParam[] = [...history, { role: 'user', content: [{ type: 'text', text: message }] }];
+  const history = conversation.messages
+    .map((row) => ({ role: row.role as 'user' | 'assistant', text: textOf(row.content) }))
+    .filter((turn) => turn.text)
+    .slice(-MAX_HISTORY_TURNS);
 
   await agentService.appendMessage(prisma, conversationId, 'user', [{ type: 'text', text: message }]);
   await agentService.setTitleFromFirstMessage(prisma, conversationId, message);
 
-  const client = new Anthropic({ apiKey: settings.apiKey });
-  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
-
   try {
-    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-      const stream = client.messages.stream(
-        {
-          model: settings.model,
-          max_tokens: 8192,
-          //  시스템+tool 은 고정 — prompt caching 적중을 위해 (변하는 값 금지)
-          system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-          tools: AGENT_TOOLS,
-          messages,
-        },
-        { signal: abort.signal },
-      );
-      stream.on('text', (delta) => sseSend(res, 'text', { delta }));
-      const response = await stream.finalMessage();
-
-      usage.inputTokens += response.usage.input_tokens;
-      usage.outputTokens += response.usage.output_tokens;
-      usage.cacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
-
-      messages.push({ role: 'assistant', content: response.content });
-      await agentService.appendMessage(
-        prisma, conversationId, 'assistant', response.content as unknown as Prisma.InputJsonValue,
-      );
-
-      if (response.stop_reason === 'pause_turn') continue;
-      if (response.stop_reason !== 'tool_use') break;
-
-      const toolUses = response.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
-      );
-      const results: Anthropic.ToolResultBlockParam[] = [];
-      for (const toolUse of toolUses) {
-        sseSend(res, 'tool', { name: toolUse.name });
+    const { outcome, served } = await runWithFallback(prisma, providers, {
+      system: SYSTEM_PROMPT,
+      tools: AGENT_TOOLS,
+      history,
+      userText: message,
+      webSearch: settings.webSearchEnabled,
+      maxIterations: MAX_ITERATIONS,
+      signal: abort.signal,
+      onText: (delta) => sseSend(res, 'text', { delta }),
+      onToolStart: (name) => sseSend(res, 'tool', { name }),
+      runTool: async (name, input) => {
         try {
-          const content = await runTool(prisma, userId, conversationId, toolUse.name, toolUse.input as Record<string, unknown>);
-          results.push({ type: 'tool_result', tool_use_id: toolUse.id, content });
+          return { content: await runTool(prisma, userId, conversationId, name, input), isError: false };
         } catch (error) {
-          results.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: isServiceError(error) ? error.message : '조회에 실패했습니다.',
-            is_error: true,
-          });
+          return {
+            content: isServiceError(error) ? error.message : '실행에 실패했습니다.',
+            isError: true,
+          };
         }
-      }
-      messages.push({ role: 'user', content: results });
-      await agentService.appendMessage(prisma, conversationId, 'user', results as unknown as Prisma.InputJsonValue);
+      },
+    });
+
+    for (const recordMessage of outcome.record) {
+      await agentService.appendMessage(
+        prisma, conversationId, recordMessage.role, recordMessage.content as unknown as Prisma.InputJsonValue,
+      );
     }
-    sseSend(res, 'done', usage);
+    if (outcome.usage.inputTokens + outcome.usage.outputTokens > 0) {
+      await agentService
+        .recordUsage(prisma, {
+          userId,
+          conversationId,
+          provider: served.kind,
+          entryName: served.name,
+          model: served.model,
+          ...outcome.usage,
+        })
+        .catch(() => {});
+    }
+    sseSend(res, 'done', { ...outcome.usage, provider: served.name });
   } catch (error) {
     if (!abort.signal.aborted) {
       // eslint-disable-next-line no-console
@@ -129,11 +129,6 @@ export async function agentChatHandler(req: Request, res: Response) {
       sseSend(res, 'error', { message: '응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요.' });
     }
   } finally {
-    if (usage.inputTokens + usage.outputTokens > 0) {
-      await agentService
-        .recordUsage(prisma, { userId, conversationId, model: settings.model, ...usage })
-        .catch(() => {});
-    }
     res.end();
   }
 }
