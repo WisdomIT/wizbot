@@ -20,10 +20,14 @@ export function YoutubeView() {
   const queryClient = useQueryClient();
   const { data, isPending } = useQuery(trpc.cafe.get.queryOptions());
   const setYoutube = useMutation(trpc.cafe.setYoutube.mutationOptions());
-  const [input, setInput] = useState('');
-  useEffect(() => {
-    if (data) setInput(data.youtubeUrl ?? '');
-  }, [data]);
+  //  서버의 유튜브 주소를 입력칸에 반영 — effect 대신 렌더 중 보정 (#200)
+  const serverYoutubeUrl = data?.youtubeUrl ?? '';
+  const [input, setInput] = useState(serverYoutubeUrl);
+  const [prevServerYoutubeUrl, setPrevServerYoutubeUrl] = useState(serverYoutubeUrl);
+  if (prevServerYoutubeUrl !== serverYoutubeUrl) {
+    setPrevServerYoutubeUrl(serverYoutubeUrl);
+    setInput(serverYoutubeUrl);
+  }
 
   if (isPending) return <Skeleton className="h-60 w-full" />;
 

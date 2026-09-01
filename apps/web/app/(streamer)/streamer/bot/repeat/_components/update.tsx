@@ -31,9 +31,12 @@ export default function UpdateCommand({
 
   const [data, setData] = useState<Repeat | null>(null);
 
-  useEffect(() => {
+  //  열 때마다 대상 행을 폼에 반영 — effect 대신 렌더 중 보정 (#200)
+  const [prevRepeat, setPrevRepeat] = useState<Repeat | null>(null);
+  if (repeat !== prevRepeat) {
+    setPrevRepeat(repeat);
     setData(repeat);
-  }, [repeat]);
+  }
 
   async function handleClose() {
     setUpdateTarget(null);

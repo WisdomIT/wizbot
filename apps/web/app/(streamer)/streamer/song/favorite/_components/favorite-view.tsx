@@ -102,13 +102,13 @@ export function FavoriteView() {
   const remove = useMutation(trpc.songFavorite.remove.mutationOptions());
   const setDefault = useMutation(trpc.songFavorite.setDefault.mutationOptions());
 
-  // 처음 열었을 때는 대표(목록 첫 번째)를 펼쳐둔다
+  // 처음 열었을 때는 대표(목록 첫 번째)를 펼쳐둔다. 선택이 삭제된 경우도 대표로 —
+  // 상태 보정 대신 파생으로 처리한다 (#200)
   const firstId = data?.favorites[0]?.id ?? null;
-  useEffect(() => {
-    setSelectedId((prev) =>
-      prev !== null && data?.favorites.some((favorite) => favorite.id === prev) ? prev : firstId,
-    );
-  }, [firstId, data?.favorites]);
+  const effectiveSelectedId =
+    selectedId !== null && data?.favorites.some((favorite) => favorite.id === selectedId)
+      ? selectedId
+      : firstId;
 
   if (isPending) {
     return (
@@ -130,7 +130,7 @@ export function FavoriteView() {
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <FavoriteListCard
           favorites={data.favorites}
-          selectedId={selectedId}
+          selectedId={effectiveSelectedId}
           onSelect={setSelectedId}
           createPending={create.isPending}
           onCreate={(name) => run(create.mutateAsync({ name }), '즐겨찾기를 만들었습니다.')}
@@ -140,14 +140,14 @@ export function FavoriteView() {
         />
 
         <div className="min-w-0 flex-1">
-          {selectedId === null ? (
+          {effectiveSelectedId === null ? (
             <Card>
               <CardContent className="py-16 text-center text-sm text-muted-foreground">
                 왼쪽에서 즐겨찾기를 만들거나 선택하세요.
               </CardContent>
             </Card>
           ) : (
-            <FavoriteDetailCard favoriteId={selectedId} run={run} />
+            <FavoriteDetailCard favoriteId={effectiveSelectedId} run={run} />
           )}
         </div>
       </div>
@@ -313,7 +313,12 @@ function RenameDialog({
 }) {
   const [name, setName] = useState('');
 
-  useEffect(() => setName(favorite?.name ?? ''), [favorite]);
+  //  다른 행으로 다시 열면 이름을 갈아끼운다 — effect 대신 렌더 중 보정 (#200)
+  const [prevFavorite, setPrevFavorite] = useState(favorite);
+  if (favorite !== prevFavorite) {
+    setPrevFavorite(favorite);
+    setName(favorite?.name ?? '');
+  }
 
   return (
     <Dialog open={favorite !== null} onOpenChange={(open) => !open && onClose()}>
@@ -377,8 +382,13 @@ function FavoriteDetailCard({
   const reorderItems = useMutation(trpc.songFavorite.reorderItems.mutationOptions());
   const enqueue = useMutation(trpc.songFavorite.enqueue.mutationOptions());
 
+  //  서버 목록의 로컬 사본(드래그 직후 즉시 반영용) — effect 대신 렌더 중 보정 (#200)
   const [items, setItems] = useState<FavoriteItem[]>([]);
-  useEffect(() => setItems(data?.items ?? []), [data?.items]);
+  const [prevServerItems, setPrevServerItems] = useState(data?.items);
+  if (data?.items !== prevServerItems) {
+    setPrevServerItems(data?.items);
+    setItems(data?.items ?? []);
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
