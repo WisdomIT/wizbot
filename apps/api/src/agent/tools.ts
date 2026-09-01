@@ -1,4 +1,3 @@
-import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatbotPermission, PrismaClient } from '@prisma/client';
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '@wizbot/shared/chatbot/definitions';
 import { notifyAdminsOfInquiry } from '@wizbot/shared/router';
@@ -14,6 +13,7 @@ import {
 } from '@wizbot/shared/services';
 
 import { recordAgentAudit } from './audit';
+import type { ToolDef } from './llm/types';
 
 /**
  * 에이전트 tool (#35). 서비스 계층을 로그인 스트리머 스코프로 노출한다.
@@ -42,21 +42,21 @@ const noInput = { type: 'object' as const, properties: {}, additionalProperties:
 const id = { type: 'number' as const };
 const confirmed = { type: 'boolean' as const, description: '사용자가 채팅에서 명시적으로 동의했을 때만 true' };
 
-export const AGENT_TOOLS: Anthropic.Tool[] = [
+export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
-  { name: 'list_commands', description: '이 채널의 챗봇 명령어(단순 응답 echo·기능 function) 전체 목록.', input_schema: noInput },
-  { name: 'list_repeats', description: '반복 메시지(주기적으로 채팅에 보내는 메시지) 목록.', input_schema: noInput },
-  { name: 'get_playback', description: '뮤직 플레이어 상태 — 재생 중인 곡, 재생/일시정지, 볼륨, 대기열.', input_schema: noInput },
-  { name: 'list_favorites', description: '즐겨찾기(미리 담아두는 재생목록) 목록.', input_schema: noInput },
+  { name: 'list_commands', description: '이 채널의 챗봇 명령어(단순 응답 echo·기능 function) 전체 목록.', inputSchema: noInput },
+  { name: 'list_repeats', description: '반복 메시지(주기적으로 채팅에 보내는 메시지) 목록.', inputSchema: noInput },
+  { name: 'get_playback', description: '뮤직 플레이어 상태 — 재생 중인 곡, 재생/일시정지, 볼륨, 대기열.', inputSchema: noInput },
+  { name: 'list_favorites', description: '즐겨찾기(미리 담아두는 재생목록) 목록.', inputSchema: noInput },
   {
     name: 'get_favorite', description: '즐겨찾기 하나의 곡 목록.',
-    input_schema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
   },
-  { name: 'list_shortcuts', description: '시청자 페이지에 노출되는 링크(바로가기) 목록.', input_schema: noInput },
-  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 노래 신청 설정 등.', input_schema: noInput },
+  { name: 'list_shortcuts', description: '시청자 페이지에 노출되는 링크(바로가기) 목록.', inputSchema: noInput },
+  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 노래 신청 설정 등.', inputSchema: noInput },
   {
     name: 'search_audit_log', description: '설정 변경 기록 검색 — 누가(본인/관리자/챗봇/도우미) 언제 무엇을 바꿨는지.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { query: { type: 'string', description: '경로/행위자 부분 일치 (선택)' }, limit: { type: 'number', description: '기본 20, 최대 50' } },
       required: [], additionalProperties: false,
@@ -65,13 +65,13 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: 'list_available_functions',
     description: '기능(function) 명령어로 쓸 수 있는 기능 카탈로그 — create_function_command 의 func 값과 설명.',
-    input_schema: noInput,
+    inputSchema: noInput,
   },
 
   /* ── 명령어 ── */
   {
     name: 'create_echo_command', description: '단순 응답(echo) 명령어를 추가한다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { command: { type: 'string', description: '명령어 이름 (! 는 자동 처리)' }, response: { type: 'string' } },
       required: ['command', 'response'], additionalProperties: false,
@@ -79,7 +79,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_echo_command', description: 'echo 명령어를 수정한다. id 는 list_commands 로 확인.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { id, command: { type: 'string', description: '바꿀 이름 (선택)' }, response: { type: 'string' } },
       required: ['id', 'response'], additionalProperties: false,
@@ -87,7 +87,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'create_function_command', description: '기능(function) 명령어를 추가한다. func 는 list_available_functions 로 확인.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: {
         command: { type: 'string' },
@@ -100,7 +100,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_function_command', description: 'function 명령어를 수정한다 — command·func·permission 전체를 넘긴다 (기존 값은 list_commands 로 확인).',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: {
         id, command: { type: 'string' }, func: { type: 'string' },
@@ -112,7 +112,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'set_command_enabled', description: '명령어를 켜거나 끈다 (삭제하지 않고 잠시 중지할 때).',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { id, type: { type: 'string', enum: ['echo', 'function'] }, enabled: { type: 'boolean' } },
       required: ['id', 'type', 'enabled'], additionalProperties: false,
@@ -120,7 +120,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'delete_command', description: '명령어를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { id, type: { type: 'string', enum: ['echo', 'function'] }, confirmed },
       required: ['id', 'type'], additionalProperties: false,
@@ -130,7 +130,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   /* ── 반복 메시지 ── */
   {
     name: 'create_repeat', description: '반복 메시지를 추가한다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { response: { type: 'string', description: '보낼 메시지' }, intervalSeconds: { type: 'number', description: '주기 (초)' } },
       required: ['response', 'intervalSeconds'], additionalProperties: false,
@@ -138,7 +138,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_repeat', description: '반복 메시지를 수정한다 — response·intervalSeconds 전체를 넘긴다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { id, response: { type: 'string' }, intervalSeconds: { type: 'number' } },
       required: ['id', 'response', 'intervalSeconds'], additionalProperties: false,
@@ -146,17 +146,17 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'set_repeat_enabled', description: '반복 메시지를 켜거나 끈다.',
-    input_schema: { type: 'object', properties: { id, enabled: { type: 'boolean' } }, required: ['id', 'enabled'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { id, enabled: { type: 'boolean' } }, required: ['id', 'enabled'], additionalProperties: false },
   },
   {
     name: 'delete_repeat', description: '반복 메시지를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    input_schema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
   },
 
   /* ── 링크 ── */
   {
     name: 'create_shortcut', description: '시청자 페이지 링크를 추가한다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string' }, url: { type: 'string', description: 'https:// 주소' },
@@ -167,7 +167,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'update_shortcut', description: '링크를 수정한다 — name·url·icon 전체를 넘긴다 (기존 값은 list_shortcuts 로 확인).',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { id, name: { type: 'string' }, url: { type: 'string' }, icon: { type: 'string' } },
       required: ['id', 'name', 'url', 'icon'], additionalProperties: false,
@@ -175,17 +175,17 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'delete_shortcut', description: '링크를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    input_schema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
   },
 
   /* ── 뮤직 플레이어 ── */
   {
     name: 'add_song', description: '대기열에 곡을 추가한다 (유튜브 검색어 또는 URL). 스트리머 본인 추가라 신청 정책을 우회한다.',
-    input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false },
   },
   {
     name: 'control_playback', description: '재생 제어 — play(재생)/pause(일시정지)/next(다음 곡)/stop(정지).',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { action: { type: 'string', enum: ['play', 'pause', 'next', 'stop'] } },
       required: ['action'], additionalProperties: false,
@@ -193,15 +193,15 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'set_volume', description: '볼륨을 바꾼다 (0~100).',
-    input_schema: { type: 'object', properties: { volume: { type: 'number' } }, required: ['volume'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { volume: { type: 'number' } }, required: ['volume'], additionalProperties: false },
   },
   {
     name: 'clear_queue', description: '대기열을 비운다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    input_schema: { type: 'object', properties: { confirmed }, required: [], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { confirmed }, required: [], additionalProperties: false },
   },
   {
     name: 'enqueue_favorite', description: '즐겨찾기의 곡들을 대기열에 넣는다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { favoriteId: id, shuffle: { type: 'boolean', description: '섞어서 넣기' } },
       required: ['favoriteId'], additionalProperties: false,
@@ -209,7 +209,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'import_playlist', description: '유튜브 재생목록을 즐겨찾기로 가져온다(뒤에 추가).',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { favoriteId: id, url: { type: 'string', description: '유튜브 재생목록 URL' } },
       required: ['favoriteId', 'url'], additionalProperties: false,
@@ -219,7 +219,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   /* ── 문의 ── */
   {
     name: 'create_inquiry', description: '운영자에게 문의를 남긴다. 운영자에게 발송되므로 confirmed 규칙을 따른다 — 보내기 전에 제목·내용을 사용자에게 보여주고 동의를 받는다.',
-    input_schema: {
+    inputSchema: {
       type: 'object',
       properties: { title: { type: 'string' }, body: { type: 'string', description: '마크다운 가능' }, confirmed },
       required: ['title', 'body'], additionalProperties: false,

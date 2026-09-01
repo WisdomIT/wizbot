@@ -122,16 +122,72 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
-/// 설정 도우미 에이전트 (#35) — 키·모델·한도는 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+/// 설정 도우미 에이전트 전역 설정 (#35) — 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+/// 프로바이더(키·모델)는 AgentProvider 목록, 한도는 AgentLimit 규칙으로 분리됐다.
 model AgentSettings {
-  id              Int      @id @default(1)
-  /// Anthropic API 키 — 화면에는 끝 4자만 내려간다
-  apiKey          String   @db.VarChar(255)
-  model           String   @default("claude-opus-5") @db.VarChar(64)
-  /// 스트리머별 일일 토큰 한도 (input+output). 초과하면 다음 날까지 안내 후 중단
-  dailyTokenLimit Int      @default(500000)
-  enabled         Boolean  @default(false)
-  updatedAt       DateTime @updatedAt @db.DateTime(6)
+  id               Int      @id @default(1)
+  enabled          Boolean  @default(false)
+  /// 프로바이더의 네이티브 웹 검색(서버 측) 사용 — 지원하는 프로바이더에서만 실린다
+  webSearchEnabled Boolean  @default(false)
+  updatedAt        DateTime @updatedAt @db.DateTime(6)
+}
+
+/// LLM 프로바이더 — 순서 있는 목록 (pelican-concierge #89 방식). 1순위가 답을 멈추면
+/// (크레딧 소진·쿼터·장애) 다음 항목이 이어받는다. 쉬는(cooldown) 상태는 메모리에만 둔다 —
+/// 장애 조치는 운영자의 설정을 바꾸는 일이 아니다.
+model AgentProvider {
+  id        Int               @id @default(autoincrement())
+  /// 낮을수록 먼저 시도
+  priority  Int
+  /// 표시명 — 사용량 내역에 이름으로 남는다 (항목을 지워도 내역이 읽히도록 id 가 아니라 이름)
+  name      String            @db.VarChar(60)
+  kind      AgentProviderKind
+  /// 로컬 OpenAI 호환 엔드포인트는 비울 수 있다
+  apiKey    String            @default("") @db.VarChar(255)
+  /// OPENAI_COMPAT 전용 — 엔드포인트 주소
+  baseUrl   String?           @db.VarChar(255)
+  model     String            @db.VarChar(100)
+  enabled   Boolean           @default(true)
+  createdAt DateTime          @default(now()) @db.DateTime(6)
+  updatedAt DateTime          @updatedAt @db.DateTime(6)
+}
+
+enum AgentProviderKind {
+  ANTHROPIC
+  OPENAI
+  GEMINI
+  /// 로컬 LLM 등 OpenAI 호환 엔드포인트
+  OPENAI_COMPAT
+}
+
+/// 사용 한도 규칙 (pelican-concierge #4 의 3축) — 기준 × 범위 × 주기. 여러 규칙은 전부(AND) 적용되고,
+/// 하나라도 초과하면 차단된다. GLOBAL 규칙 초과는 전체 차단.
+model AgentLimit {
+  id        Int              @id @default(autoincrement())
+  metric    AgentLimitMetric
+  scope     AgentLimitScope
+  period    AgentLimitPeriod
+  amount    Int
+  createdAt DateTime         @default(now()) @db.DateTime(6)
+}
+
+enum AgentLimitMetric {
+  /// input + output 토큰 합
+  TOKENS
+  /// 채팅(요청) 수
+  MESSAGES
+}
+
+enum AgentLimitScope {
+  STREAMER
+  GLOBAL
+}
+
+enum AgentLimitPeriod {
+  HOUR
+  DAY
+  WEEK
+  MONTH
 }
 
 /// 에이전트 대화 (#35). replica 가 여러 개라 서버 메모리에 두지 않고 DB 로 잇는다.
@@ -160,19 +216,24 @@ model AgentMessage {
   @@index([conversationId])
 }
 
-/// 요청 1회 = 1행. 일일 한도 계산과 어드민 사용량 통계의 근거
+/// 요청 1회 = 1행. 한도 계산과 어드민 사용량 통계의 근거.
+/// provider·entryName: 어느 항목으로 청구됐는가 — 장애 조치 뒤 비용 내역이 거짓말하지 않도록
 model AgentUsage {
   id              Int      @id @default(autoincrement())
   userId          Int
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversationId  Int?
-  model           String   @db.VarChar(64)
-  inputTokens    Int
+  provider        String   @default("ANTHROPIC") @db.VarChar(20)
+  entryName       String?  @db.VarChar(60)
+  model           String   @db.VarChar(100)
+  inputTokens     Int
   outputTokens    Int
   cacheReadTokens Int      @default(0)
   createdAt       DateTime @default(now()) @db.DateTime(6)
 
   @@index([userId, createdAt])
+  //  GLOBAL 한도는 userId 없이 기간으로만 조회한다
+  @@index([createdAt])
 }
 
 /// SMTP 설정 (#215) — 단일 행(id=1). 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
