@@ -122,6 +122,59 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
+/// 설정 도우미 에이전트 (#35) — 키·모델·한도는 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+model AgentSettings {
+  id              Int      @id @default(1)
+  /// Anthropic API 키 — 화면에는 끝 4자만 내려간다
+  apiKey          String   @db.VarChar(255)
+  model           String   @default("claude-opus-5") @db.VarChar(64)
+  /// 스트리머별 일일 토큰 한도 (input+output). 초과하면 다음 날까지 안내 후 중단
+  dailyTokenLimit Int      @default(500000)
+  enabled         Boolean  @default(false)
+  updatedAt       DateTime @updatedAt @db.DateTime(6)
+}
+
+/// 에이전트 대화 (#35). replica 가 여러 개라 서버 메모리에 두지 않고 DB 로 잇는다.
+model AgentConversation {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String         @default("새 대화") @db.VarChar(200)
+  createdAt DateTime       @default(now()) @db.DateTime(6)
+  updatedAt DateTime       @updatedAt @db.DateTime(6)
+  messages  AgentMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model AgentMessage {
+  id             Int               @id @default(autoincrement())
+  conversationId Int
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// user | assistant
+  role           String            @db.VarChar(12)
+  /// Anthropic MessageParam.content 그대로 (텍스트·tool_use·tool_result 블록 배열)
+  content        Json
+  createdAt      DateTime          @default(now()) @db.DateTime(6)
+
+  @@index([conversationId])
+}
+
+/// 요청 1회 = 1행. 일일 한도 계산과 어드민 사용량 통계의 근거
+model AgentUsage {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId  Int?
+  model           String   @db.VarChar(64)
+  inputTokens    Int
+  outputTokens    Int
+  cacheReadTokens Int      @default(0)
+  createdAt       DateTime @default(now()) @db.DateTime(6)
+
+  @@index([userId, createdAt])
+}
+
 /// SMTP 설정 (#215) — 단일 행(id=1). 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
 /// 행이 없으면 SMTP_* 환경변수로 폴백 — 관리자 로그인이 패스코드 메일에 의존하므로 env 가 잠금 방지 탈출구다.
 model MailSettings {
@@ -224,6 +277,8 @@ enum AuditActor {
   ADMIN
   /// 챗봇 명령(!추가 등)으로 바꾼 경우 — 호출한 채팅 계정을 actorName 에 남긴다
   CHATBOT
+  /// 설정 도우미 에이전트 (#35) — 스트리머의 지시로 에이전트가 수행한 변경
+  AGENT
 }
 
 model Admin {
@@ -265,6 +320,8 @@ model User {
   playlists         SongFavorite[]
   cafeIntegration   CafeIntegration?
   auditLogs         AuditLog[]
+  agentConversations AgentConversation[]
+  agentUsages       AgentUsage[]
   noticeReads       NoticeRead[]
   inquiries         Inquiry[]
 }

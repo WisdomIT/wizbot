@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { BellRing, ClipboardList, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ShieldCheck, Users } from 'lucide-react';
+import { BellRing, Bot, ClipboardList, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -66,6 +66,11 @@ const menu = [
     name: '알림 설정',
     url: '/admin/webhooks',
     icon: <BellRing />,
+  },
+  {
+    name: '에이전트 설정',
+    url: '/admin/agent',
+    icon: <Bot />,
   },
 ];
 
