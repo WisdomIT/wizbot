@@ -424,3 +424,179 @@ export async function setTitleFromFirstMessage(prisma: PrismaClient, conversatio
     data: { title },
   });
 }
+
+/* ── 어드민: 사용량 통계·로그 (#35 조정 6, pelican UsageStats/Charts/conversation 이식) ── */
+
+/** 집계 경계는 한국 시간 자정 — 사용자가 보는 "오늘"과 같은 자정을 본다 */
+const KST = 'Asia/Seoul';
+
+function kstDayKey(date: Date): string {
+  return date.toLocaleDateString('sv-SE', { timeZone: KST });
+}
+
+function kstStartOfDay(daysAgo = 0): Date {
+  const key = kstDayKey(new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000));
+  return new Date(`${key}T00:00:00+09:00`);
+}
+
+export async function adminOverview(prisma: PrismaClient) {
+  const today = kstStartOfDay();
+  const monthKey = kstDayKey(new Date()).slice(0, 7);
+  const monthStart = new Date(`${monthKey}-01T00:00:00+09:00`);
+
+  const [todayMessages, todayUserRows, monthSum, limits] = await Promise.all([
+    prisma.agentUsage.count({ where: { createdAt: { gte: today } } }),
+    prisma.agentUsage.groupBy({ by: ['userId'], where: { createdAt: { gte: today } } }),
+    prisma.agentUsage.aggregate({ where: { createdAt: { gte: monthStart } }, _sum: { inputTokens: true, outputTokens: true } }),
+    listLimits(prisma),
+  ]);
+
+  //  전체(GLOBAL) 한도는 한 사용자가 다 써버릴 수 있다 — 의도된 동작이지만 관리자는 여기서 봐야 한다
+  const globalRules = await Promise.all(
+    limits
+      .filter((limit) => limit.scope === 'GLOBAL')
+      .map(async (limit) => {
+        const since = new Date(Date.now() - PERIOD_MS[limit.period]);
+        const used =
+          limit.metric === 'MESSAGES'
+            ? await prisma.agentUsage.count({ where: { createdAt: { gte: since } } })
+            : await prisma.agentUsage
+                .aggregate({ where: { createdAt: { gte: since } }, _sum: { inputTokens: true, outputTokens: true } })
+                .then((sum) => (sum._sum.inputTokens ?? 0) + (sum._sum.outputTokens ?? 0));
+        return { period: limit.period, metric: limit.metric, amount: limit.amount, used };
+      }),
+  );
+
+  return {
+    todayMessages,
+    todayUsers: todayUserRows.length,
+    monthTokens: (monthSum._sum.inputTokens ?? 0) + (monthSum._sum.outputTokens ?? 0),
+    globalRules,
+  };
+}
+
+/**
+ * 최근 30일 일별 버킷 + 사용자별 누적 (원본과 동일하게 앱 코드에서 접는다 —
+ * SQL 날짜 함수는 드라이버마다 달라 이식성이 없다). 사용자 선은 누적 상위 8명 + 기타.
+ */
+export async function adminCharts(prisma: PrismaClient) {
+  const days = 30;
+  const start = kstStartOfDay(days - 1);
+  const rows = await prisma.agentUsage.findMany({
+    where: { createdAt: { gte: start } },
+    select: { createdAt: true, inputTokens: true, outputTokens: true, userId: true },
+  });
+
+  const labels: string[] = [];
+  const keys: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const key = kstDayKey(new Date(start.getTime() + i * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000));
+    keys.push(key);
+    labels.push(key.slice(5));
+  }
+  const index = new Map(keys.map((key, i) => [key, i]));
+
+  const messages = new Array<number>(days).fill(0);
+  const tokens = new Array<number>(days).fill(0);
+  const perUser = new Map<number, number[]>();
+  for (const row of rows) {
+    const i = index.get(kstDayKey(row.createdAt));
+    if (i === undefined) continue;
+    const total = row.inputTokens + row.outputTokens;
+    messages[i] += 1;
+    tokens[i] += total;
+    const daily = perUser.get(row.userId) ?? new Array<number>(days).fill(0);
+    daily[i] += total;
+    perUser.set(row.userId, daily);
+  }
+
+  const ranked = [...perUser.entries()].sort((a, b) => b[1].reduce((x, y) => x + y, 0) - a[1].reduce((x, y) => x + y, 0));
+  const top = ranked.slice(0, 8);
+  const rest = ranked.slice(8);
+  const users = await prisma.user.findMany({
+    where: { id: { in: top.map(([userId]) => userId) } },
+    select: { id: true, channelName: true },
+  });
+  const nameOf = new Map(users.map((user) => [user.id, user.channelName]));
+
+  const cumulative = (daily: number[]) => {
+    let sum = 0;
+    return daily.map((value) => (sum += value));
+  };
+  const series = top.map(([userId, daily]) => ({ name: nameOf.get(userId) ?? `#${userId}`, values: cumulative(daily) }));
+  if (rest.length > 0) {
+    const etc = new Array<number>(days).fill(0);
+    for (const [, daily] of rest) daily.forEach((value, i) => (etc[i] += value));
+    series.push({ name: '기타', values: cumulative(etc) });
+  }
+
+  return { labels, messages, tokens, series };
+}
+
+/** 사용자별 30일 합계 표 */
+export async function adminUserStats(prisma: PrismaClient) {
+  const since = kstStartOfDay(29);
+  const grouped = await prisma.agentUsage.groupBy({
+    by: ['userId'],
+    where: { createdAt: { gte: since } },
+    _count: { _all: true },
+    _sum: { inputTokens: true, outputTokens: true },
+  });
+  const users = await prisma.user.findMany({
+    where: { id: { in: grouped.map((row) => row.userId) } },
+    select: { id: true, channelName: true },
+  });
+  const nameOf = new Map(users.map((user) => [user.id, user.channelName]));
+  return grouped
+    .map((row) => ({
+      userId: row.userId,
+      channelName: nameOf.get(row.userId) ?? `#${row.userId}`,
+      messages: row._count._all,
+      tokens: (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0),
+    }))
+    .sort((a, b) => b.tokens - a.tokens);
+}
+
+/** 전체 대화 로그 — soft delete 된 것 포함(뱃지 표시), 관리자용 */
+export async function adminConversations(prisma: PrismaClient, cursor: number | null, limit: number) {
+  const rows = await prisma.agentConversation.findMany({
+    where: cursor ? { id: { lt: cursor } } : {},
+    orderBy: { id: 'desc' },
+    take: limit + 1,
+    include: { user: { select: { channelName: true } }, _count: { select: { messages: true } } },
+  });
+  const page = rows.slice(0, limit);
+  const sums = await prisma.agentUsage.groupBy({
+    by: ['conversationId'],
+    where: { conversationId: { in: page.map((row) => row.id) } },
+    _sum: { inputTokens: true, outputTokens: true },
+  });
+  const tokenOf = new Map(sums.map((row) => [row.conversationId, (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0)]));
+  return {
+    conversations: page.map((row) => ({
+      id: row.id,
+      title: row.title,
+      channelName: row.user.channelName,
+      messageCount: row._count.messages,
+      tokens: tokenOf.get(row.id) ?? 0,
+      deleted: row.deletedAt !== null,
+      updatedAt: row.updatedAt,
+    })),
+    nextCursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null,
+  };
+}
+
+/** 대화 상세 — 메시지 전문(tool 입력·결과 포함)·승인 카드·요청별 사용량 */
+export async function adminConversation(prisma: PrismaClient, id: number) {
+  const conversation = await prisma.agentConversation.findUnique({
+    where: { id },
+    include: {
+      user: { select: { channelName: true } },
+      messages: { orderBy: { id: 'asc' } },
+      pendingActions: { orderBy: { id: 'asc' } },
+    },
+  });
+  if (!conversation) throw new ServiceError('NOT_FOUND', '대화를 찾을 수 없습니다.');
+  const usages = await prisma.agentUsage.findMany({ where: { conversationId: id }, orderBy: { id: 'asc' } });
+  return { conversation, usages };
+}

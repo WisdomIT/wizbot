@@ -79,6 +79,50 @@ export const agentRouter = t.router({
     .input(z.object({ id: z.number().int().positive(), direction: z.enum(['up', 'down']) }))
     .mutation(({ ctx, input }) => agentService.moveProvider(ctx.prisma, input.id, input.direction)),
 
+  /* ── 어드민: 사용량 통계·로그 (#35 조정 6) ── */
+  adminOverview: adminProcedure.query(({ ctx }) => agentService.adminOverview(ctx.prisma)),
+  adminCharts: adminProcedure.query(({ ctx }) => agentService.adminCharts(ctx.prisma)),
+  adminUserStats: adminProcedure.query(({ ctx }) => agentService.adminUserStats(ctx.prisma)),
+  adminConversations: adminProcedure
+    .input(z.object({ cursor: z.number().int().positive().nullish(), limit: z.number().int().min(1).max(100).default(30) }))
+    .query(({ ctx, input }) => agentService.adminConversations(ctx.prisma, input.cursor ?? null, input.limit)),
+  adminConversation: adminProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const { conversation, usages } = await agentService.adminConversation(ctx.prisma, input.id);
+      //  Json 은 문자열로 (TS2589 회피, #175 와 동일)
+      return {
+        id: conversation.id,
+        title: conversation.title,
+        channelName: conversation.user.channelName,
+        deleted: conversation.deletedAt !== null,
+        createdAt: conversation.createdAt,
+        messages: conversation.messages.map((row) => ({
+          id: row.id,
+          role: row.role,
+          contentJson: JSON.stringify(row.content),
+          createdAt: row.createdAt,
+        })),
+        actions: conversation.pendingActions.map((row) => ({
+          id: row.id,
+          toolUseId: row.toolUseId,
+          tool: row.tool,
+          status: row.status,
+          cardJson: JSON.stringify(row.card),
+        })),
+        usages: usages.map((row) => ({
+          id: row.id,
+          provider: row.provider,
+          entryName: row.entryName,
+          model: row.model,
+          inputTokens: row.inputTokens,
+          outputTokens: row.outputTokens,
+          cacheReadTokens: row.cacheReadTokens,
+          createdAt: row.createdAt,
+        })),
+      };
+    }),
+
   /* ── 어드민: 한도 규칙 ── */
   limits: adminProcedure.query(({ ctx }) => agentService.listLimits(ctx.prisma)),
   addLimit: adminProcedure

@@ -68,7 +68,7 @@ const menu = [
     icon: <BellRing />,
   },
   {
-    name: '에이전트 설정',
+    name: '에이전트',
     url: '/admin/agent',
     icon: <Bot />,
   },
