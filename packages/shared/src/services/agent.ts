@@ -213,6 +213,13 @@ export async function probeProvider(
   return { models };
 }
 
+/** 저장된 항목의 자격으로 probe — 수정 폼이 열리면 즉시 모델 목록을 보여주기 위한 조회 경로 */
+export async function probeStoredProvider(prisma: PrismaClient, providerId: number) {
+  const row = await prisma.agentProvider.findUnique({ where: { id: providerId } });
+  if (!row) throw new ServiceError('NOT_FOUND', '프로바이더를 찾을 수 없습니다.');
+  return probeProvider(prisma, { kind: row.kind, apiKey: '', baseUrl: row.baseUrl, providerId });
+}
+
 /* ── 한도 규칙 (#4: 기준 × 범위 × 주기) ── */
 
 export function listLimits(prisma: PrismaClient) {
