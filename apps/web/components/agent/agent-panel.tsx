@@ -577,8 +577,7 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
  *   소스를 잘라 다시 렌더한다 — 잘린 서식 기호가 잠깐 보일 수 있으나 다음 틱에 해소된다
  */
 function TypewriterMarkdown({ text, onReveal }: { text: string; onReveal: () => void }) {
-  const shownRef = useRef(0);
-  const [, forceRender] = useState(0);
+  const [shown, setShown] = useState(0);
   const textRef = useRef(text);
   const onRevealRef = useRef(onReveal);
   useEffect(() => {
@@ -590,15 +589,15 @@ function TypewriterMarkdown({ text, onReveal }: { text: string; onReveal: () => 
     const instant = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const timer = setInterval(() => {
       const total = textRef.current.length;
-      if (shownRef.current >= total) return;
-      shownRef.current = instant ? total : Math.min(total, shownRef.current + Math.max(1, Math.round((total - shownRef.current) / 14)));
-      forceRender((tickCount) => tickCount + 1);
+      setShown((prev) =>
+        prev >= total ? prev : instant ? total : Math.min(total, prev + Math.max(1, Math.round((total - prev) / 14))),
+      );
       onRevealRef.current();
     }, 40);
     return () => clearInterval(timer);
   }, []);
 
-  return <Markdown>{text.slice(0, shownRef.current)}</Markdown>;
+  return <Markdown>{text.slice(0, Math.min(shown, text.length))}</Markdown>;
 }
 
 /** 승인 카드 — 실행 경로는 이 버튼뿐이다. 모델은 카드를 띄울 수만 있다 */
