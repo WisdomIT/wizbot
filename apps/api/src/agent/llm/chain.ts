@@ -23,7 +23,9 @@ import { type ProviderAdapter, ProviderApiError, type TurnOutcome, type TurnRequ
 const MAX_ATTEMPTS = 3;
 
 const cooldownUntil = new Map<number, number>();
-const notifiedDown = new Set<number>();
+/** 항목 id → 마지막으로 알린 오류 서명. 같은 사건(같은 오류)은 한 번만, **오류 종류가 바뀌면 다시** 알린다 —
+ *  404(모델) → 429(쿼터) → 400(설정) 처럼 원인이 바뀌었는데 억제되면 문제 파악이 안 된다 (실사례) */
+const notifiedDown = new Map<number, string>();
 /** 직전에 어느 항목으로 말했는가 — "주 공급자로 돌아왔다" 판정 근거 */
 let servingId: number | null = null;
 
@@ -51,9 +53,9 @@ function isCooling(entry: AgentProvider): boolean {
   return until !== undefined && until > Date.now();
 }
 
-function notifyFailover(prisma: PrismaClient, failed: AgentProvider, next: AgentProvider | null, message: string) {
-  if (notifiedDown.has(failed.id)) return;
-  notifiedDown.add(failed.id);
+function notifyFailover(prisma: PrismaClient, failed: AgentProvider, next: AgentProvider | null, message: string, signature: string) {
+  if (notifiedDown.get(failed.id) === signature) return;
+  notifiedDown.set(failed.id, signature);
   void notifyService.notifyAdmins(prisma, 'ERROR', {
     title: `에이전트 프로바이더 장애: ${failed.name}`,
     lines: [message ? `오류: ${message.slice(0, 300)}` : null, next ? `다음 순위(${next.name})로 이어받았습니다.` : '남은 항목이 없어 응답에 실패했습니다.'],
@@ -101,8 +103,13 @@ export async function runWithFallback(
       if (!(error instanceof ProviderApiError)) throw error; // tool 오류·abort 는 폴백 대상이 아니다
       console.error(`[agent] 프로바이더 실패 (${entry.name}):`, error.status, error.message);
       cooldownUntil.set(entry.id, Date.now() + cooldownMinutes(error.status) * 60_000);
-      if (error.emittedText) throw error; // 이미 출력이 나갔다 — 이어붙이면 중복이라 폴백하지 않는다
-      notifyFailover(prisma, entry, attempts[index + 1] ?? null, error.message);
+      const signature = String(error.status ?? 'network');
+      if (error.emittedText) {
+        //  이미 출력이 나갔다 — 이어붙이면 중복이라 폴백하지 않지만, 운영자는 알아야 한다
+        notifyFailover(prisma, entry, null, `(응답 도중 실패 — 폴백 불가) ${error.message}`, signature);
+        throw error;
+      }
+      notifyFailover(prisma, entry, attempts[index + 1] ?? null, error.message, signature);
     }
   }
   throw lastError ?? new Error('사용할 수 있는 프로바이더가 없습니다.');
