@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Plus, SendHorizonal, ShieldQuestion, Sparkles, Trash2, Wrench, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { History, Plus, SendHorizonal, ShieldQuestion, Sparkles, Trash2, Wrench, X } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 
 import Markdown from '@/components/custom/markdown';
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 /**
@@ -70,6 +71,47 @@ const TOOL_LABEL: Record<string, string> = {
   web_search: '웹 검색',
 };
 
+/* ── dock 폭 (pelican cgResize 이식): MIN 384px(24rem), max 60vw≤800, localStorage 저장 ── */
+const WIDTH_KEY = 'agent-panel-width';
+const WIDTH_EVENT = 'agent-panel-width';
+const DEFAULT_WIDTH = 384;
+
+function clampWidth(px: number): number {
+  const max = Math.min(Math.round(window.innerWidth * 0.6), 800);
+  return Math.min(max, Math.max(DEFAULT_WIDTH, Math.round(px)));
+}
+function readWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(WIDTH_KEY));
+    return value >= DEFAULT_WIDTH ? value : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+function storeWidth(px: number) {
+  try {
+    localStorage.setItem(WIDTH_KEY, String(px));
+  } catch {
+    /* 저장 실패는 무시 — 기본 폭으로 돌아갈 뿐 */
+  }
+  window.dispatchEvent(new Event(WIDTH_EVENT));
+}
+function subscribeWidth(onChange: () => void) {
+  window.addEventListener(WIDTH_EVENT, onChange);
+  return () => window.removeEventListener(WIDTH_EVENT, onChange);
+}
+
+/** 에이전트가 설정을 바꾸면 그 화면의 쿼리를 무효화한다 (#35 조정 4) — 재생·큐는 song events SSE 로 이미 실시간 */
+const TOOL_INVALIDATE: Record<string, 'command' | 'shortcut' | 'songFavorite' | 'inquiry'> = {
+  create_echo_command: 'command', update_echo_command: 'command',
+  create_function_command: 'command', update_function_command: 'command',
+  set_command_enabled: 'command', delete_command: 'command',
+  create_repeat: 'command', update_repeat: 'command', set_repeat_enabled: 'command', delete_repeat: 'command',
+  create_shortcut: 'shortcut', update_shortcut: 'shortcut', delete_shortcut: 'shortcut',
+  import_playlist: 'songFavorite',
+  create_inquiry: 'inquiry',
+};
+
 const STATUS_BADGE: Record<Exclude<ActionStatus, 'PENDING'>, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
   APPROVED: { label: '승인됨', variant: 'default' },
   DECLINED: { label: '거절됨', variant: 'secondary' },
@@ -102,19 +144,33 @@ export function AgentPanel() {
 
   if (!status?.enabled) return null;
 
-  if (!open) {
-    return (
-      <Button
-        size="icon"
-        className="fixed bottom-24 right-4 z-40 size-12 rounded-full shadow-lg"
-        aria-label="에이전트 열기"
-        onClick={() => setOpen(true)}
-      >
-        <Sparkles className="size-5" />
-      </Button>
-    );
-  }
-  return <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} />;
+  return (
+    <TooltipProvider>
+      {/* 우측 하단 버튼·dock 과 겹치는 페이지 요소를 위한 여백 — 이 컴포넌트는 스트리머 콘솔에만 마운트된다 */}
+      <style>{`
+        main { padding-bottom: 6rem; }
+        html.agent-open body { padding-right: var(--agent-w, 24rem); }
+        @media (max-width: 1023px) { html.agent-open body { padding-right: 0; } }
+      `}</style>
+      {open ? (
+        <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} />
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              className="fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg"
+              aria-label="에이전트 열기"
+              onClick={() => setOpen(true)}
+            >
+              <Sparkles className="size-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">에이전트</TooltipContent>
+        </Tooltip>
+      )}
+    </TooltipProvider>
+  );
 }
 
 function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: () => void }) {
@@ -147,6 +203,30 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
 
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  //  이번 스트림에서 실행된 쓰기 tool 의 대상 라우터 — 종료 시 무효화 (#35 조정 4)
+  const touchedRef = useRef(new Set<'command' | 'shortcut' | 'songFavorite' | 'inquiry'>());
+
+  //  dock: 열려 있는 동안 본문을 패널 폭만큼 밀어낸다 (pelican: html.cg-open body padding)
+  const width = useSyncExternalStore(subscribeWidth, readWidth, () => DEFAULT_WIDTH);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--agent-w', `${width}px`);
+    document.documentElement.classList.add('agent-open');
+    return () => document.documentElement.classList.remove('agent-open');
+  }, [width]);
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const onMove = (move: PointerEvent) => {
+      //  드래그 중에는 리렌더 없이 CSS 변수만 — 손을 떼면 저장한다 (원본과 동일)
+      document.documentElement.style.setProperty('--agent-w', `${clampWidth(window.innerWidth - move.clientX)}px`);
+    };
+    const onUp = (up: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      storeWidth(clampWidth(window.innerWidth - up.clientX));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  }
 
   const historyItems = (conversation?.messages ?? []).flatMap((row) => {
     try {
@@ -206,6 +286,8 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
           }
         } else if (eventName === 'tool' && data.name) {
           assistantOpen = false;
+          const target = TOOL_INVALIDATE[data.name];
+          if (target) touchedRef.current.add(target);
           setLive((prev) => [...prev, { kind: 'tool', name: data.name! }]);
         } else if (eventName === 'confirm' && data.actionId && data.card) {
           assistantOpen = false;
@@ -234,6 +316,14 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
       await queryClient.fetchQuery(trpc.agent.conversation.queryOptions({ id })).catch(() => {});
       await queryClient.invalidateQueries(trpc.agent.actions.queryFilter({ conversationId: id })).catch(() => {});
     }
+    //  에이전트가 바꾼 설정을 보고 있는 페이지에 즉시 반영 (#35 조정 4)
+    for (const target of touchedRef.current) {
+      if (target === 'command') void queryClient.invalidateQueries(trpc.command.pathFilter());
+      else if (target === 'shortcut') void queryClient.invalidateQueries(trpc.shortcut.pathFilter());
+      else if (target === 'songFavorite') void queryClient.invalidateQueries(trpc.songFavorite.pathFilter());
+      else void queryClient.invalidateQueries(trpc.inquiry.pathFilter());
+    }
+    touchedRef.current.clear();
     setLive([]);
   }
 
@@ -269,9 +359,13 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
   }
 
   /** 승인 카드 응답 — 승인이면 서버가 실행하고 멈췄던 턴이 이어진다 */
-  async function resolveCard(actionId: number, approve: boolean) {
+  async function resolveCard(actionId: number, approve: boolean, tool: string) {
     if (streaming) return;
     setStreaming(true);
+    if (approve) {
+      const target = TOOL_INVALIDATE[tool];
+      if (target) touchedRef.current.add(target);
+    }
     const nextStatus: ActionStatus = approve ? 'APPROVED' : 'DECLINED';
     setLive((prev) => prev.map((item) => (item.kind === 'card' && item.actionId === actionId ? { ...item, status: nextStatus } : item)));
 
@@ -353,7 +447,18 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[95vw] flex-col border-l bg-background shadow-xl">
+    <div
+      className="fixed inset-y-0 right-0 z-40 flex max-w-[100vw] flex-col border-l bg-background shadow-xl"
+      style={{ width: 'var(--agent-w, 24rem)' }}
+    >
+      {/* 왼쪽 가장자리 드래그로 폭 조절 — 모바일에서는 전체폭 오버레이라 숨긴다 */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="패널 폭 조절"
+        className="absolute inset-y-0 left-0 z-10 hidden w-2 cursor-col-resize hover:bg-primary/20 lg:block"
+        onPointerDown={startResize}
+      />
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <Sparkles className="size-4 shrink-0" />
@@ -361,11 +466,16 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
         </div>
         <div className="flex items-center gap-1">
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" disabled={streaming}>
-                대화 <ChevronDown className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="ghost" className="size-8" aria-label="이전 대화" disabled={streaming}>
+                    <History className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>이전 대화</TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="end" className="max-w-72">
               {(conversations ?? []).map((row) => (
                 <DropdownMenuItem key={row.id} onSelect={() => selectConversation(row.id)}>
@@ -452,7 +562,7 @@ function ConfirmCard({
 }: {
   card: Extract<DisplayItem, { kind: 'card' }>;
   disabled: boolean;
-  onResolve: (actionId: number, approve: boolean) => void;
+  onResolve: (actionId: number, approve: boolean, tool: string) => void;
 }) {
   return (
     <div className="rounded-lg border bg-muted/30 p-3">
@@ -471,10 +581,10 @@ function ConfirmCard({
       )}
       {card.status === 'PENDING' && (
         <div className="mt-2 flex justify-end gap-2">
-          <Button size="sm" variant="outline" disabled={disabled} onClick={() => onResolve(card.actionId, false)}>
+          <Button size="sm" variant="outline" disabled={disabled} onClick={() => onResolve(card.actionId, false, card.tool)}>
             거절
           </Button>
-          <Button size="sm" disabled={disabled} onClick={() => onResolve(card.actionId, true)}>
+          <Button size="sm" disabled={disabled} onClick={() => onResolve(card.actionId, true, card.tool)}>
             승인
           </Button>
         </div>
