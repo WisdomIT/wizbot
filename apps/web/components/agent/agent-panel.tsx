@@ -499,12 +499,22 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
               {!conversations?.length && <DropdownMenuItem disabled>대화가 없습니다</DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="icon" variant="ghost" className="size-8" aria-label="새 대화" disabled={streaming} onClick={() => selectConversation(null)}>
-            <Plus className="size-4" />
-          </Button>
-          <Button size="icon" variant="ghost" className="size-8" aria-label="닫기" onClick={onClose}>
-            <X className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="ghost" className="size-8" aria-label="새 대화" disabled={streaming} onClick={() => selectConversation(null)}>
+                <Plus className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>새 대화</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button size="icon" variant="ghost" className="size-8" aria-label="닫기" onClick={onClose}>
+                <X className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>닫기</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
