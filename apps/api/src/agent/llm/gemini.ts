@@ -37,6 +37,11 @@ export class GeminiAdapter implements ProviderAdapter {
         { functionDeclarations: request.tools.map((tool) => ({ name: tool.name, description: tool.description, parametersJsonSchema: stripUnsupported(tool.inputSchema) })) },
         ...(request.webSearch ? [{ googleSearch: {} }] : []),
       ],
+      //  서버 측 도구(검색)와 함수 선언을 한 요청에 실으려면 켜야 한다 —
+      //  없으면 400 이 이 플래그 이름을 알려준다 (pelican #35 실검증, wizbot 에서도 재현)
+      ...(request.webSearch && request.tools.length > 0
+        ? { toolConfig: { includeServerSideToolInvocations: true } as Record<string, unknown> }
+        : {}),
     };
 
     const contents: Content[] = [
@@ -57,6 +62,8 @@ export class GeminiAdapter implements ProviderAdapter {
         for await (const chunk of stream) {
           const parts = chunk.candidates?.[0]?.content?.parts ?? [];
           for (const part of parts) {
+            //  사고 요약 파트 — 답변이 아니다. 내용은 쓰지 않는다 (원본은 "생각 중"만 알림)
+            if ((part as { thought?: boolean }).thought) continue;
             if (part.text) {
               emittedText = true;
               request.onText(part.text);
@@ -82,7 +89,8 @@ export class GeminiAdapter implements ProviderAdapter {
       }
 
       usage.inputTokens += turnUsage?.promptTokenCount ?? 0;
-      usage.outputTokens += turnUsage?.candidatesTokenCount ?? 0;
+      //  사고 토큰은 candidates 에 안 들어간다 — 과금 집계에는 합쳐야 맞다 (원본과 동일)
+      usage.outputTokens += (turnUsage?.candidatesTokenCount ?? 0) + ((turnUsage as { thoughtsTokenCount?: number } | null)?.thoughtsTokenCount ?? 0);
       usage.cacheReadTokens += turnUsage?.cachedContentTokenCount ?? 0;
 
       for (const [index, call] of functionCalls.entries()) {
