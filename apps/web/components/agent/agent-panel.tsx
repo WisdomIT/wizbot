@@ -26,7 +26,7 @@ import { useTRPC } from '@/src/utils/trpc-react';
 type ActionStatus = 'PENDING' | 'APPROVED' | 'DECLINED' | 'EXPIRED';
 
 type DisplayItem =
-  | { kind: 'text'; role: 'user' | 'assistant'; text: string }
+  | { kind: 'text'; role: 'user' | 'assistant'; text: string; typing?: boolean }
   | { kind: 'tool'; name: string; toolUseId?: string }
   | { kind: 'card'; actionId: number; toolUseId: string; tool: string; title: string; lines: string[]; status: ActionStatus };
 
@@ -273,7 +273,7 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
           const delta = data.delta;
           if (!assistantOpen) {
             assistantOpen = true;
-            setLive((prev) => [...prev, { kind: 'text', role: 'assistant', text: delta }]);
+            setLive((prev) => [...prev, { kind: 'text', role: 'assistant', text: delta, typing: true }]);
           } else {
             setLive((prev) => {
               const next = [...prev];
@@ -441,7 +441,11 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
     }
     return (
       <div key={index} className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <Markdown>{item.text}</Markdown>
+        {item.typing ? (
+          <TypewriterMarkdown text={item.text} onReveal={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })} />
+        ) : (
+          <Markdown>{item.text}</Markdown>
+        )}
       </div>
     );
   }
@@ -562,6 +566,39 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
       </form>
     </div>
   );
+}
+
+/**
+ * 타자기 보간 (pelican cgTypewriter 이식) — API 가 텍스트를 덩어리로 띄엄띄엄 보내는 것을
+ * (와이어 레벨, 원본 실측) 일정 속도로 드러내 자연스럽게 흐르게 한다.
+ * - 밀린 만큼에 비례해 빨라진다(밀린 양/14) — 버스트가 와도 화면이 스트림에 크게 뒤처지지 않는다
+ * - 이미 드러낸 글자 수는 되돌리지 않는다. 동작 축소 선호(접근성)면 즉시 비춘다
+ * - 원본은 렌더된 HTML 을 텍스트 노드 단위로 자르지만, 우리는 remark 렌더라 마크다운
+ *   소스를 잘라 다시 렌더한다 — 잘린 서식 기호가 잠깐 보일 수 있으나 다음 틱에 해소된다
+ */
+function TypewriterMarkdown({ text, onReveal }: { text: string; onReveal: () => void }) {
+  const shownRef = useRef(0);
+  const [, forceRender] = useState(0);
+  const textRef = useRef(text);
+  const onRevealRef = useRef(onReveal);
+  useEffect(() => {
+    textRef.current = text;
+    onRevealRef.current = onReveal;
+  });
+
+  useEffect(() => {
+    const instant = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const timer = setInterval(() => {
+      const total = textRef.current.length;
+      if (shownRef.current >= total) return;
+      shownRef.current = instant ? total : Math.min(total, shownRef.current + Math.max(1, Math.round((total - shownRef.current) / 14)));
+      forceRender((tickCount) => tickCount + 1);
+      onRevealRef.current();
+    }, 40);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Markdown>{text.slice(0, shownRef.current)}</Markdown>;
 }
 
 /** 승인 카드 — 실행 경로는 이 버튼뿐이다. 모델은 카드를 띄울 수만 있다 */
