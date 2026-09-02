@@ -58,6 +58,15 @@ export const agentRouter = t.router({
   deleteProvider: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(({ ctx, input }) => agentService.deleteProvider(ctx.prisma, input.id)),
+  /** 키 검증 + 모델 목록 — GET /models 하나로 (토큰 소모 없음) */
+  probeProvider: adminProcedure
+    .input(z.object({
+      kind: z.enum(['ANTHROPIC', 'OPENAI', 'GEMINI', 'OPENAI_COMPAT']),
+      apiKey: z.string().max(255),
+      baseUrl: z.string().max(255).nullable(),
+      providerId: z.number().int().positive().nullable(),
+    }))
+    .mutation(({ ctx, input }) => agentService.probeProvider(ctx.prisma, input)),
   moveProvider: adminProcedure
     .input(z.object({ id: z.number().int().positive(), direction: z.enum(['up', 'down']) }))
     .mutation(({ ctx, input }) => agentService.moveProvider(ctx.prisma, input.id, input.direction)),
