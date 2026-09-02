@@ -123,10 +123,12 @@ export async function agentResumeHandler(req: Request, res: Response) {
     usageTotal.outputTokens += outcome.usage.outputTokens;
     usageTotal.cacheReadTokens += outcome.usage.cacheReadTokens;
 
+    let lastAssistantMessageId: number | null = null;
     for (const recordMessage of outcome.record) {
-      await agentService.appendMessage(
+      const [created] = await agentService.appendMessage(
         prisma, conversationId, recordMessage.role, recordMessage.content as unknown as Prisma.InputJsonValue,
       );
+      if (recordMessage.role === 'assistant') lastAssistantMessageId = created.id;
     }
     //  재개 중 또 카드가 나올 수 있다 (남은 큐에 확인 대상이 더 있던 경우)
     if (outcome.pending) {
@@ -151,6 +153,7 @@ export async function agentResumeHandler(req: Request, res: Response) {
         .recordUsage(prisma, {
           userId, conversationId,
           provider: provider.kind, entryName: provider.name, model: provider.model,
+          messageId: lastAssistantMessageId,
           ...usageTotal,
         })
         .catch(() => {});

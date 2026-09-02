@@ -106,10 +106,12 @@ export async function agentChatHandler(req: Request, res: Response) {
       },
     });
 
+    let lastAssistantMessageId: number | null = null;
     for (const recordMessage of outcome.record) {
-      await agentService.appendMessage(
+      const [created] = await agentService.appendMessage(
         prisma, conversationId, recordMessage.role, recordMessage.content as unknown as Prisma.InputJsonValue,
       );
+      if (recordMessage.role === 'assistant') lastAssistantMessageId = created.id;
     }
     //  확인 카드로 멈췄다 — 대기 액션을 만들어 카드 이벤트를 보낸다. 실행은 승인 mutation 만 할 수 있다
     if (outcome.pending) {
@@ -137,6 +139,7 @@ export async function agentChatHandler(req: Request, res: Response) {
           provider: served.kind,
           entryName: served.name,
           model: served.model,
+          messageId: lastAssistantMessageId,
           ...outcome.usage,
         })
         .catch(() => {});

@@ -296,7 +296,7 @@ export async function assertAvailable(prisma: PrismaClient, userId: number) {
 export function recordUsage(
   prisma: PrismaClient,
   input: {
-    userId: number; conversationId: number | null;
+    userId: number; conversationId: number | null; messageId?: number | null;
     provider: string; entryName: string | null; model: string;
     inputTokens: number; outputTokens: number; cacheReadTokens: number;
   },
@@ -533,56 +533,135 @@ export async function adminCharts(prisma: PrismaClient) {
   return { labels, messages, tokens, series };
 }
 
-/** 사용자별 30일 합계 표 */
-export async function adminUserStats(prisma: PrismaClient) {
-  const since = kstStartOfDay(29);
-  const grouped = await prisma.agentUsage.groupBy({
-    by: ['userId'],
-    where: { createdAt: { gte: since } },
-    _count: { _all: true },
-    _sum: { inputTokens: true, outputTokens: true },
-  });
+/**
+ * 사용자별 통계 (pelican UsageStats 이식) — 토큰을 전체/1일/7일/30일 윈도우 컬럼으로 집계하고
+ * 어느 컬럼으로든 정렬한다. 이름 검색·페이지네이션 포함.
+ */
+export type AdminUserSort = 'name' | 'messages' | 'total' | 'd1' | 'd7' | 'd30';
+
+export async function adminUserStats(
+  prisma: PrismaClient,
+  input: { query: string | null; sort: AdminUserSort; order: 'asc' | 'desc'; page: number; perPage: number },
+) {
+  const windowSince = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const grouped = (where: object) =>
+    prisma.agentUsage.groupBy({ by: ['userId'], where, _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true } });
+  const [all, d1, d7, d30] = await Promise.all([
+    grouped({}),
+    grouped({ createdAt: { gte: windowSince(1) } }),
+    grouped({ createdAt: { gte: windowSince(7) } }),
+    grouped({ createdAt: { gte: windowSince(30) } }),
+  ]);
+  const tokensOf = (rows: typeof all) =>
+    new Map(rows.map((row) => [row.userId, (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0)]));
+  const d1Map = tokensOf(d1);
+  const d7Map = tokensOf(d7);
+  const d30Map = tokensOf(d30);
+
   const users = await prisma.user.findMany({
-    where: { id: { in: grouped.map((row) => row.userId) } },
+    where: { id: { in: all.map((row) => row.userId) } },
     select: { id: true, channelName: true },
   });
   const nameOf = new Map(users.map((user) => [user.id, user.channelName]));
-  return grouped
-    .map((row) => ({
-      userId: row.userId,
-      channelName: nameOf.get(row.userId) ?? `#${row.userId}`,
-      messages: row._count._all,
-      tokens: (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0),
-    }))
-    .sort((a, b) => b.tokens - a.tokens);
+
+  let rows = all.map((row) => ({
+    userId: row.userId,
+    channelName: nameOf.get(row.userId) ?? `#${row.userId}`,
+    messages: row._count._all,
+    total: (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0),
+    d1: d1Map.get(row.userId) ?? 0,
+    d7: d7Map.get(row.userId) ?? 0,
+    d30: d30Map.get(row.userId) ?? 0,
+  }));
+  const query = input.query?.trim().toLowerCase();
+  if (query) rows = rows.filter((row) => row.channelName.toLowerCase().includes(query));
+
+  const direction = input.order === 'asc' ? 1 : -1;
+  rows.sort((a, b) =>
+    input.sort === 'name' ? a.channelName.localeCompare(b.channelName) * direction : (a[input.sort] - b[input.sort]) * direction,
+  );
+
+  const total = rows.length;
+  const offset = (input.page - 1) * input.perPage;
+  return { rows: rows.slice(offset, offset + input.perPage), total };
 }
 
-/** 전체 대화 로그 — soft delete 된 것 포함(뱃지 표시), 관리자용 */
-export async function adminConversations(prisma: PrismaClient, cursor: number | null, limit: number) {
-  const rows = await prisma.agentConversation.findMany({
-    where: cursor ? { id: { lt: cursor } } : {},
-    orderBy: { id: 'desc' },
-    take: limit + 1,
-    include: { user: { select: { channelName: true } }, _count: { select: { messages: true } } },
+/**
+ * 전체 대화 로그 (pelican UsageResource 이식) — soft delete 포함, 사용자·제목·대화 내용 검색,
+ * 시각/메시지 수/토큰 정렬, 페이지네이션. 토큰 정렬은 집계가 먼저라 매칭 id 전체를 모아 정렬 후 자른다.
+ */
+export type AdminLogSort = 'recent' | 'messages' | 'input' | 'output';
+
+export async function adminConversations(
+  prisma: PrismaClient,
+  input: {
+    query: string | null; user: string | null; days: number | null;
+    sort: AdminLogSort; order: 'asc' | 'desc'; page: number; perPage: number;
+  },
+) {
+  const query = input.query?.trim();
+  const where = {
+    ...(input.days ? { createdAt: { gte: new Date(Date.now() - input.days * 24 * 60 * 60 * 1000) } } : {}),
+    ...(input.user?.trim() ? { user: { channelName: { contains: input.user.trim() } } } : {}),
+    ...(query
+      ? {
+          OR: [
+            { title: { contains: query } },
+            { user: { channelName: { contains: query } } },
+            //  대화 내용 검색 — content 는 Json 이라 문서 전체 부분일치로
+            { messages: { some: { content: { string_contains: query } } } },
+          ],
+        }
+      : {}),
+  };
+
+  const matches = await prisma.agentConversation.findMany({ where, select: { id: true }, orderBy: { id: 'desc' } });
+  const ids = matches.map((row) => row.id);
+  const total = ids.length;
+  if (total === 0) return { rows: [], total };
+
+  const [sums, counts] = await Promise.all([
+    prisma.agentUsage.groupBy({
+      by: ['conversationId'],
+      where: { conversationId: { in: ids } },
+      _sum: { inputTokens: true, outputTokens: true },
+    }),
+    prisma.agentMessage.groupBy({ by: ['conversationId'], where: { conversationId: { in: ids } }, _count: { _all: true } }),
+  ]);
+  const inputOf = new Map(sums.map((row) => [row.conversationId, row._sum.inputTokens ?? 0]));
+  const outputOf = new Map(sums.map((row) => [row.conversationId, row._sum.outputTokens ?? 0]));
+  const countOf = new Map(counts.map((row) => [row.conversationId, row._count._all]));
+
+  const direction = input.order === 'asc' ? 1 : -1;
+  const keyOf = (id: number) =>
+    input.sort === 'messages' ? countOf.get(id) ?? 0
+    : input.sort === 'input' ? inputOf.get(id) ?? 0
+    : input.sort === 'output' ? outputOf.get(id) ?? 0
+    : id; // recent — id 가 곧 생성 순
+  ids.sort((a, b) => (keyOf(a) - keyOf(b)) * direction);
+
+  const pageIds = ids.slice((input.page - 1) * input.perPage, input.page * input.perPage);
+  const conversations = await prisma.agentConversation.findMany({
+    where: { id: { in: pageIds } },
+    include: { user: { select: { channelName: true } } },
   });
-  const page = rows.slice(0, limit);
-  const sums = await prisma.agentUsage.groupBy({
-    by: ['conversationId'],
-    where: { conversationId: { in: page.map((row) => row.id) } },
-    _sum: { inputTokens: true, outputTokens: true },
-  });
-  const tokenOf = new Map(sums.map((row) => [row.conversationId, (row._sum.inputTokens ?? 0) + (row._sum.outputTokens ?? 0)]));
+  const byId = new Map(conversations.map((row) => [row.id, row]));
+
   return {
-    conversations: page.map((row) => ({
-      id: row.id,
-      title: row.title,
-      channelName: row.user.channelName,
-      messageCount: row._count.messages,
-      tokens: tokenOf.get(row.id) ?? 0,
-      deleted: row.deletedAt !== null,
-      updatedAt: row.updatedAt,
-    })),
-    nextCursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null,
+    rows: pageIds
+      .map((id) => byId.get(id))
+      .filter((row): row is NonNullable<typeof row> => !!row)
+      .map((row) => ({
+        id: row.id,
+        title: row.title,
+        channelName: row.user.channelName,
+        deleted: row.deletedAt !== null,
+        createdAt: row.createdAt,
+        messageCount: countOf.get(row.id) ?? 0,
+        inputTokens: inputOf.get(row.id) ?? 0,
+        outputTokens: outputOf.get(row.id) ?? 0,
+      })),
+    total,
   };
 }
 

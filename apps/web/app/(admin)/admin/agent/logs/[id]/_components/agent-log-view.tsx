@@ -6,12 +6,12 @@ import { ShieldQuestion, Wrench } from 'lucide-react';
 import Markdown from '@/components/custom/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 /**
- * 대화 상세 (#35 조정 6, pelican conversation 뷰 이식) — 메시지 전문에 tool 호출의
- * 입력·결과까지 전부 펼쳐 보이고, 하단에 요청별 토큰·프로바이더와 합계를 붙인다.
+ * 대화 상세 (#35, pelican conversation 뷰 이식).
+ * - tool 호출과 결과는 하나의 블록으로 합쳐 보인다 (tool_use_id 로 짝을 맞춤)
+ * - 각 채팅에 시각을, 어시스턴트 턴에는 모델·토큰 사용량을 붙인다 (usage.messageId 연결)
  */
 
 type Block =
@@ -22,6 +22,8 @@ type Block =
 
 const STATUS_LABEL: Record<string, string> = { PENDING: '대기', APPROVED: '승인됨', DECLINED: '거절됨', EXPIRED: '만료됨' };
 
+const time = (value: string | Date) => new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+
 export function AgentLogView({ id }: { id: number }) {
   const trpc = useTRPC();
   const { data, error, isPending } = useQuery(trpc.agent.adminConversation.queryOptions({ id }));
@@ -30,6 +32,26 @@ export function AgentLogView({ id }: { id: number }) {
   if (error || !data) return <p className="py-8 text-sm text-muted-foreground">대화를 불러오지 못했습니다: {error?.message}</p>;
 
   const actionByToolUse = new Map(data.actions.map((action) => [action.toolUseId, action]));
+  const usageByMessage = new Map(data.usages.filter((row) => row.messageId !== null).map((row) => [row.messageId, row]));
+
+  //  tool 결과를 먼저 전부 모아 호출과 짝을 맞춘다 — 결과는 별도 행(user role)에 실려 있다
+  const parsed = data.messages.map((message) => {
+    let blocks: Block[] = [];
+    try {
+      const raw = JSON.parse(message.contentJson) as unknown;
+      blocks = Array.isArray(raw) ? (raw as Block[]) : [{ type: 'text', text: String(raw) }];
+    } catch {
+      /* 형식이 깨진 행은 건너뛴다 */
+    }
+    return { ...message, blocks };
+  });
+  const resultOf = new Map<string, { content?: string; is_error?: boolean }>();
+  for (const message of parsed) {
+    for (const block of message.blocks) {
+      if (block.type === 'tool_result' && block.tool_use_id) resultOf.set(block.tool_use_id, block);
+    }
+  }
+
   const totalIn = data.usages.reduce((sum, row) => sum + row.inputTokens, 0);
   const totalOut = data.usages.reduce((sum, row) => sum + row.outputTokens, 0);
   const totalCache = data.usages.reduce((sum, row) => sum + row.cacheReadTokens, 0);
@@ -40,64 +62,80 @@ export function AgentLogView({ id }: { id: number }) {
         <h2 className="text-lg font-semibold">{data.title}</h2>
         {data.deleted && <Badge variant="secondary">삭제됨</Badge>}
         <span className="text-sm text-muted-foreground">
-          {data.channelName} · {new Date(data.createdAt).toLocaleString('ko-KR')}
+          {data.channelName} · {time(data.createdAt)}
         </span>
       </div>
 
       <div className="flex flex-col gap-3">
-        {data.messages.map((message) => {
-          let blocks: Block[] = [];
-          try {
-            const parsed = JSON.parse(message.contentJson) as unknown;
-            blocks = Array.isArray(parsed) ? (parsed as Block[]) : [{ type: 'text', text: String(parsed) }];
-          } catch {
-            /* 형식이 깨진 행은 건너뛴다 */
-          }
-          return blocks.map((block, index) => {
-            const key = `${message.id}-${index}`;
-            if (block.type === 'text' && block.text) {
-              return message.role === 'user' ? (
-                <div key={key} className="ml-16 self-end whitespace-pre-wrap rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">
-                  {block.text}
-                </div>
-              ) : (
-                <div key={key} className="prose prose-sm dark:prose-invert mr-16 max-w-none self-start rounded-lg bg-muted px-3 py-2 text-sm">
-                  <Markdown>{block.text}</Markdown>
-                </div>
-              );
-            }
-            if (block.type === 'tool_use') {
-              const action = block.id ? actionByToolUse.get(block.id) : undefined;
-              return (
-                <details key={key} className="self-start rounded-md border px-3 py-2 text-xs">
-                  <summary className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
-                    {action ? <ShieldQuestion className="size-3" /> : <Wrench className="size-3" />}
-                    <span className="font-mono">{block.name}</span>
-                    {action && <Badge variant="outline">{STATUS_LABEL[action.status] ?? action.status}</Badge>}
-                  </summary>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono">{JSON.stringify(block.input, null, 1)}</pre>
-                </details>
-              );
-            }
-            if (block.type === 'tool_result') {
-              return (
-                <details key={key} className="self-start rounded-md border border-dashed px-3 py-2 text-xs">
-                  <summary className={`cursor-pointer ${block.is_error ? 'font-medium text-destructive' : 'text-muted-foreground'}`}>
-                    결과{block.is_error ? ' (오류)' : ''}
-                  </summary>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono">{block.content}</pre>
-                </details>
-              );
-            }
-            if (block.type === 'web_search') {
-              return (
-                <div key={key} className="flex items-center gap-1.5 self-start text-xs text-muted-foreground">
-                  <Wrench className="size-3" /> 웹 검색{block.query ? `: ${block.query}` : ''}
-                </div>
-              );
-            }
-            return null;
-          });
+        {parsed.map((message) => {
+          const usage = usageByMessage.get(message.id);
+          const rendered = message.blocks
+            .map((block, index) => {
+              const key = `${message.id}-${index}`;
+              if (block.type === 'text' && block.text) {
+                return message.role === 'user' ? (
+                  <div key={key} className="flex flex-col items-end gap-0.5 self-end">
+                    <div className="ml-16 whitespace-pre-wrap rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground">{block.text}</div>
+                    <span className="text-[11px] text-muted-foreground">{time(message.createdAt)}</span>
+                  </div>
+                ) : (
+                  <div key={key} className="prose prose-sm dark:prose-invert mr-16 max-w-none self-start rounded-lg bg-muted px-3 py-2 text-sm">
+                    <Markdown>{block.text}</Markdown>
+                  </div>
+                );
+              }
+              if (block.type === 'tool_use') {
+                const action = block.id ? actionByToolUse.get(block.id) : undefined;
+                const result = block.id ? resultOf.get(block.id) : undefined;
+                return (
+                  <details key={key} className="self-start rounded-md border px-3 py-2 text-xs">
+                    <summary className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
+                      {action ? <ShieldQuestion className="size-3" /> : <Wrench className="size-3" />}
+                      <span className="font-mono">{block.name}</span>
+                      {action && <Badge variant="outline">{STATUS_LABEL[action.status] ?? action.status}</Badge>}
+                      {result?.is_error && <Badge variant="destructive">오류</Badge>}
+                    </summary>
+                    <div className="mt-2 flex flex-col gap-2">
+                      <div>
+                        <p className="mb-1 font-medium text-muted-foreground">입력</p>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono">{JSON.stringify(block.input, null, 1)}</pre>
+                      </div>
+                      {result && (
+                        <div>
+                          <p className={`mb-1 font-medium ${result.is_error ? 'text-destructive' : 'text-muted-foreground'}`}>결과</p>
+                          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono">{result.content}</pre>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                );
+              }
+              if (block.type === 'web_search') {
+                return (
+                  <div key={key} className="flex items-center gap-1.5 self-start text-xs text-muted-foreground">
+                    <Wrench className="size-3" /> 웹 검색{block.query ? `: ${block.query}` : ''}
+                  </div>
+                );
+              }
+              //  tool_result 는 호출 블록에 합쳐 그렸다
+              return null;
+            })
+            .filter(Boolean);
+
+          if (rendered.length === 0 && !usage) return null;
+          return (
+            <div key={message.id} className="flex flex-col gap-1.5">
+              {rendered}
+              {usage && (
+                //  이 턴의 청구 내역 — 어느 항목·모델로 얼마가 나갔는지 채팅에 붙여 보인다
+                <span className="self-start text-[11px] text-muted-foreground">
+                  {time(usage.createdAt)} · {usage.entryName ?? usage.provider} · <span className="font-mono">{usage.model}</span> · 입력{' '}
+                  {usage.inputTokens.toLocaleString('ko-KR')} · 출력 {usage.outputTokens.toLocaleString('ko-KR')}
+                  {usage.cacheReadTokens > 0 && <> · 캐시 {usage.cacheReadTokens.toLocaleString('ko-KR')}</>}
+                </span>
+              )}
+            </div>
+          );
         })}
       </div>
 
@@ -114,34 +152,8 @@ export function AgentLogView({ id }: { id: number }) {
         <span>
           합계 <b>{(totalIn + totalOut).toLocaleString('ko-KR')}</b>
         </span>
+        <span className="text-muted-foreground">요청 {data.usages.length}회</span>
       </div>
-
-      {data.usages.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>시각</TableHead>
-              <TableHead>모델</TableHead>
-              <TableHead className="text-right">입력</TableHead>
-              <TableHead className="text-right">출력</TableHead>
-              <TableHead className="text-right">캐시</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.usages.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(row.createdAt).toLocaleString('ko-KR')}</TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {row.entryName ?? row.provider} · <span className="font-mono">{row.model}</span>
-                </TableCell>
-                <TableCell className="text-right">{row.inputTokens.toLocaleString('ko-KR')}</TableCell>
-                <TableCell className="text-right">{row.outputTokens.toLocaleString('ko-KR')}</TableCell>
-                <TableCell className="text-right">{row.cacheReadTokens.toLocaleString('ko-KR')}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
     </div>
   );
 }
