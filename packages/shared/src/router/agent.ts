@@ -58,6 +58,10 @@ export const agentRouter = t.router({
   deleteProvider: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(({ ctx, input }) => agentService.deleteProvider(ctx.prisma, input.id)),
+  /** 수정 폼이 열릴 때 저장된 키로 즉시 모델 목록을 불러온다 */
+  providerModels: adminProcedure
+    .input(z.object({ providerId: z.number().int().positive() }))
+    .query(({ ctx, input }) => agentService.probeStoredProvider(ctx.prisma, input.providerId)),
   /** 키 검증 + 모델 목록 — GET /models 하나로 (토큰 소모 없음) */
   probeProvider: adminProcedure
     .input(z.object({

@@ -23,11 +23,11 @@ import { useTRPC } from '@/src/utils/trpc-react';
 type ProviderKind = 'ANTHROPIC' | 'OPENAI' | 'GEMINI' | 'OPENAI_COMPAT';
 
 /** 프로바이더별 능력 — 지원 안 하는 입력은 폼에서 꺼져 있어야 한다 (shared AGENT_PROVIDER_CAPS 와 동일 값 유지) */
-const CAPS: Record<ProviderKind, { label: string; needsBaseUrl: boolean; needsKey: boolean; placeholder: string }> = {
-  ANTHROPIC: { label: 'Anthropic (Claude)', needsBaseUrl: false, needsKey: true, placeholder: 'claude-opus-5' },
-  OPENAI: { label: 'OpenAI (ChatGPT)', needsBaseUrl: false, needsKey: true, placeholder: 'gpt-5.2' },
-  GEMINI: { label: 'Google (Gemini)', needsBaseUrl: false, needsKey: true, placeholder: 'gemini-3-pro' },
-  OPENAI_COMPAT: { label: 'OpenAI 호환 (로컬 LLM)', needsBaseUrl: true, needsKey: false, placeholder: 'llama-3.3-70b' },
+const CAPS: Record<ProviderKind, { label: string; needsBaseUrl: boolean; needsKey: boolean }> = {
+  ANTHROPIC: { label: 'Anthropic (Claude)', needsBaseUrl: false, needsKey: true },
+  OPENAI: { label: 'OpenAI (ChatGPT)', needsBaseUrl: false, needsKey: true },
+  GEMINI: { label: 'Google (Gemini)', needsBaseUrl: false, needsKey: true },
+  OPENAI_COMPAT: { label: 'OpenAI 호환 (로컬 LLM)', needsBaseUrl: true, needsKey: false },
 };
 
 const METRIC_LABEL = { TOKENS: '토큰', MESSAGES: '채팅 수' } as const;
@@ -103,7 +103,8 @@ function ProvidersCard() {
   const { data, isPending } = useQuery(trpc.agent.providers.queryOptions());
   const move = useMutation(trpc.agent.moveProvider.mutationOptions());
   const remove = useMutation(trpc.agent.deleteProvider.mutationOptions());
-  const [editing, setEditing] = useState<ProviderRow | 'new' | null>(null);
+  //  수정 폼은 각 항목 바로 아래 인라인으로 (pelican 방식) — 다른 항목의 수정을 누르면 그쪽으로 전환된다
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null);
   const refresh = () => queryClient.invalidateQueries(trpc.agent.providers.queryFilter());
 
   if (isPending || !data) return <Skeleton className="h-40 w-full" />;
@@ -113,7 +114,7 @@ function ProvidersCard() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>모델 (프로바이더)</CardTitle>
-          <Button size="sm" variant="outline" onClick={() => setEditing('new')}>
+          <Button size="sm" variant="outline" onClick={() => setEditingId(editingId === 'new' ? null : 'new')}>
             <Plus className="size-4" /> 추가
           </Button>
         </div>
@@ -123,49 +124,62 @@ function ProvidersCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y">
-        {data.length === 0 && <p className="py-2 text-sm text-muted-foreground">등록된 모델이 없습니다. 도우미가 동작하려면 최소 하나가 필요합니다.</p>}
+        {data.length === 0 && editingId !== 'new' && (
+          <p className="py-2 text-sm text-muted-foreground">등록된 모델이 없습니다. 에이전트가 동작하려면 최소 하나가 필요합니다.</p>
+        )}
         {data.map((row, index) => (
-          <div key={row.id} className="flex items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">
-            <div className="flex min-w-0 flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{index + 1}순위</span>
-                <span className="truncate text-sm font-medium">{row.name}</span>
-                {!row.enabled && <Badge variant="secondary">꺼짐</Badge>}
+          <div key={row.id} className="flex flex-col py-3 first:pt-0 last:pb-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{index + 1}순위</span>
+                  <span className="truncate text-sm font-medium">{row.name}</span>
+                  {!row.enabled && <Badge variant="secondary">꺼짐</Badge>}
+                </div>
+                <span className="truncate text-xs text-muted-foreground">
+                  {CAPS[row.kind].label} · <span className="font-mono">{row.model}</span>
+                  {row.maskedKey ? <> · 키 <span className="font-mono">{row.maskedKey}</span></> : null}
+                </span>
               </div>
-              <span className="truncate text-xs text-muted-foreground">
-                {CAPS[row.kind].label} · <span className="font-mono">{row.model}</span>
-                {row.maskedKey ? <> · 키 <span className="font-mono">{row.maskedKey}</span></> : null}
-              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button size="icon" variant="ghost" className="size-8" aria-label="위로" disabled={index === 0 || move.isPending}
+                  onClick={() => move.mutate({ id: row.id, direction: 'up' }, { onSuccess: () => void refresh() })}>
+                  <ArrowUp className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="size-8" aria-label="아래로" disabled={index === data.length - 1 || move.isPending}
+                  onClick={() => move.mutate({ id: row.id, direction: 'down' }, { onSuccess: () => void refresh() })}>
+                  <ArrowDown className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="size-8" aria-label="수정"
+                  onClick={() => setEditingId(editingId === row.id ? null : row.id)}>
+                  <Pencil className="size-4" />
+                </Button>
+                <Button size="icon" variant="ghost" className="size-8" aria-label="삭제" disabled={remove.isPending}
+                  onClick={() =>
+                    toast.promise(remove.mutateAsync({ id: row.id }), {
+                      loading: '삭제 중...',
+                      success: () => {
+                        void refresh();
+                        return `${row.name} 을 삭제했습니다.`;
+                      },
+                      error: errorText,
+                    })
+                  }>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button size="icon" variant="ghost" className="size-8" aria-label="위로" disabled={index === 0 || move.isPending}
-                onClick={() => move.mutate({ id: row.id, direction: 'up' }, { onSuccess: () => void refresh() })}>
-                <ArrowUp className="size-4" />
-              </Button>
-              <Button size="icon" variant="ghost" className="size-8" aria-label="아래로" disabled={index === data.length - 1 || move.isPending}
-                onClick={() => move.mutate({ id: row.id, direction: 'down' }, { onSuccess: () => void refresh() })}>
-                <ArrowDown className="size-4" />
-              </Button>
-              <Button size="icon" variant="ghost" className="size-8" aria-label="수정" onClick={() => setEditing(row)}>
-                <Pencil className="size-4" />
-              </Button>
-              <Button size="icon" variant="ghost" className="size-8" aria-label="삭제" disabled={remove.isPending}
-                onClick={() =>
-                  toast.promise(remove.mutateAsync({ id: row.id }), {
-                    loading: '삭제 중...',
-                    success: () => {
-                      void refresh();
-                      return `${row.name} 을 삭제했습니다.`;
-                    },
-                    error: errorText,
-                  })
-                }>
-                <Trash2 className="size-4" />
-              </Button>
-            </div>
+            {editingId === row.id && (
+              //  key — 다른 항목으로 전환할 때 폼 상태가 섞이지 않도록
+              <ProviderForm key={row.id} row={row} onClose={() => setEditingId(null)} onSaved={() => void refresh()} />
+            )}
           </div>
         ))}
-        {editing !== null && <ProviderForm row={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => void refresh()} />}
+        {editingId === 'new' && (
+          <div className="py-3 last:pb-0">
+            <ProviderForm key="new" row={null} onClose={() => setEditingId(null)} onSaved={() => void refresh()} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -184,8 +198,17 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
     model: row?.model ?? '',
     enabled: row?.enabled ?? true,
   });
-  //  「연결 확인」이 불러온 모델 목록 — 있으면 드롭다운, 없으면 직접 입력 (pelican ProviderProbe 방식)
-  const [models, setModels] = useState<{ id: string; label: string }[] | null>(null);
+  //  기존 항목은 저장된 키로 열리자마자 모델 목록을 불러온다 (pelican: 폼 렌더 경로에서 probe)
+  const stored = useQuery({
+    ...trpc.agent.providerModels.queryOptions({ providerId: row?.id ?? 0 }),
+    enabled: !!row,
+    retry: false,
+  });
+  //  「연결 확인」(입력한 키)이 성공하면 그 결과가 우선한다
+  const [probedModels, setProbedModels] = useState<{ id: string; label: string }[] | null>(null);
+  const models = probedModels ?? stored.data?.models ?? null;
+  const loadingModels = !!row && !probedModels && stored.isPending;
+  const modelsError = !probedModels && stored.error ? (stored.error instanceof Error ? stored.error.message : String(stored.error)) : null;
   const caps = CAPS[form.kind];
   const pending = create.isPending || update.isPending;
 
@@ -195,7 +218,7 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
       {
         loading: '연결 확인 중...',
         success: (result) => {
-          setModels(result.models);
+          setProbedModels(result.models);
           return `연결 확인 완료 — 사용할 수 있는 모델 ${result.models.length}개`;
         },
         error: errorText,
@@ -223,7 +246,7 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-3 border-t pt-3">
+    <form onSubmit={handleSubmit} className="mt-3 grid gap-3 rounded-md border p-3">
       <div className="grid grid-cols-2 gap-2">
         <div className="grid gap-1.5">
           <Label>종류</Label>
@@ -232,7 +255,7 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
             disabled={!!row}
             onValueChange={(kind) => {
               setForm({ ...form, kind: kind as ProviderKind, model: '' });
-              setModels(null);
+              setProbedModels(null);
             }}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
@@ -263,29 +286,38 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
         </div>
       )}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">연결 확인을 누르면 키를 검증하고 사용할 수 있는 모델 목록을 불러옵니다.</p>
+        <p className="text-xs text-muted-foreground">
+          {row ? '키를 바꿨다면 「연결 확인」으로 다시 검증하세요.' : '연결 확인을 누르면 키를 검증하고 사용할 수 있는 모델 목록을 불러옵니다.'}
+        </p>
         <Button type="button" size="sm" variant="outline" disabled={probe.isPending} onClick={handleProbe}>
           연결 확인
         </Button>
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="p-model">모델</Label>
-        {models && models.length > 0 ? (
-          <Select value={form.model || undefined} onValueChange={(model) => setForm({ ...form, model })}>
-            <SelectTrigger className="font-mono"><SelectValue placeholder="모델 선택" /></SelectTrigger>
-            <SelectContent>
-              {form.model && !models.some((model) => model.id === form.model) && (
-                <SelectItem value={form.model}>{form.model} (현재 값)</SelectItem>
-              )}
-              {models.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.label === model.id ? model.id : `${model.label} (${model.id})`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <Input id="p-model" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder={caps.placeholder} className="font-mono" />
+        <Label>모델</Label>
+        <Select value={form.model || undefined} disabled={!models || models.length === 0} onValueChange={(model) => setForm({ ...form, model })}>
+          <SelectTrigger className="font-mono">
+            <SelectValue
+              placeholder={
+                loadingModels ? '모델 불러오는 중…'
+                : models ? (models.length > 0 ? '모델 선택' : '사용할 수 있는 모델이 없습니다')
+                : '연결 확인 후 선택할 수 있습니다'
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {form.model && !(models ?? []).some((model) => model.id === form.model) && (
+              <SelectItem value={form.model}>{form.model} (현재 값)</SelectItem>
+            )}
+            {(models ?? []).map((model) => (
+              <SelectItem key={model.id} value={model.id}>
+                {model.label === model.id ? model.id : `${model.label} (${model.id})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {modelsError && (
+          <p className="text-xs text-destructive">모델 목록을 불러오지 못했습니다: {modelsError} — 키를 확인하고 「연결 확인」을 눌러주세요.</p>
         )}
       </div>
       {row && (
@@ -296,7 +328,7 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
       )}
       <div className="flex justify-end gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onClose}>취소</Button>
-        <Button type="submit" size="sm" disabled={pending}>저장</Button>
+        <Button type="submit" size="sm" disabled={pending || !form.model}>저장</Button>
       </div>
     </form>
   );
