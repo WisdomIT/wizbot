@@ -25,7 +25,7 @@ import type { ToolDef } from './llm/types';
 
 const RESULT_MAX_CHARS = 8000;
 /** 곡 신청·대기열 표기용 행위자 이름 */
-const AGENT_ACTOR = '도우미';
+const AGENT_ACTOR = '에이전트';
 
 function toResult(value: unknown): string {
   const text = JSON.stringify(value, null, 1) ?? 'null';
@@ -55,7 +55,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   { name: 'list_shortcuts', description: '시청자 페이지에 노출되는 링크(바로가기) 목록.', inputSchema: noInput },
   { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 노래 신청 설정 등.', inputSchema: noInput },
   {
-    name: 'search_audit_log', description: '설정 변경 기록 검색 — 누가(본인/관리자/챗봇/도우미) 언제 무엇을 바꿨는지.',
+    name: 'search_audit_log', description: '설정 변경 기록 검색 — 누가(본인/관리자/챗봇/에이전트) 언제 무엇을 바꿨는지.',
     inputSchema: {
       type: 'object',
       properties: { query: { type: 'string', description: '경로/행위자 부분 일치 (선택)' }, limit: { type: 'number', description: '기본 20, 최대 50' } },

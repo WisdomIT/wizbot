@@ -28,7 +28,7 @@ export const auditRouter = t.router({
           actorLabel:
             row.actorType === 'ADMIN' ? '관리자'
             : row.actorType === 'CHATBOT' ? `채팅 · ${row.actorName ?? '(알 수 없음)'}`
-            : row.actorType === 'AGENT' ? `도우미${row.actorName ? ` · ${row.actorName}` : ''}`
+            : row.actorType === 'AGENT' ? `에이전트${row.actorName ? ` · ${row.actorName}` : ''}`
             : '본인',
         })),
         nextCursor: rows.length > input.limit ? page[page.length - 1]?.id ?? null : null,

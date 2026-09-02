@@ -86,7 +86,7 @@ export function AgentPanel() {
       <Button
         size="icon"
         className="fixed bottom-24 right-4 z-40 size-12 rounded-full shadow-lg"
-        aria-label="도우미 열기"
+        aria-label="에이전트 열기"
         onClick={() => setOpen(true)}
       >
         <Sparkles className="size-5" />
@@ -104,9 +104,12 @@ function PanelBody({ onClose }: { onClose: () => void }) {
   const deleteConversation = useMutation(trpc.agent.deleteConversation.mutationOptions());
 
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  //  스트리밍 중에는 서버 기록 조회를 멈춘다 — 창 전환으로 focus 재조회가 돌면
+  //  live 로 그리는 중인 턴이 기록에도 실려 와 두 번 보인다 (중복 표시 버그)
   const { data: conversation } = useQuery({
     ...trpc.agent.conversation.queryOptions({ id: conversationId ?? 0 }),
-    enabled: conversationId !== null,
+    enabled: conversationId !== null && !streaming,
   });
 
   //  이번 세션에서 주고받은 턴 — 서버 기록(conversation)과 이어 붙여 그린다.
@@ -119,7 +122,6 @@ function PanelBody({ onClose }: { onClose: () => void }) {
   }
 
   const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const historyItems = (conversation?.messages ?? []).flatMap((row) => {
@@ -143,9 +145,9 @@ function PanelBody({ onClose }: { onClose: () => void }) {
     if (!message || streaming) return;
     setInput('');
     setStreaming(true);
+    let id = conversationId;
 
     try {
-      let id = conversationId;
       if (id === null) {
         const created = await createConversation.mutateAsync();
         id = created.id;
@@ -209,6 +211,14 @@ function PanelBody({ onClose }: { onClose: () => void }) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
+      //  이 턴의 기록을 서버에서 받아 캐시에 넣은 뒤에 live 를 비운다 — 내용이 사라지는 틈 없이
+      //  같은 데이터로 갈아끼워지고, 이후 focus 재조회가 와도 중복이 없다
+      if (id !== null) {
+        await queryClient
+          .fetchQuery(trpc.agent.conversation.queryOptions({ id }))
+          .catch(() => {});
+      }
+      setLive([]);
       setStreaming(false);
     }
   }
@@ -224,7 +234,7 @@ function PanelBody({ onClose }: { onClose: () => void }) {
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <Sparkles className="size-4 shrink-0" />
-          <span className="truncate text-sm font-medium">위즈봇 도우미</span>
+          <span className="truncate text-sm font-medium">위즈봇 에이전트</span>
         </div>
         <div className="flex items-center gap-1">
           <DropdownMenu>

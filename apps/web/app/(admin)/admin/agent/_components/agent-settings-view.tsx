@@ -175,6 +175,7 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
   const trpc = useTRPC();
   const create = useMutation(trpc.agent.createProvider.mutationOptions());
   const update = useMutation(trpc.agent.updateProvider.mutationOptions());
+  const probe = useMutation(trpc.agent.probeProvider.mutationOptions());
   const [form, setForm] = useState({
     kind: (row?.kind ?? 'ANTHROPIC') as ProviderKind,
     name: row?.name ?? '',
@@ -183,8 +184,24 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
     model: row?.model ?? '',
     enabled: row?.enabled ?? true,
   });
+  //  「연결 확인」이 불러온 모델 목록 — 있으면 드롭다운, 없으면 직접 입력 (pelican ProviderProbe 방식)
+  const [models, setModels] = useState<{ id: string; label: string }[] | null>(null);
   const caps = CAPS[form.kind];
   const pending = create.isPending || update.isPending;
+
+  function handleProbe() {
+    toast.promise(
+      probe.mutateAsync({ kind: form.kind, apiKey: form.apiKey, baseUrl: form.baseUrl || null, providerId: row?.id ?? null }),
+      {
+        loading: '연결 확인 중...',
+        success: (result) => {
+          setModels(result.models);
+          return `연결 확인 완료 — 사용할 수 있는 모델 ${result.models.length}개`;
+        },
+        error: errorText,
+      },
+    );
+  }
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -210,7 +227,14 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
       <div className="grid grid-cols-2 gap-2">
         <div className="grid gap-1.5">
           <Label>종류</Label>
-          <Select value={form.kind} disabled={!!row} onValueChange={(kind) => setForm({ ...form, kind: kind as ProviderKind })}>
+          <Select
+            value={form.kind}
+            disabled={!!row}
+            onValueChange={(kind) => {
+              setForm({ ...form, kind: kind as ProviderKind, model: '' });
+              setModels(null);
+            }}
+          >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.keys(CAPS) as ProviderKind[]).map((kind) => (
@@ -223,10 +247,6 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
           <Label htmlFor="p-name">표시명</Label>
           <Input id="p-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={CAPS[form.kind].label} />
         </div>
-      </div>
-      <div className="grid gap-1.5">
-        <Label htmlFor="p-model">모델명</Label>
-        <Input id="p-model" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder={caps.placeholder} className="font-mono" />
       </div>
       {caps.needsKey && (
         <div className="grid gap-1.5">
@@ -242,6 +262,32 @@ function ProviderForm({ row, onClose, onSaved }: { row: ProviderRow | null; onCl
           <Input id="p-url" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} placeholder="http://localhost:11434/v1" className="font-mono" />
         </div>
       )}
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">연결 확인을 누르면 키를 검증하고 사용할 수 있는 모델 목록을 불러옵니다.</p>
+        <Button type="button" size="sm" variant="outline" disabled={probe.isPending} onClick={handleProbe}>
+          연결 확인
+        </Button>
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="p-model">모델</Label>
+        {models && models.length > 0 ? (
+          <Select value={form.model || undefined} onValueChange={(model) => setForm({ ...form, model })}>
+            <SelectTrigger className="font-mono"><SelectValue placeholder="모델 선택" /></SelectTrigger>
+            <SelectContent>
+              {form.model && !models.some((model) => model.id === form.model) && (
+                <SelectItem value={form.model}>{form.model} (현재 값)</SelectItem>
+              )}
+              {models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.label === model.id ? model.id : `${model.label} (${model.id})`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input id="p-model" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder={caps.placeholder} className="font-mono" />
+        )}
+      </div>
       {row && (
         <div className="flex items-center justify-between rounded-md border px-3 py-2">
           <span className="text-sm">사용</span>
