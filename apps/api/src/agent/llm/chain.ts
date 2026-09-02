@@ -6,7 +6,7 @@ import { AnthropicAdapter } from './anthropic';
 import { OpenAiCompatAdapter } from './compat';
 import { GeminiAdapter } from './gemini';
 import { OpenAiAdapter } from './openai';
-import { type ProviderAdapter, ProviderApiError, type TurnOutcome, type TurnRequest } from './types';
+import { type ProviderAdapter, ProviderApiError, type ResolvedTool, type TurnOutcome, type TurnRequest } from './types';
 
 /**
  * 프로바이더 목록을 순서대로 써 나간다 (pelican-concierge #89 이식).
@@ -113,4 +113,14 @@ export async function runWithFallback(
     }
   }
   throw lastError ?? new Error('사용할 수 있는 프로바이더가 없습니다.');
+}
+
+/** 승인 카드로 멈춘 턴 재개 — native 상태가 어댑터별이라 **같은 항목으로만** 간다 (폴백 없음) */
+export function resumePendingTurn(
+  provider: AgentProvider,
+  native: unknown,
+  resolved: ResolvedTool,
+  request: TurnRequest,
+): Promise<TurnOutcome> {
+  return adapterFor(provider).resumeTurn(native, resolved, request);
 }

@@ -33,6 +33,24 @@ export interface TurnUsage {
   cacheReadTokens: number;
 }
 
+/** 승인 카드 내용 — 무엇이 실행되는지 사용자 언어로 */
+export interface PendingCard {
+  title: string;
+  lines: string[];
+}
+
+/** tool 실행 결과 — card 가 오면 확인이 필요한 작업이다: 어댑터는 턴을 멈춰야 한다 */
+export type ToolRunResult = { content: string; isError: boolean } | { card: PendingCard };
+
+/** 턴이 승인 대기로 멈춘 상태 — native 는 같은 턴을 재개하기 위한 어댑터별 직렬화 상태 */
+export interface TurnPending {
+  toolUseId: string;
+  tool: string;
+  input: Record<string, unknown>;
+  card: PendingCard;
+  native: unknown;
+}
+
 export interface TurnRequest {
   system: string;
   tools: ToolDef[];
@@ -44,7 +62,7 @@ export interface TurnRequest {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onToolStart: (name: string) => void;
-  runTool: (name: string, input: Record<string, unknown>) => Promise<{ content: string; isError: boolean }>;
+  runTool: (name: string, input: Record<string, unknown>) => Promise<ToolRunResult>;
 }
 
 export interface TurnOutcome {
@@ -53,10 +71,21 @@ export interface TurnOutcome {
   usage: TurnUsage;
   /** 이 턴에서 텍스트를 한 글자라도 내보냈는가 — 폴백 가능 여부 판정 */
   emittedText: boolean;
+  /** 확인 카드로 턴이 멈췄다 — 승인/거절 후 resumeTurn 으로 이어진다 (pelican pendingResult) */
+  pending?: TurnPending;
+}
+
+/** 승인/거절이 끝난 tool 의 결과 — 재개 시 짝을 맞춰 넣는다 */
+export interface ResolvedTool {
+  toolUseId: string;
+  content: string;
+  isError: boolean;
 }
 
 export interface ProviderAdapter {
   runTurn(request: TurnRequest): Promise<TurnOutcome>;
+  /** 승인 카드로 멈춘 턴을 native 상태에서 이어 돈다 */
+  resumeTurn(native: unknown, resolved: ResolvedTool, request: TurnRequest): Promise<TurnOutcome>;
 }
 
 /** 프로바이더 API 장애 — 폴백 체인의 판정 근거. tool 실행 오류는 여기 해당하지 않는다 */

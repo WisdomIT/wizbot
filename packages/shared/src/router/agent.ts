@@ -18,8 +18,12 @@ export const agentRouter = t.router({
   /* ── 스트리머 ── */
   status: streamerProcedure.query(async ({ ctx }) => {
     const settings = await agentService.getSettings(ctx.prisma);
-    return { enabled: settings.enabled };
+    return { enabled: settings.enabled, allowDelete: settings.allowConversationDelete };
   }),
+  /** 대화의 승인 카드들 — 카드 내용은 Json 이라 문자열로 (TS2589 회피, #175 와 동일) */
+  actions: streamerProcedure
+    .input(z.object({ conversationId: z.number().int().positive() }))
+    .query(({ ctx, input }) => agentService.listActions(ctx.prisma, ctx.user.id, input.conversationId)),
   conversations: streamerProcedure.query(({ ctx }) => agentService.listConversations(ctx.prisma, ctx.user.id)),
   conversation: streamerProcedure
     .input(z.object({ id: z.number().int().positive() }))
@@ -44,7 +48,7 @@ export const agentRouter = t.router({
   /* ── 어드민: 전역 설정 ── */
   adminSettings: adminProcedure.query(({ ctx }) => agentService.getSettings(ctx.prisma)),
   setAdminSettings: adminProcedure
-    .input(z.object({ enabled: z.boolean(), webSearchEnabled: z.boolean() }))
+    .input(z.object({ enabled: z.boolean(), webSearchEnabled: z.boolean(), allowConversationDelete: z.boolean() }))
     .mutation(({ ctx, input }) => agentService.setSettings(ctx.prisma, input)),
 
   /* ── 어드민: 프로바이더 목록 (키는 끝 4자만) ── */
