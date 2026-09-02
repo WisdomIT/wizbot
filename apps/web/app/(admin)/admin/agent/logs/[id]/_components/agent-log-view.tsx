@@ -20,7 +20,12 @@ type Block =
   | { type: 'tool_result'; tool_use_id?: string; content?: string; is_error?: boolean }
   | { type: 'web_search'; query?: string };
 
-const STATUS_LABEL: Record<string, string> = { PENDING: '대기', APPROVED: '승인됨', DECLINED: '거절됨', EXPIRED: '만료됨' };
+const STATUS_BADGE: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
+  PENDING: { label: '대기', variant: 'outline' },
+  APPROVED: { label: '승인됨', variant: 'default' },
+  DECLINED: { label: '거절됨', variant: 'secondary' },
+  EXPIRED: { label: '만료됨', variant: 'outline' },
+};
 
 const time = (value: string | Date) => new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 
@@ -87,12 +92,56 @@ export function AgentLogView({ id }: { id: number }) {
               if (block.type === 'tool_use') {
                 const action = block.id ? actionByToolUse.get(block.id) : undefined;
                 const result = block.id ? resultOf.get(block.id) : undefined;
+                //  승인 카드는 사용자가 본 것과 같은 카드 형태로 (pelican conversation 뷰의 resolved_cards 와 동일).
+                //  실행 입력·결과는 관리자용 상세로 카드 안에 접어 둔다
+                if (action) {
+                  let card = { title: block.name ?? '', lines: [] as string[] };
+                  try {
+                    card = JSON.parse(action.cardJson) as { title: string; lines: string[] };
+                  } catch {
+                    /* 카드 파싱 실패 시 tool 이름으로 대체 */
+                  }
+                  const badge = STATUS_BADGE[action.status] ?? { label: action.status, variant: 'outline' as const };
+                  return (
+                    <div key={key} className="w-full max-w-md self-start rounded-lg border bg-muted/30 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-sm font-medium">
+                          <ShieldQuestion className="size-4" /> {card.title}
+                        </div>
+                        <Badge variant={badge.variant}>{badge.label}</Badge>
+                      </div>
+                      {card.lines.length > 0 && (
+                        <div className="mt-1.5 flex flex-col gap-0.5 text-sm text-muted-foreground">
+                          {card.lines.map((line, lineIndex) => (
+                            <p key={lineIndex} className="whitespace-pre-wrap">{line}</p>
+                          ))}
+                        </div>
+                      )}
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-muted-foreground">실행 상세</summary>
+                        <div className="mt-2 flex flex-col gap-2">
+                          <div>
+                            <p className="mb-1 font-medium text-muted-foreground">
+                              입력 <span className="font-mono">({block.name})</span>
+                            </p>
+                            <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono">{JSON.stringify(block.input, null, 1)}</pre>
+                          </div>
+                          {result && (
+                            <div>
+                              <p className={`mb-1 font-medium ${result.is_error ? 'text-destructive' : 'text-muted-foreground'}`}>결과</p>
+                              <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono">{result.content}</pre>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    </div>
+                  );
+                }
                 return (
                   <details key={key} className="self-start rounded-md border px-3 py-2 text-xs">
                     <summary className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
-                      {action ? <ShieldQuestion className="size-3" /> : <Wrench className="size-3" />}
+                      <Wrench className="size-3" />
                       <span className="font-mono">{block.name}</span>
-                      {action && <Badge variant="outline">{STATUS_LABEL[action.status] ?? action.status}</Badge>}
                       {result?.is_error && <Badge variant="destructive">오류</Badge>}
                     </summary>
                     <div className="mt-2 flex flex-col gap-2">
