@@ -258,6 +258,8 @@ model AgentUsage {
   userId          Int
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversationId  Int?
+  /// 이 요청(턴)의 마지막 어시스턴트 메시지 — 로그 화면이 채팅에 시각·모델·토큰을 붙일 근거
+  messageId       Int?
   provider        String   @default("ANTHROPIC") @db.VarChar(20)
   entryName       String?  @db.VarChar(60)
   model           String   @db.VarChar(100)

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 const TABS = [
   { name: '설정', href: '/admin/agent', exact: true },
   { name: '사용량', href: '/admin/agent/usage', exact: false },
+  { name: '사용자', href: '/admin/agent/users', exact: false },
   { name: '로그', href: '/admin/agent/logs', exact: false },
 ];
 

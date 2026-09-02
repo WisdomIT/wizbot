@@ -82,10 +82,32 @@ export const agentRouter = t.router({
   /* ── 어드민: 사용량 통계·로그 (#35 조정 6) ── */
   adminOverview: adminProcedure.query(({ ctx }) => agentService.adminOverview(ctx.prisma)),
   adminCharts: adminProcedure.query(({ ctx }) => agentService.adminCharts(ctx.prisma)),
-  adminUserStats: adminProcedure.query(({ ctx }) => agentService.adminUserStats(ctx.prisma)),
+  adminUserStats: adminProcedure
+    .input(z.object({
+      query: z.string().max(100).nullish(),
+      sort: z.enum(['name', 'messages', 'total', 'd1', 'd7', 'd30']).default('total'),
+      order: z.enum(['asc', 'desc']).default('desc'),
+      page: z.number().int().min(1).default(1),
+      perPage: z.number().int().min(1).max(100).default(20),
+    }))
+    .query(({ ctx, input }) => agentService.adminUserStats(ctx.prisma, { ...input, query: input.query ?? null })),
   adminConversations: adminProcedure
-    .input(z.object({ cursor: z.number().int().positive().nullish(), limit: z.number().int().min(1).max(100).default(30) }))
-    .query(({ ctx, input }) => agentService.adminConversations(ctx.prisma, input.cursor ?? null, input.limit)),
+    .input(z.object({
+      query: z.string().max(200).nullish(),
+      user: z.string().max(100).nullish(),
+      days: z.number().int().min(1).max(365).nullish(),
+      sort: z.enum(['recent', 'messages', 'input', 'output']).default('recent'),
+      order: z.enum(['asc', 'desc']).default('desc'),
+      page: z.number().int().min(1).default(1),
+      perPage: z.number().int().min(1).max(100).default(20),
+    }))
+    .query(({ ctx, input }) =>
+      agentService.adminConversations(ctx.prisma, {
+        ...input,
+        query: input.query ?? null,
+        user: input.user ?? null,
+        days: input.days ?? null,
+      })),
   adminConversation: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ ctx, input }) => {
@@ -112,6 +134,7 @@ export const agentRouter = t.router({
         })),
         usages: usages.map((row) => ({
           id: row.id,
+          messageId: row.messageId,
           provider: row.provider,
           entryName: row.entryName,
           model: row.model,

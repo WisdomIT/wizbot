@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 /** 에이전트 사용량 대시보드 (#35 조정 6, pelican UsageStats/Charts 이식) — 최근 30일, 한국 시간 자정 버킷 */
@@ -17,9 +16,8 @@ export function AgentUsageView() {
   const trpc = useTRPC();
   const { data: overview } = useQuery(trpc.agent.adminOverview.queryOptions());
   const { data: charts } = useQuery(trpc.agent.adminCharts.queryOptions());
-  const { data: userStats } = useQuery(trpc.agent.adminUserStats.queryOptions());
 
-  if (!overview || !charts || !userStats) return <Skeleton className="mt-4 h-96 w-full" />;
+  if (!overview || !charts) return <Skeleton className="mt-4 h-96 w-full" />;
 
   return (
     <div className="flex max-w-4xl flex-col gap-4 py-4">
@@ -78,35 +76,6 @@ export function AgentUsageView() {
         )}
       </ChartCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">사용자별 통계 (30일)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {userStats.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">아직 사용 기록이 없습니다.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>스트리머</TableHead>
-                  <TableHead className="text-right">채팅 수</TableHead>
-                  <TableHead className="text-right">토큰</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {userStats.map((row) => (
-                  <TableRow key={row.userId}>
-                    <TableCell>{row.channelName}</TableCell>
-                    <TableCell className="text-right">{row.messages.toLocaleString('ko-KR')}</TableCell>
-                    <TableCell className="text-right">{row.tokens.toLocaleString('ko-KR')}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
