@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import { prisma } from '../db';
 import { resolveStreamerId } from './auth';
 import { runWithFallback } from './llm/chain';
+import type { PendingCard } from './llm/types';
 import { SYSTEM_PROMPT } from './prompt';
 import { AGENT_TOOLS, runTool } from './tools';
 
@@ -94,8 +95,9 @@ export async function agentChatHandler(req: Request, res: Response) {
       onToolStart: (name) => sseSend(res, 'tool', { name }),
       runTool: async (name, input) => {
         try {
-          return { content: await runTool(prisma, userId, conversationId, name, input), isError: false };
+          return await runTool(prisma, userId, conversationId, name, input);
         } catch (error) {
+          //  카드 생성 실패 포함 — 사용자를 귀찮게 하지 말고 모델에게 돌려준다 (pelican 과 동일)
           return {
             content: isServiceError(error) ? error.message : '실행에 실패했습니다.',
             isError: true,
@@ -108,6 +110,24 @@ export async function agentChatHandler(req: Request, res: Response) {
       await agentService.appendMessage(
         prisma, conversationId, recordMessage.role, recordMessage.content as unknown as Prisma.InputJsonValue,
       );
+    }
+    //  확인 카드로 멈췄다 — 대기 액션을 만들어 카드 이벤트를 보낸다. 실행은 승인 mutation 만 할 수 있다
+    if (outcome.pending) {
+      const action = await agentService.createPendingAction(prisma, {
+        conversationId,
+        providerId: served.id,
+        toolUseId: outcome.pending.toolUseId,
+        tool: outcome.pending.tool,
+        input: outcome.pending.input as Prisma.InputJsonValue,
+        card: outcome.pending.card as unknown as Prisma.InputJsonValue,
+        native: outcome.pending.native as Prisma.InputJsonValue,
+      });
+      sseSend(res, 'confirm', {
+        actionId: action.id,
+        toolUseId: outcome.pending.toolUseId,
+        tool: outcome.pending.tool,
+        card: outcome.pending.card satisfies PendingCard,
+      });
     }
     if (outcome.usage.inputTokens + outcome.usage.outputTokens > 0) {
       await agentService

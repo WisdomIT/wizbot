@@ -1,21 +1,62 @@
 import OpenAI from 'openai';
 
-import { type ProviderAdapter, ProviderApiError, type RecordBlock, type RecordMessage, type TurnOutcome, type TurnRequest } from './types';
+import {
+  type ProviderAdapter,
+  ProviderApiError,
+  type RecordBlock,
+  type RecordMessage,
+  type ResolvedTool,
+  type TurnOutcome,
+  type TurnRequest,
+} from './types';
 
 /**
  * OpenAI (ChatGPT) 어댑터 — **Responses API** (pelican-concierge #3 과 같은 선택).
  * Chat Completions 가 아니라 Responses 를 쓰는 이유: 네이티브 웹 검색(web_search)이 여기에만 있다.
- * 루프 연결은 previous_response_id 로 — 히스토리를 다시 보내지 않아 토큰이 절약된다.
+ * 루프·재개 연결은 previous_response_id 로 — 히스토리를 다시 보내지 않아 토큰이 절약된다.
  */
+
+interface QueuedCall {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+interface NativeState {
+  previousResponseId: string | null;
+  outputs: OpenAI.Responses.ResponseInputItem[];
+  queue: QueuedCall[];
+}
+
 export class OpenAiAdapter implements ProviderAdapter {
   constructor(
     private readonly apiKey: string,
     private readonly model: string,
   ) {}
 
-  async runTurn(request: TurnRequest): Promise<TurnOutcome> {
+  runTurn(request: TurnRequest): Promise<TurnOutcome> {
+    const initialInput: OpenAI.Responses.ResponseInput = [
+      ...request.history.map((turn) => ({ role: turn.role, content: turn.text }) as OpenAI.Responses.ResponseInputItem),
+      { role: 'user', content: request.userText },
+    ];
+    return this.loop({ previousResponseId: null, outputs: [], queue: [] }, request, initialInput);
+  }
+
+  resumeTurn(native: unknown, resolved: ResolvedTool, request: TurnRequest): Promise<TurnOutcome> {
+    const state = native as NativeState;
+    state.outputs.push({ type: 'function_call_output', call_id: resolved.toolUseId, output: resolved.content });
+    return this.loop(state, request, null, [
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: resolved.toolUseId, content: resolved.content, ...(resolved.isError ? { is_error: true } : {}) }] },
+    ]);
+  }
+
+  private async loop(
+    state: NativeState,
+    request: TurnRequest,
+    initialInput: OpenAI.Responses.ResponseInput | null,
+    record: RecordMessage[] = [],
+  ): Promise<TurnOutcome> {
     const client = new OpenAI({ apiKey: this.apiKey });
-    const record: RecordMessage[] = [];
     const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
     let emittedText = false;
 
@@ -28,13 +69,30 @@ export class OpenAiAdapter implements ProviderAdapter {
     }));
     if (request.webSearch) tools.push({ type: 'web_search' } as OpenAI.Responses.Tool);
 
-    let input: OpenAI.Responses.ResponseInput = [
-      ...request.history.map((turn) => ({ role: turn.role, content: turn.text }) as OpenAI.Responses.ResponseInputItem),
-      { role: 'user', content: request.userText },
-    ];
-    let previousResponseId: string | undefined;
-
     for (let iteration = 0; iteration < request.maxIterations; iteration++) {
+      // 1) 대기 중인 tool 부터 비운다 — 카드가 나오면 여기서 멈춘다
+      const resultRecord: RecordBlock[] = [];
+      while (state.queue.length > 0) {
+        const call = state.queue[0];
+        request.onToolStart(call.name);
+        const result = await request.runTool(call.name, call.args);
+        state.queue.shift();
+        if ('card' in result) {
+          if (resultRecord.length > 0) record.push({ role: 'user', content: resultRecord });
+          return {
+            record,
+            usage,
+            emittedText,
+            pending: { toolUseId: call.callId, tool: call.name, input: call.args, card: result.card, native: state },
+          };
+        }
+        state.outputs.push({ type: 'function_call_output', call_id: call.callId, output: result.content });
+        resultRecord.push({ type: 'tool_result', tool_use_id: call.callId, content: result.content, ...(result.isError ? { is_error: true } : {}) });
+      }
+      if (resultRecord.length > 0) record.push({ role: 'user', content: resultRecord });
+
+      const input = state.outputs.length > 0 ? state.outputs : (initialInput ?? []);
+
       let response: OpenAI.Responses.Response;
       try {
         const stream = client.responses.stream(
@@ -43,7 +101,7 @@ export class OpenAiAdapter implements ProviderAdapter {
             instructions: request.system,
             input,
             tools,
-            ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+            ...(state.previousResponseId ? { previous_response_id: state.previousResponseId } : {}),
           },
           { signal: request.signal },
         );
@@ -61,10 +119,11 @@ export class OpenAiAdapter implements ProviderAdapter {
       usage.inputTokens += response.usage?.input_tokens ?? 0;
       usage.outputTokens += response.usage?.output_tokens ?? 0;
       usage.cacheReadTokens += response.usage?.input_tokens_details?.cached_tokens ?? 0;
-      previousResponseId = response.id;
+      state.previousResponseId = response.id;
+      state.outputs = [];
 
       const assistantRecord: RecordBlock[] = [];
-      const functionCalls: { callId: string; name: string; args: Record<string, unknown> }[] = [];
+      const functionCalls: QueuedCall[] = [];
       for (const item of response.output) {
         if (item.type === 'message') {
           for (const part of item.content) {
@@ -88,18 +147,7 @@ export class OpenAiAdapter implements ProviderAdapter {
       if (assistantRecord.length > 0) record.push({ role: 'assistant', content: assistantRecord });
 
       if (functionCalls.length === 0) break;
-
-      const outputs: OpenAI.Responses.ResponseInputItem[] = [];
-      const resultRecord: RecordBlock[] = [];
-      for (const call of functionCalls) {
-        request.onToolStart(call.name);
-        const result = await request.runTool(call.name, call.args);
-        outputs.push({ type: 'function_call_output', call_id: call.callId, output: result.content });
-        resultRecord.push({ type: 'tool_result', tool_use_id: call.callId, content: result.content, ...(result.isError ? { is_error: true } : {}) });
-      }
-      record.push({ role: 'user', content: resultRecord });
-      //  previous_response_id 로 잇는다 — 다음 입력은 함수 결과만
-      input = outputs;
+      state.queue = functionCalls;
     }
 
     return { record, usage, emittedText };

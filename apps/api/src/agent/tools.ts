@@ -6,6 +6,7 @@ import {
   inquiryService,
   playbackService,
   repeatService,
+  ServiceError,
   shortcutService,
   songFavoriteService,
   songService,
@@ -13,7 +14,7 @@ import {
 } from '@wizbot/shared/services';
 
 import { recordAgentAudit } from './audit';
-import type { ToolDef } from './llm/types';
+import type { PendingCard, ToolDef, ToolRunResult } from './llm/types';
 
 /**
  * 에이전트 tool (#35). 서비스 계층을 로그인 스트리머 스코프로 노출한다.
@@ -32,15 +33,14 @@ function toResult(value: unknown): string {
   return text.length > RESULT_MAX_CHARS ? `${text.slice(0, RESULT_MAX_CHARS)}\n…(잘림)` : text;
 }
 
-/** confirmed 가 아니면 실행하지 않고 확인 절차를 안내한다 */
-function requireConfirm(input: Record<string, unknown>, summary: string): string | null {
-  if (input.confirmed === true) return null;
-  return `확인 필요: ${summary}\n아직 실행하지 않았습니다. 사용자에게 이 작업을 진행해도 되는지 물어보고, 명시적으로 동의한 경우에만 confirmed: true 로 다시 호출하세요.`;
-}
-
 const noInput = { type: 'object' as const, properties: {}, additionalProperties: false };
 const id = { type: 'number' as const };
-const confirmed = { type: 'boolean' as const, description: '사용자가 채팅에서 명시적으로 동의했을 때만 true' };
+
+/**
+ * 확인 카드가 뜨는 tool (pelican tool_confirmation 이식) — 호출 즉시 턴이 멈추고 카드가 뜬다.
+ * 실행 경로는 승인 mutation 뿐이라 모델이 뭐라 하든 시스템이 막는다.
+ */
+export const CONFIRM_TOOLS = new Set(['delete_command', 'delete_repeat', 'delete_shortcut', 'clear_queue', 'create_inquiry']);
 
 export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
@@ -119,10 +119,10 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
-    name: 'delete_command', description: '명령어를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
+    name: 'delete_command', description: 'Deletes a command. A confirmation card is shown to the user — call directly, do not ask first.',
     inputSchema: {
       type: 'object',
-      properties: { id, type: { type: 'string', enum: ['echo', 'function'] }, confirmed },
+      properties: { id, type: { type: 'string', enum: ['echo', 'function'] } },
       required: ['id', 'type'], additionalProperties: false,
     },
   },
@@ -149,8 +149,8 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: { id, enabled: { type: 'boolean' } }, required: ['id', 'enabled'], additionalProperties: false },
   },
   {
-    name: 'delete_repeat', description: '반복 메시지를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    inputSchema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
+    name: 'delete_repeat', description: 'Deletes a repeat message. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
   },
 
   /* ── 링크 ── */
@@ -174,8 +174,8 @@ export const AGENT_TOOLS: ToolDef[] = [
     },
   },
   {
-    name: 'delete_shortcut', description: '링크를 삭제한다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    inputSchema: { type: 'object', properties: { id, confirmed }, required: ['id'], additionalProperties: false },
+    name: 'delete_shortcut', description: 'Deletes a viewer-page link. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
   },
 
   /* ── 뮤직 플레이어 ── */
@@ -196,8 +196,8 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: { volume: { type: 'number' } }, required: ['volume'], additionalProperties: false },
   },
   {
-    name: 'clear_queue', description: '대기열을 비운다. 파괴적 작업 — confirmed 규칙을 따른다.',
-    inputSchema: { type: 'object', properties: { confirmed }, required: [], additionalProperties: false },
+    name: 'clear_queue', description: 'Clears the entire song queue. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: noInput,
   },
   {
     name: 'enqueue_favorite', description: '즐겨찾기의 곡들을 대기열에 넣는다.',
@@ -218,10 +218,10 @@ export const AGENT_TOOLS: ToolDef[] = [
 
   /* ── 문의 ── */
   {
-    name: 'create_inquiry', description: '운영자에게 문의를 남긴다. 운영자에게 발송되므로 confirmed 규칙을 따른다 — 보내기 전에 제목·내용을 사용자에게 보여주고 동의를 받는다.',
+    name: 'create_inquiry', description: 'Sends an inquiry to the operators. A confirmation card with the title and body is shown to the user — call directly with the drafted content, do not ask first.',
     inputSchema: {
       type: 'object',
-      properties: { title: { type: 'string' }, body: { type: 'string', description: '마크다운 가능' }, confirmed },
+      properties: { title: { type: 'string' }, body: { type: 'string', description: '마크다운 가능 (markdown allowed)' } },
       required: ['title', 'body'], additionalProperties: false,
     },
   },
@@ -242,12 +242,67 @@ export async function runTool(
   conversationId: number,
   name: string,
   input: Record<string, unknown>,
-): Promise<string> {
+): Promise<ToolRunResult> {
+  //  확인 대상은 실행하지 않는다 — 카드를 만들어 돌려주고 턴이 멈춘다.
+  //  카드 생성 실패(대상 없음 등)는 ServiceError 로 던져져 모델에게 오류 결과로 돌아간다 (pelican 과 동일)
+  if (CONFIRM_TOOLS.has(name)) {
+    return { card: await buildCard(prisma, userId, name, input) };
+  }
+  return executeConfirmed(prisma, userId, conversationId, name, input);
+}
+
+/** 승인 뒤(또는 확인 불필요 tool)의 실제 실행 — 성공한 설정 변경은 감사 기록에 남는다 */
+export async function executeConfirmed(
+  prisma: PrismaClient,
+  userId: number,
+  conversationId: number,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<{ content: string; isError: boolean }> {
   const result = await execute(prisma, userId, name, input);
   if (result.ok && AUDITED_TOOLS.has(name)) {
     await recordAgentAudit(prisma, userId, conversationId, name, input);
   }
-  return result.text;
+  return { content: result.text, isError: !result.ok };
+}
+
+/** 카드 내용 — 무엇이 실행되는지 검증하며 구체적으로. 대상이 없으면 여기서 던진다 */
+async function buildCard(prisma: PrismaClient, userId: number, name: string, input: Record<string, unknown>): Promise<PendingCard> {
+  switch (name) {
+    case 'delete_command': {
+      const commandId = Number(input.id);
+      const found =
+        input.type === 'function'
+          ? await commandService.getFunctionCommand(prisma, userId, commandId)
+          : await commandService.getEchoCommand(prisma, userId, commandId);
+      return { title: '명령어 삭제', lines: [`!${found.command} 명령어를 삭제합니다.`, '삭제하면 되돌릴 수 없습니다.'] };
+    }
+    case 'delete_repeat': {
+      const repeat = await repeatService.getRepeat(prisma, userId, Number(input.id));
+      return { title: '반복 메시지 삭제', lines: [`"${repeat.response.slice(0, 80)}" (${repeat.interval}초 주기) 를 삭제합니다.`] };
+    }
+    case 'delete_shortcut': {
+      const shortcut = await prisma.userShortcut.findFirst({ where: { userId, id: Number(input.id) } });
+      if (!shortcut) throw new ServiceError('NOT_FOUND', '링크를 찾을 수 없습니다.');
+      return { title: '링크 삭제', lines: [`"${shortcut.name}" (${shortcut.url}) 링크를 삭제합니다.`] };
+    }
+    case 'clear_queue': {
+      const queue = await songService.listQueue(prisma, userId);
+      if (queue.length === 0) throw new ServiceError('INVALID_INPUT', '대기열이 이미 비어 있습니다.');
+      return { title: '대기열 비우기', lines: [`대기열의 ${queue.length}곡을 모두 삭제합니다.`, '삭제하면 되돌릴 수 없습니다.'] };
+    }
+    case 'create_inquiry': {
+      const title = String(input.title ?? '').trim();
+      const inquiryBody = String(input.body ?? '').trim();
+      if (!title || !inquiryBody) throw new ServiceError('INVALID_INPUT', '제목과 내용을 입력해주세요.');
+      return {
+        title: '운영자에게 문의 발송',
+        lines: [`제목: ${title}`, inquiryBody.length > 200 ? `${inquiryBody.slice(0, 200)}…` : inquiryBody],
+      };
+    }
+    default:
+      throw new ServiceError('INVALID_INPUT', `확인 대상이 아닌 tool: ${name}`);
+  }
 }
 
 async function execute(
@@ -331,8 +386,6 @@ async function execute(
         prisma, userId, Number(input.id), input.type === 'function' ? 'function' : 'echo', input.enabled === true,
       )));
     case 'delete_command': {
-      const gate = requireConfirm(input, `명령어 삭제 (id ${input.id})`);
-      if (gate) return pending(gate);
       const count = await commandService.deleteCommand(
         prisma, userId, Number(input.id), input.type === 'function' ? 'function' : 'echo',
       );
@@ -351,8 +404,6 @@ async function execute(
     case 'set_repeat_enabled':
       return ok(toResult(await repeatService.setRepeatEnabled(prisma, userId, Number(input.id), input.enabled === true)));
     case 'delete_repeat': {
-      const gate = requireConfirm(input, `반복 메시지 삭제 (id ${input.id})`);
-      if (gate) return pending(gate);
       await repeatService.deleteRepeat(prisma, userId, Number(input.id));
       return ok('삭제했습니다.');
     }
@@ -368,8 +419,6 @@ async function execute(
         userId, id: Number(input.id), name: String(input.name), url: String(input.url), icon: String(input.icon),
       })));
     case 'delete_shortcut': {
-      const gate = requireConfirm(input, `링크 삭제 (id ${input.id})`);
-      if (gate) return pending(gate);
       await shortcutService.deleteShortcut(prisma, userId, Number(input.id));
       return ok('삭제했습니다.');
     }
@@ -392,11 +441,8 @@ async function execute(
       const volume = Math.min(Math.max(Math.round(Number(input.volume)), 0), 100);
       return ok(toResult(await playbackService.setVolume(prisma, userId, volume)));
     }
-    case 'clear_queue': {
-      const gate = requireConfirm(input, '대기열 전체 비우기');
-      if (gate) return pending(gate);
+    case 'clear_queue':
       return ok(toResult(await songService.clearQueue(prisma, userId, AGENT_ACTOR)));
-    }
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(
         prisma, userId, Number(input.favoriteId), { shuffle: input.shuffle === true, requester: AGENT_ACTOR },
@@ -406,8 +452,6 @@ async function execute(
 
     /* ── 문의 ── */
     case 'create_inquiry': {
-      const gate = requireConfirm(input, `운영자에게 문의 발송 — 제목: ${String(input.title)}`);
-      if (gate) return pending(gate);
       const inquiry = await inquiryService.create(prisma, userId, { title: String(input.title), body: String(input.body) });
       const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelName: true, channelImageUrl: true } });
       void notifyAdminsOfInquiry(prisma, inquiry, user, '새 문의');

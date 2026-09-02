@@ -22,10 +22,17 @@ const maskKey = (key: string) => (key ? `…${key.slice(-4)}` : null);
 
 export async function getSettings(prisma: PrismaClient) {
   const row = await prisma.agentSettings.findUnique({ where: { id: 1 } });
-  return { enabled: row?.enabled ?? false, webSearchEnabled: row?.webSearchEnabled ?? false };
+  return {
+    enabled: row?.enabled ?? false,
+    webSearchEnabled: row?.webSearchEnabled ?? false,
+    allowConversationDelete: row?.allowConversationDelete ?? false,
+  };
 }
 
-export async function setSettings(prisma: PrismaClient, input: { enabled: boolean; webSearchEnabled: boolean }) {
+export async function setSettings(
+  prisma: PrismaClient,
+  input: { enabled: boolean; webSearchEnabled: boolean; allowConversationDelete: boolean },
+) {
   await prisma.agentSettings.upsert({ where: { id: 1 }, update: input, create: { id: 1, ...input } });
 }
 
@@ -301,7 +308,7 @@ export function recordUsage(
 
 export function listConversations(prisma: PrismaClient, userId: number) {
   return prisma.agentConversation.findMany({
-    where: { userId },
+    where: { userId, deletedAt: null },
     orderBy: { updatedAt: 'desc' },
     take: 50,
     select: { id: true, title: true, updatedAt: true },
@@ -310,7 +317,7 @@ export function listConversations(prisma: PrismaClient, userId: number) {
 
 export async function getConversation(prisma: PrismaClient, userId: number, id: number) {
   const conversation = await prisma.agentConversation.findFirst({
-    where: { id, userId },
+    where: { id, userId, deletedAt: null },
     include: { messages: { orderBy: { id: 'asc' } } },
   });
   if (!conversation) throw new ServiceError('NOT_FOUND', '대화를 찾을 수 없습니다.');
@@ -321,9 +328,78 @@ export function createConversation(prisma: PrismaClient, userId: number) {
   return prisma.agentConversation.create({ data: { userId }, select: { id: true, title: true, updatedAt: true } });
 }
 
+/**
+ * soft delete (pelican #8) — 스트리머 목록에서만 사라지고 어드민 로그·사용량에는 남는다.
+ * 지울 수 있게 할지는 운영자의 결정(기본 꺼짐).
+ */
 export async function removeConversation(prisma: PrismaClient, userId: number, id: number) {
-  const removed = await prisma.agentConversation.deleteMany({ where: { id, userId } });
+  const settings = await getSettings(prisma);
+  if (!settings.allowConversationDelete) {
+    throw new ServiceError('FORBIDDEN', '대화 삭제가 허용되어 있지 않습니다. 운영자에게 문의해주세요.');
+  }
+  const removed = await prisma.agentConversation.updateMany({
+    where: { id, userId, deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
   if (removed.count === 0) throw new ServiceError('NOT_FOUND', '대화를 찾을 수 없습니다.');
+}
+
+/* ── 승인 대기 액션 (pelican tool_confirmation) ── */
+
+const PENDING_TTL_MINUTES = 30;
+
+export function createPendingAction(
+  prisma: PrismaClient,
+  input: {
+    conversationId: number; providerId: number; toolUseId: string; tool: string;
+    input: Prisma.InputJsonValue; card: Prisma.InputJsonValue; native: Prisma.InputJsonValue;
+  },
+) {
+  return prisma.agentPendingAction.create({
+    data: { ...input, expiresAt: new Date(Date.now() + PENDING_TTL_MINUTES * 60_000) },
+  });
+}
+
+/** 소유 확인 + 만료 처리 포함 조회. PENDING 이 아닐 때는 던진다 */
+export async function getPendingAction(prisma: PrismaClient, userId: number, actionId: number) {
+  const action = await prisma.agentPendingAction.findFirst({
+    where: { id: actionId, conversation: { userId } },
+  });
+  if (!action) throw new ServiceError('NOT_FOUND', '작업을 찾을 수 없습니다.');
+  if (action.status !== 'PENDING') throw new ServiceError('CONFLICT', '이미 처리된 작업입니다.');
+  if (action.expiresAt.getTime() < Date.now()) {
+    await prisma.agentPendingAction.update({ where: { id: action.id }, data: { status: 'EXPIRED', resolvedAt: new Date() } });
+    throw new ServiceError('CONFLICT', '확인 유효 시간이 지났습니다. 필요하면 다시 요청해주세요.');
+  }
+  return action;
+}
+
+/** 원자적 상태 전이 — 더블클릭·동시 요청이 두 번 실행되지 않게 PENDING 일 때만 */
+export async function claimPendingAction(prisma: PrismaClient, actionId: number, status: 'APPROVED' | 'DECLINED') {
+  const updated = await prisma.agentPendingAction.updateMany({
+    where: { id: actionId, status: 'PENDING' },
+    data: { status, resolvedAt: new Date() },
+  });
+  if (updated.count === 0) throw new ServiceError('CONFLICT', '이미 처리된 작업입니다.');
+}
+
+/** 패널 카드 렌더용 — 대화의 모든 액션 (만료 시각 지난 PENDING 은 EXPIRED 로 정리해서) */
+export async function listActions(prisma: PrismaClient, userId: number, conversationId: number) {
+  await prisma.agentPendingAction.updateMany({
+    where: { conversationId, conversation: { userId }, status: 'PENDING', expiresAt: { lt: new Date() } },
+    data: { status: 'EXPIRED', resolvedAt: new Date() },
+  });
+  const rows = await prisma.agentPendingAction.findMany({
+    where: { conversationId, conversation: { userId } },
+    orderBy: { id: 'asc' },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    toolUseId: row.toolUseId,
+    tool: row.tool,
+    status: row.status,
+    cardJson: JSON.stringify(row.card),
+  }));
 }
 
 export function appendMessage(

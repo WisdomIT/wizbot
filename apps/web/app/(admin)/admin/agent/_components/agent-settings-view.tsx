@@ -54,7 +54,7 @@ function GlobalCard() {
 
   if (isPending || !data) return <Skeleton className="h-32 w-full" />;
 
-  const toggle = (patch: Partial<{ enabled: boolean; webSearchEnabled: boolean }>) =>
+  const toggle = (patch: Partial<{ enabled: boolean; webSearchEnabled: boolean; allowConversationDelete: boolean }>) =>
     toast.promise(save.mutateAsync({ ...data, ...patch }), {
       loading: '변경 중...',
       success: () => {
@@ -81,6 +81,13 @@ function GlobalCard() {
         <div className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
           <span className="text-sm font-medium">웹 검색 허용</span>
           <Switch checked={data.webSearchEnabled} disabled={save.isPending} onCheckedChange={(webSearchEnabled) => toggle({ webSearchEnabled })} />
+        </div>
+        <div className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+          <div className="flex flex-col">
+            <span className="text-sm font-medium">대화 삭제 허용</span>
+            <span className="text-xs text-muted-foreground">스트리머 목록에서만 사라지고 관리자 로그·사용량에는 남습니다</span>
+          </div>
+          <Switch checked={data.allowConversationDelete} disabled={save.isPending} onCheckedChange={(allowConversationDelete) => toggle({ allowConversationDelete })} />
         </div>
       </CardContent>
     </Card>

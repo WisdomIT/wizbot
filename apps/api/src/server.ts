@@ -8,6 +8,7 @@ import { appRouter } from '@wizbot/shared/router';
 import express from 'express';
 
 import { agentChatHandler } from './agent/chat';
+import { agentResumeHandler } from './agent/resume';
 import { createContext } from './context';
 import { songEventsHandler } from './song-events';
 
@@ -21,6 +22,9 @@ app.get('/song/events', (req, res) => {
 // 설정 도우미 에이전트 채팅 (SSE, #35)
 app.post('/agent/chat', express.json(), (req, res) => {
   void agentChatHandler(req, res);
+});
+app.post('/agent/resume', express.json(), (req, res) => {
+  void agentResumeHandler(req, res);
 });
 
 app.use(
