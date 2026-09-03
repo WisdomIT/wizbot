@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { FileAudio2, Headphones, Info, Megaphone, SquareChevronRight } from 'lucide-react';
+import { BookOpen, FileAudio2, Headphones, Info, Megaphone, SquareChevronRight } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { JSX, useSyncExternalStore } from 'react';
@@ -96,6 +96,11 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
         url: `/${channel.channelId}/notice`,
         icon: <Megaphone />,
         dot: hasNewNotice,
+      },
+      {
+        name: '이용 안내',
+        url: '/manual',
+        icon: <BookOpen />,
       },
       {
         name: '사이트 정보',
