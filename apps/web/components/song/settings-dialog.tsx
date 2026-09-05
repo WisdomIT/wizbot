@@ -65,6 +65,7 @@ export function SettingsDialog({
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
+  onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
   onRegenerate: () => void;
   onChangeOverlay: (overlay: SongSettings['overlay']) => void;
   onChangeAutoPlay: (enabled: boolean) => void;
@@ -284,7 +285,6 @@ function SourceSection({
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
-  onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
   onRegenerate: () => void;
 }) {
   // 주소는 방송 화면에 그대로 찍힐 수 있으므로 기본은 가려둔다
