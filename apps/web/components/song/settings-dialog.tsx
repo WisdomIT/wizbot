@@ -31,6 +31,8 @@ import { ShortcutInput } from './shortcut-input';
 
 export interface SongSettings {
   sourceType: 'NONE' | 'OBS' | 'ELECTRON';
+  /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
+  requestPolicy: { maxPerRequester: number | null; maxQueueLength: number };
   sourceToken: string | null;
   overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   autoPlay: boolean;
@@ -50,6 +52,7 @@ const SHORTCUT_ACTIONS = [
 export function SettingsDialog({
   settings,
   onChangeSourceType,
+  onChangeRequestPolicy,
   onRegenerate,
   onChangeOverlay,
   onChangeAutoPlay,
@@ -100,6 +103,8 @@ export function SettingsDialog({
           />
           <Separator />
           <OverlaySection overlay={settings.overlay} onChange={onChangeOverlay} />
+          <Separator />
+          <RequestPolicySection policy={settings.requestPolicy} onSave={onChangeRequestPolicy} />
           <Separator />
 
           <div className="flex flex-col gap-4">
@@ -279,6 +284,7 @@ function SourceSection({
 }: {
   settings: SongSettings;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
+  onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
   onRegenerate: () => void;
 }) {
   // 주소는 방송 화면에 그대로 찍힐 수 있으므로 기본은 가려둔다
@@ -468,6 +474,95 @@ function OverlaySection({
             <span className="text-sm text-muted-foreground">초 동안 표시</span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** 신청 제한 (#237) — 시청자 채팅 신청에만 적용. 숫자 입력이라 저장 버튼으로 커밋한다 */
+function RequestPolicySection({
+  policy,
+  onSave,
+}: {
+  policy: SongSettings['requestPolicy'];
+  onSave: (policy: SongSettings['requestPolicy']) => void;
+}) {
+  const toForm = (value: SongSettings['requestPolicy']) => ({
+    unlimited: value.maxPerRequester === null,
+    perRequester: String(value.maxPerRequester ?? 1),
+    maxQueue: String(value.maxQueueLength),
+  });
+  const [form, setForm] = useState(toForm(policy));
+  //  서버 값이 바뀌면 폼을 갈아끼운다 — 렌더 중 보정 (#200 패턴)
+  const [prevPolicy, setPrevPolicy] = useState(policy);
+  if (policy !== prevPolicy) {
+    setPrevPolicy(policy);
+    setForm(toForm(policy));
+  }
+
+  const clamp = (value: string, min: number, max: number, fallback: number) => {
+    const number = Math.round(Number(value));
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col">
+        <Label>신청 제한</Label>
+        <p className="text-xs text-muted-foreground">
+          시청자 채팅 신청에만 적용됩니다 — 직접 추가·즐겨찾기 재생에는 제한이 없습니다.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor="setting-queue-max" className="text-xs text-muted-foreground">
+            대기열 최대 곡 수 (1~100)
+          </Label>
+          <Input
+            id="setting-queue-max"
+            inputMode="numeric"
+            value={form.maxQueue}
+            onChange={(event) => setForm({ ...form, maxQueue: event.target.value })}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="setting-per-user" className="text-xs text-muted-foreground">
+            1인당 신청 곡 수
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="setting-per-user"
+              inputMode="numeric"
+              disabled={form.unlimited}
+              value={form.unlimited ? '' : form.perRequester}
+              placeholder={form.unlimited ? '제한 없음' : ''}
+              onChange={(event) => setForm({ ...form, perRequester: event.target.value })}
+            />
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Switch
+                id="setting-per-user-unlimited"
+                checked={form.unlimited}
+                onCheckedChange={(unlimited) => setForm({ ...form, unlimited })}
+              />
+              <Label htmlFor="setting-per-user-unlimited" className="text-xs">
+                무제한
+              </Label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          onClick={() =>
+            onSave({
+              maxPerRequester: form.unlimited ? null : clamp(form.perRequester, 1, 99, 1),
+              maxQueueLength: clamp(form.maxQueue, 1, 100, 30),
+            })
+          }
+        >
+          저장
+        </Button>
       </div>
     </div>
   );

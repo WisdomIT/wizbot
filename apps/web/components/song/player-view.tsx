@@ -96,6 +96,7 @@ export function PlayerView() {
   const regenerate = useMutation(trpc.song.regenerateToken.mutationOptions());
   const setOverlaySettings = useMutation(trpc.song.setOverlaySettings.mutationOptions());
   const setHistoryPublic = useMutation(trpc.song.setHistoryPublic.mutationOptions());
+  const setRequestPolicy = useMutation(trpc.song.setRequestPolicy.mutationOptions());
   const setAutoPlay = useMutation(trpc.songFavorite.setAutoPlay.mutationOptions());
   const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
   const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
@@ -268,6 +269,7 @@ export function PlayerView() {
                 isApp={shell.isApp}
                 settings={{
                   sourceType: source.sourceType,
+                  requestPolicy: data.requestPolicy,
                   sourceToken: source.sourceToken,
                   overlay: source.overlay,
                   autoPlay,
@@ -277,6 +279,9 @@ export function PlayerView() {
                 }}
                 onChangeSourceType={(sourceType) =>
                   run(setSourceType.mutateAsync({ sourceType }), '송출 소스를 변경했습니다.')
+                }
+                onChangeRequestPolicy={(policy) =>
+                  run(setRequestPolicy.mutateAsync(policy), '신청 제한을 저장했습니다.')
                 }
                 onRegenerate={() =>
                   run(

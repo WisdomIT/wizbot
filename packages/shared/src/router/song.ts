@@ -1,13 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import {
-  playbackService,
-  ServiceError,
-  songFavoriteService,
-  songHistoryService,
-  songService,
-} from '../services';
+import { playbackService, ServiceError, songFavoriteService, songHistoryService, songService, userSettingService } from '../services';
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
@@ -46,6 +40,8 @@ export const songRouter = t.router({
         select: {
           songHistoryPublic: true,
           songAutoPlayFromDefault: true,
+          songMaxPerRequester: true,
+          songMaxQueueLength: true,
           songKeyboardShortcut: true,
           songShortcutPlayPause: true,
           songShortcutStop: true,
@@ -59,6 +55,11 @@ export const songRouter = t.router({
       source,
       historyPublic: setting?.songHistoryPublic ?? false,
       autoPlay: setting?.songAutoPlayFromDefault ?? false,
+      /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
+      requestPolicy: {
+        maxPerRequester: setting === null ? 1 : setting.songMaxPerRequester,
+        maxQueueLength: setting?.songMaxQueueLength ?? 30,
+      },
       /** 앱의 전역 단축키 사용 여부 (#85) */
       keyboardShortcut: setting?.songKeyboardShortcut ?? true,
       shortcuts: {
@@ -227,6 +228,21 @@ export const songRouter = t.router({
       });
       return { ok: true as const };
     }),
+
+  /** 신청 제한 (#237) — 1인당 곡 수(null=무제한)·대기열 상한(최대 100) */
+  setRequestPolicy: streamerProcedure
+    .input(
+      z.object({
+        maxPerRequester: z.number().int().min(1).max(99).nullable(),
+        maxQueueLength: z.number().int().min(1).max(100),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      userSettingService.updateUserSetting(ctx.prisma, ctx.user.id, {
+        songMaxPerRequester: input.maxPerRequester,
+        songMaxQueueLength: input.maxQueueLength,
+      }),
+    ),
 
   /** 기록에 있는 곡을 대기열에 다시 올린다 — 신청자 이름은 원래 신청자로 남긴다 */
   requeueFromHistory: streamerProcedure

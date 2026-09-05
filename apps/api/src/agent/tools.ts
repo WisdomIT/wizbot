@@ -59,6 +59,14 @@ function requireId(value: unknown, label: string): number {
   return id;
 }
 
+function requireIntInRange(value: unknown, label: string, min: number, max: number): number {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < min || number > max) {
+    throw new ServiceError('INVALID_INPUT', `${label} 은(는) ${min}~${max} 정수여야 합니다.`);
+  }
+  return number;
+}
+
 function requirePermission(value: unknown): ChatbotPermission {
   const permission = String(value ?? '');
   if (permission !== 'STREAMER' && permission !== 'MANAGER' && permission !== 'VIEWER') {
@@ -250,6 +258,21 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: noInput,
   },
   {
+    name: 'set_song_request_policy',
+    description:
+      'Changes viewer song-request limits. maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). Omitted fields keep their current value (see get_user_setting).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxPerRequester: { type: 'number' },
+        unlimitedPerRequester: { type: 'boolean' },
+        maxQueueLength: { type: 'number' },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'enqueue_favorite', description: '즐겨찾기의 곡들을 대기열에 넣는다.',
     inputSchema: {
       type: 'object',
@@ -283,7 +306,7 @@ const AUDITED_TOOLS = new Set([
   'set_command_enabled', 'delete_command',
   'create_repeat', 'update_repeat', 'set_repeat_enabled', 'delete_repeat',
   'create_shortcut', 'update_shortcut', 'delete_shortcut',
-  'import_playlist', 'clear_queue',
+  'import_playlist', 'clear_queue', 'set_song_request_policy',
 ]);
 
 export async function runTool(
@@ -535,6 +558,24 @@ async function execute(
     }
     case 'clear_queue':
       return ok(toResult(await songService.clearQueue(prisma, userId, AGENT_ACTOR)));
+    case 'set_song_request_policy': {
+      const current = await userSettingService.getUserSetting(prisma, userId);
+      const maxPerRequester =
+        input.unlimitedPerRequester === true
+          ? null
+          : input.maxPerRequester !== undefined
+            ? requireIntInRange(input.maxPerRequester, 'maxPerRequester', 1, 99)
+            : current.songMaxPerRequester;
+      const maxQueueLength =
+        input.maxQueueLength !== undefined
+          ? requireIntInRange(input.maxQueueLength, 'maxQueueLength', 1, 100)
+          : current.songMaxQueueLength;
+      await userSettingService.updateUserSetting(prisma, userId, {
+        songMaxPerRequester: maxPerRequester,
+        songMaxQueueLength: maxQueueLength,
+      });
+      return ok(toResult({ maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength }));
+    }
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(
         prisma, userId, requireId(input.favoriteId, 'favoriteId'), { shuffle: input.shuffle === true, requester: AGENT_ACTOR },
