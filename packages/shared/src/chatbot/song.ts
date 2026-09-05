@@ -20,6 +20,15 @@ function requesterOf(data: { senderNickname: string; senderChannelId?: string })
 }
 
 /**
+ * 기능이 꺼져 있으면(#237) 안내 응답, 켜져 있으면 null.
+ * 신청은 서비스 계층에서도 막지만, 삭제·목록·현재 곡도 채팅에서는 꺼졌다고 답해야 한다.
+ */
+async function inactiveMessage(ctx: Context, userId: number): Promise<ChabotReturn | null> {
+  const setting = await userSettingService.getUserSetting(ctx.prisma, userId);
+  return setting.songActive ? null : { ok: true, message: '노래 신청 기능이 꺼져 있습니다.' };
+}
+
+/**
  * 시청자 플레이리스트 링크 (` | https://…/<channelId>/playlist`).
  * 실행 시점에 조립해 경로 규칙(#72)·도메인 변경에 자동으로 따라간다. 미설정 시 빈 문자열.
  *
@@ -80,6 +89,9 @@ export const functionSong = {
 
   removeSong: async (ctx, data) =>
     withServiceMessages(async () => {
+      const inactive = await inactiveMessage(ctx, data.userId);
+      if (inactive) return inactive;
+
       const [rawPosition] = splitContent(data.content, data.query.command, 1);
       const canRemoveOthers = data.senderRole === 'MANAGER' || data.senderRole === 'STREAMER';
 
@@ -110,6 +122,9 @@ export const functionSong = {
 
   listSongs: async (ctx, data) =>
     withServiceMessages(async () => {
+      const inactive = await inactiveMessage(ctx, data.userId);
+      if (inactive) return inactive;
+
       const [queue, link] = await Promise.all([
         songService.listQueue(ctx.prisma, data.userId),
         playlistLinkSuffix(ctx, data.userId),
@@ -133,7 +148,7 @@ export const functionSong = {
       ]);
 
       if (!setting.songActive) {
-        return { ok: true, message: '현재 노래 신청을 받지 않습니다.' };
+        return { ok: true, message: '노래 신청 기능이 꺼져 있습니다.' };
       }
 
       if (!playback || playback.status === 'STOPPED' || !playback.title) {

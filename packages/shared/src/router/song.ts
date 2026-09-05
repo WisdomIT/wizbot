@@ -38,6 +38,7 @@ export const songRouter = t.router({
       ctx.prisma.userSetting.findUnique({
         where: { userId: ctx.user.id },
         select: {
+          songActive: true,
           songHistoryPublic: true,
           songAutoPlayFromDefault: true,
           songMaxPerRequester: true,
@@ -53,6 +54,8 @@ export const songRouter = t.router({
       playback,
       queue,
       source,
+      /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
+      active: setting?.songActive ?? true,
       historyPublic: setting?.songHistoryPublic ?? false,
       autoPlay: setting?.songAutoPlayFromDefault ?? false,
       /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
@@ -228,6 +231,13 @@ export const songRouter = t.router({
       });
       return { ok: true as const };
     }),
+
+  /** 노래 신청 기능 켜기/끄기 (#237) — 끄면 시청자 신청이 막히고 채팅 명령어도 꺼졌다고 응답한다 */
+  setActive: streamerProcedure
+    .input(z.object({ active: z.boolean() }))
+    .mutation(({ ctx, input }) =>
+      userSettingService.updateUserSetting(ctx.prisma, ctx.user.id, { songActive: input.active }),
+    ),
 
   /** 신청 제한 (#237) — 1인당 곡 수(null=무제한)·대기열 상한(최대 100) */
   setRequestPolicy: streamerProcedure

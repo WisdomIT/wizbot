@@ -43,7 +43,7 @@ export async function requestSong(
 ) {
   const setting = await getSettings(prisma, userId);
   if (!setting.songActive && !options.bypassPolicy) {
-    throw new ServiceError('FORBIDDEN', '현재 노래 신청을 받지 않습니다.');
+    throw new ServiceError('FORBIDDEN', '노래 신청 기능이 꺼져 있습니다.');
   }
 
   const queue = await listQueue(prisma, userId);
