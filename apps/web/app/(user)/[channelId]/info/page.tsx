@@ -71,6 +71,13 @@ export default function Page() {
           </Button>
         </CardContent>
       </Card>
+
+      <div className="text-center text-xs text-muted-foreground *:underline *:underline-offset-4 *:hover:text-foreground">
+        <Link className="mr-4" href="/policy/terms">
+          서비스 이용약관
+        </Link>
+        <Link href="/policy/privacy">개인정보처리방침</Link>
+      </div>
     </div>
   );
 }

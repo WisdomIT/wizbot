@@ -33,6 +33,15 @@ export default function ManualLayout({ children }: { children: React.ReactNode }
               </div>
             );
           })}
+          <div className="flex flex-col gap-1 border-t pt-4">
+            <span className="text-xs font-medium text-muted-foreground">약관</span>
+            <Link href="/policy/terms" className="text-sm text-muted-foreground hover:text-foreground">
+              서비스 이용약관
+            </Link>
+            <Link href="/policy/privacy" className="text-sm text-muted-foreground hover:text-foreground">
+              개인정보처리방침
+            </Link>
+          </div>
         </nav>
       </aside>
       <div className="min-w-0 flex-1">{children}</div>
