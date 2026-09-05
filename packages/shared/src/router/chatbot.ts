@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import chatbot from '../chatbot';
 import { clampChatMessage } from '../chatbot/lib';
-import { getChzzkClientForUser, repeatService, signupService } from '../services';
+import { chatBufferService, getChzzkClientForUser, repeatService, signupService } from '../services';
 import { internalProcedure, publicProcedure, t } from '../trpc';
 
 export const chatbotRouter = t.router({
@@ -29,6 +29,33 @@ export const chatbotRouter = t.router({
       pendingNotice: notice.has(user.channelId),
     }));
   }),
+  /** 최근 채팅 버퍼 적재 (#248) — 워커가 모든 채팅을 배치로 릴레이하면 api 메모리에 3분치만 유지 */
+  ingestRecentChat: internalProcedure
+    .input(
+      z.object({
+        userId: z.number().int().positive(),
+        entries: z
+          .array(
+            z.object({
+              senderChannelId: z.string().max(64),
+              nickname: z.string().max(100),
+              role: z.enum(['STREAMER', 'MANAGER', 'VIEWER']),
+              content: z.string().max(500),
+              chatChannelId: z.string().max(64).nullable(),
+              messageTime: z.number(),
+            }),
+          )
+          .max(100),
+      }),
+    )
+    .mutation(({ input }) => {
+      const at = Date.now();
+      chatBufferService.pushRecentChat(
+        input.userId,
+        input.entries.map((entry) => ({ ...entry, at })),
+      );
+      return { ok: true as const };
+    }),
   /** 승인 안내 채팅 — 문구는 API 가 만든다 (PUBLIC_SITE_URL 은 워커에 없다) (#151) */
   sendApprovalNotice: internalProcedure
     .input(z.object({ userId: z.number() }))

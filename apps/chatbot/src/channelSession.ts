@@ -24,10 +24,25 @@ interface TrackedRepeat {
  * - 채팅 응답 계산·전송, 반복 메시지 전송 모두 API 가 수행한다 — 워커는 이벤트 중계만.
  * - 모든 핸들러는 예외를 삼키고 로깅한다 (#27: 미처리 예외로 프로세스가 죽지 않게).
  */
+/** 최근 채팅 릴레이(#248) 배치 항목 — api 의 3분 버퍼에 적재된다 */
+interface RecentChatItem {
+  senderChannelId: string;
+  nickname: string;
+  role: 'STREAMER' | 'MANAGER' | 'VIEWER';
+  content: string;
+  chatChannelId: string | null;
+  messageTime: number;
+}
+
+const RECENT_FLUSH_MS = 2000;
+const RECENT_FLUSH_MAX = 50;
+
 export class ChannelSession {
   private realtime: ChzzkRealtime | null = null;
   private repeats = new Map<number, TrackedRepeat>();
   private disposed = false;
+  private recentQueue: RecentChatItem[] = [];
+  private recentTimer: NodeJS.Timeout | null = null;
 
   constructor(
     readonly info: ChannelInfo,
@@ -52,7 +67,9 @@ export class ChannelSession {
     this.realtime = realtime;
 
     realtime.on('chat', (chat) => {
-      void this.handleChat(chat.senderChannelId, chat.nickname, getChatRole(chat), chat.content);
+      const role = getChatRole(chat);
+      this.queueRecentChat(chat, role);
+      void this.handleChat(chat.senderChannelId, chat.nickname, role, chat.content);
     });
     realtime.on('connected', () => console.log('🔌 연결됨:', this.label));
     realtime.on('subscribed', (data) => console.log('🔔 구독됨:', this.label, data.eventType));
@@ -64,6 +81,40 @@ export class ChannelSession {
     realtime.on('error', (error) => console.error('❌ 실시간 오류:', this.label, error));
 
     await realtime.start();
+  }
+
+  /**
+   * 모든 채팅을 api 의 최근 채팅 버퍼(3분)로 릴레이한다 (#248) — 명령어 여부와 무관.
+   * 채팅마다 HTTP 를 쏘지 않도록 2초/50건 배치로 묶고, 실패는 버린다(버퍼는 편의 기능).
+   */
+  private queueRecentChat(
+    chat: { senderChannelId: string; nickname: string; content: string; chatChannelId: string | null; messageTime: number },
+    role: 'STREAMER' | 'MANAGER' | 'VIEWER',
+  ): void {
+    if (this.disposed || chat.senderChannelId === this.botChannelId) return;
+    this.recentQueue.push({
+      senderChannelId: chat.senderChannelId,
+      nickname: chat.nickname,
+      role,
+      content: chat.content.slice(0, 500),
+      chatChannelId: chat.chatChannelId,
+      messageTime: chat.messageTime,
+    });
+    if (this.recentQueue.length >= RECENT_FLUSH_MAX) {
+      this.flushRecentChat();
+      return;
+    }
+    this.recentTimer ??= setTimeout(() => this.flushRecentChat(), RECENT_FLUSH_MS);
+  }
+
+  private flushRecentChat(): void {
+    if (this.recentTimer) {
+      clearTimeout(this.recentTimer);
+      this.recentTimer = null;
+    }
+    if (this.recentQueue.length === 0) return;
+    const entries = this.recentQueue.splice(0, this.recentQueue.length);
+    void trpc.chatbot.ingestRecentChat.mutate({ userId: this.info.userId, entries }).catch(() => {});
   }
 
   private async handleChat(
@@ -162,6 +213,11 @@ export class ChannelSession {
   /** 소켓·타이머 정리 — DB 에서 사라진 채널은 매니저가 호출한다 (#29) */
   dispose(): void {
     this.disposed = true;
+    if (this.recentTimer) {
+      clearTimeout(this.recentTimer);
+      this.recentTimer = null;
+    }
+    this.recentQueue = [];
     for (const tracked of this.repeats.values()) clearInterval(tracked.timer);
     this.repeats.clear();
     this.realtime?.close();
