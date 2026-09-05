@@ -452,7 +452,7 @@ model UserSetting {
   songShortcutStop      String? @db.VarChar(64)
   songShortcutNext      String? @db.VarChar(64)
   chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
-  songOneRequestPerUser Boolean @db.TinyInt @default(false) // 1인당 대기열 1곡 제한
+  songMaxPerRequester   Int?    @default(1)                 // 1인당 신청 곡 수 (#237) — null 은 무제한, 채널 ID 기준
   songAutoPlayFromDefault Boolean @db.TinyInt @default(false) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생
   songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
   songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
