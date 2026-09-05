@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BookOpen, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -118,6 +118,12 @@ const data = {
       url: '/streamer/inquiry',
       icon: <MessageCircleQuestion />,
     },
+    {
+      name: '이용 안내',
+      url: '/manual',
+      icon: <BookOpen />,
+      popup: true,
+    },
   ],
 };
 
@@ -154,10 +160,14 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
     //  대행 콘솔(#71)에는 공지 미러가 없다 — 공개 페이지를 새 창으로
     //  대행 콘솔(#71): 공지는 공개 페이지 새 창, 문의는 어드민 자신의 화면(/admin/inquiries)이 있어 뺀다
     news: nested
-      ? [{ ...data.news[0], url: '/notice', popup: true, dot: hasUnread }]
+      ? [
+          { ...data.news[0], url: '/notice', popup: true, dot: hasUnread },
+          data.news[2],
+        ]
       : [
           { ...data.news[0], dot: hasUnread },
           { ...data.news[1], dot: hasInquiryUnread },
+          data.news[2],
         ],
   };
 
