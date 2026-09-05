@@ -66,7 +66,7 @@ function textOf(content: unknown): string {
 const CHAT_SUFFIX = `
 
 ## Chat mode (this conversation happens in live Chzzk chat)
-Replies are posted as chat messages with a hard 100-character limit each, at most 3 messages per turn. Be extremely brief — one or two short sentences, plain text only: no markdown, no tables, no headings. For anything long, point to the console menu or a /manual page path instead of explaining in chat. Confirmation cards cannot be clicked here; when one appears the system asks the user to reply 승인 or 거절 — do not ask again yourself.`;
+Replies are posted as chat messages with a hard 100-character limit each, at most 3 messages per turn. Be extremely brief — one or two short sentences, plain text only: no markdown, no tables, no headings. For anything long, point to the console menu or a /manual page path instead of explaining in chat. Confirmation cards cannot be clicked here; the system announces the card and asks the user to reply 승인 or 거절. When you call a tool that shows a confirmation card, write no text at all in that turn — any text you write arrives after the announcement and reads out of order.`;
 
 async function ensureSession(userId: number): Promise<ChatSession> {
   const existing = sessions.get(userId);
@@ -148,9 +148,13 @@ async function processTurn(userId: number, session: ChatSession, text: string): 
         session.pendingActionId = action.id;
         const card = outcome.pending.card satisfies PendingCard;
         await sendChat(userId, clampChatMessage(`⚠ ${card.title} — 진행하려면 "승인", 취소는 "거절"로 답해주세요.`));
+      } else if (buffer.trim()) {
+        await sendChatParts(userId, buffer);
+      } else {
+        await sendChat(userId, '처리했습니다.');
       }
-      if (buffer.trim()) await sendChatParts(userId, buffer);
-      else if (!outcome.pending) await sendChat(userId, '처리했습니다.');
+      //  카드가 뜬 턴의 모델 텍스트("카드 떴어요" 류)는 보내지 않는다 — ⚠ 안내가 그 역할이고,
+      //  전송 지연 탓에 스트리머가 "승인"을 친 뒤에 도착해 어긋나 보인다 (실측 피드백)
       await warnIfNearLimit(userId, session);
     } finally {
       clearTimeout(timeout);
@@ -270,8 +274,9 @@ async function resolveFromChat(userId: number, session: ChatSession, approve: bo
         });
         session.pendingActionId = next.id;
         await sendChat(userId, clampChatMessage(`⚠ ${outcome.pending.card.title} — "승인" 또는 "거절"로 답해주세요.`));
+      } else if (buffer.trim()) {
+        await sendChatParts(userId, buffer);
       }
-      if (buffer.trim()) await sendChatParts(userId, buffer);
       await warnIfNearLimit(userId, session);
     } finally {
       clearTimeout(timeout);
