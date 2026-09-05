@@ -44,12 +44,15 @@ function createPrisma() {
   };
   const siteSetting = {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn().mockResolvedValue(null),
     upsert: vi.fn().mockResolvedValue({}),
   };
   const user = { upsert: vi.fn().mockResolvedValue({ id: 42, ...IDENTITY }) };
   const userSetting = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), create: vi.fn() };
   const chatbotFunctionCommand = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), createMany: vi.fn() };
   const chatbotEchoCommand = { createMany: vi.fn() };
+  //  기본 즐겨찾기(#246) — 이미 있는 것으로 두어 승인 테스트가 유튜브 경로를 타지 않게 한다
+  const songFavorite = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), create: vi.fn() };
   const prisma = {
     signupApplication,
     whitelist,
@@ -58,6 +61,7 @@ function createPrisma() {
     userSetting,
     chatbotFunctionCommand,
     chatbotEchoCommand,
+    songFavorite,
     // 트랜잭션은 같은 mock 을 그대로 넘긴다
     $transaction: vi.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };

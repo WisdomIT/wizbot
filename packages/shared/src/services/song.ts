@@ -43,7 +43,7 @@ export async function requestSong(
 ) {
   const setting = await getSettings(prisma, userId);
   if (!setting.songActive && !options.bypassPolicy) {
-    throw new ServiceError('FORBIDDEN', '현재 노래 신청을 받지 않습니다.');
+    throw new ServiceError('FORBIDDEN', '노래 신청 기능이 꺼져 있습니다.');
   }
 
   const queue = await listQueue(prisma, userId);
@@ -55,10 +55,16 @@ export async function requestSong(
     );
   }
 
-  if (!options.bypassPolicy && setting.songOneRequestPerUser && requester.channelId) {
-    const mine = queue.find((song) => song.requesterChannelId === requester.channelId);
-    if (mine) {
-      throw new ServiceError('CONFLICT', `이미 신청한 곡이 있습니다: ${mine.title}`);
+  //  1인당 신청 곡 수 (#237) — null 은 무제한. 닉네임은 바뀌므로 채널 ID 로 판별한다
+  if (!options.bypassPolicy && setting.songMaxPerRequester !== null && requester.channelId) {
+    const mine = queue.filter((song) => song.requesterChannelId === requester.channelId);
+    if (mine.length >= setting.songMaxPerRequester) {
+      throw new ServiceError(
+        'CONFLICT',
+        setting.songMaxPerRequester === 1
+          ? `이미 신청한 곡이 있습니다: ${mine[0].title}`
+          : `1인당 ${setting.songMaxPerRequester}곡까지 신청할 수 있습니다.`,
+      );
     }
   }
 

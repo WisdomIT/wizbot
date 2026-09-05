@@ -147,6 +147,61 @@ export function ApplicationsView() {
           </TableBody>
         </Table>
       </div>
+      <DefaultPlaylistSetting />
+    </div>
+  );
+}
+
+/**
+ * 새 스트리머에게 만들어주는 대표 즐겨찾기의 출처 재생목록 (#246).
+ * 승인·첫 로그인 프로비저닝에서 쓰인다.
+ */
+function DefaultPlaylistSetting() {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const { data } = useQuery(trpc.admin.getDefaultPlaylist.queryOptions());
+  const save = useMutation(trpc.admin.setDefaultPlaylist.mutationOptions());
+  //  null 이면 서버 값을 따른다 — 편집 시작 후에만 draft 를 쓴다 (#200 패턴)
+  const [draft, setDraft] = useState<string | null>(null);
+  const url = draft ?? data?.url ?? '';
+
+  function handleSave() {
+    toast.promise(save.mutateAsync({ url }), {
+      loading: '저장 중...',
+      success: () => {
+        setDraft(null);
+        void queryClient.invalidateQueries(trpc.admin.getDefaultPlaylist.queryFilter());
+        return url ? '기본 플레이리스트를 저장했습니다.' : '기본 플레이리스트를 비웠습니다.';
+      },
+      error: (error) => `저장에 실패했습니다. ${error instanceof Error ? error.message : error}`,
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-4">
+      <Label htmlFor="default-playlist">기본 플레이리스트</Label>
+      <p className="text-xs text-muted-foreground">
+        승인된 새 채널에 만들어주는 「위즈 추천 플레이리스트」 대표 즐겨찾기의 유튜브 재생목록
+        주소입니다. 비우면 인기 곡 1곡으로 대체합니다.
+      </p>
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleSave();
+        }}
+      >
+        <Input
+          id="default-playlist"
+          value={url}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="https://www.youtube.com/playlist?list=..."
+          className="max-w-xl"
+        />
+        <Button type="submit" disabled={save.isPending || draft === null}>
+          저장
+        </Button>
+      </form>
     </div>
   );
 }

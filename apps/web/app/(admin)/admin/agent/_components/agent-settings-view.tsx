@@ -357,8 +357,8 @@ function LimitsCard() {
       <CardHeader>
         <CardTitle>사용 한도</CardTitle>
         <CardDescription>
-          기준(토큰/채팅 수) × 범위(스트리머당/전체) × 주기(시간/일/주/월) 규칙을 여러 개 둘 수 있고, 전부 함께 적용됩니다 —
-          하나라도 초과하면 차단됩니다. 규칙이 없으면 무제한입니다.
+          무엇을(토큰·채팅 수) · 누구에게(스트리머당·전체) · 어느 기간(시간~월) 기준으로 제한할지 정하는 규칙을
+          여러 개 만들 수 있습니다. 규칙은 모두 함께 적용되어 하나라도 넘으면 차단되고, 규칙이 없으면 무제한입니다.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">

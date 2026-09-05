@@ -452,8 +452,8 @@ model UserSetting {
   songShortcutStop      String? @db.VarChar(64)
   songShortcutNext      String? @db.VarChar(64)
   chatbotDefaultRepeat  Int     @db.Int @default(300)       // 챗봇 기본 반복 시간(초)
-  songOneRequestPerUser Boolean @db.TinyInt @default(false) // 1인당 대기열 1곡 제한
-  songAutoPlayFromDefault Boolean @db.TinyInt @default(false) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생
+  songMaxPerRequester   Int?    @default(1)                 // 1인당 신청 곡 수 (#237) — null 은 무제한, 채널 ID 기준
+  songAutoPlayFromDefault Boolean @db.TinyInt @default(true) // 다음 곡 없으면 대표 즐겨찾기에서 랜덤 재생 (#246 기본 켬)
   songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
   songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
   songMaxQueueLength    Int     @db.Int @default(30)        // 대기열 최대 곡 수
@@ -462,8 +462,8 @@ model UserSetting {
   songSourceToken       String? @db.VarChar(64)
   /// 읽기 전용 토큰 (현재 재생 페이지가 자막을 함께 표시하므로 미사용 — 별도 오버레이가 필요해지면 사용)
   songOverlayToken      String? @db.VarChar(64)
-  songOverlayMode       SongOverlayMode @default(ALWAYS) // 자막 표시 방식
-  songOverlayDurationSeconds Int @db.Int @default(10)    // TIMED 일 때 표시 시간(초)
+  songOverlayMode       SongOverlayMode @default(TIMED)  // 자막 표시 방식 (#246 기본 잠시 표시)
+  songOverlayDurationSeconds Int @db.Int @default(15)    // TIMED 일 때 표시 시간(초)
   
   user              User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

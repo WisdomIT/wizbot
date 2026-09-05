@@ -106,7 +106,7 @@ export async function getPublicPlaylist(prisma: PrismaClient, channelId: string)
     channelName: user.channelName,
     songActive: setting?.songActive ?? false,
     historyPublic: setting?.songHistoryPublic ?? false,
-    oneRequestPerUser: setting?.songOneRequestPerUser ?? false,
+    maxPerRequester: setting === null ? null : setting.songMaxPerRequester,
     maxDurationSeconds: setting?.songMaxDurationSeconds ?? 0,
     maxQueueLength: setting?.songMaxQueueLength ?? 0,
     playback:

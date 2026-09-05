@@ -96,6 +96,8 @@ export function PlayerView() {
   const regenerate = useMutation(trpc.song.regenerateToken.mutationOptions());
   const setOverlaySettings = useMutation(trpc.song.setOverlaySettings.mutationOptions());
   const setHistoryPublic = useMutation(trpc.song.setHistoryPublic.mutationOptions());
+  const setActive = useMutation(trpc.song.setActive.mutationOptions());
+  const setRequestPolicy = useMutation(trpc.song.setRequestPolicy.mutationOptions());
   const setAutoPlay = useMutation(trpc.songFavorite.setAutoPlay.mutationOptions());
   const addToQueue = useMutation(trpc.song.addToQueue.mutationOptions());
   const reorderQueue = useMutation(trpc.song.reorderQueue.mutationOptions());
@@ -267,7 +269,9 @@ export function PlayerView() {
               <SettingsDialog
                 isApp={shell.isApp}
                 settings={{
+                  active: data.active,
                   sourceType: source.sourceType,
+                  requestPolicy: data.requestPolicy,
                   sourceToken: source.sourceToken,
                   overlay: source.overlay,
                   autoPlay,
@@ -275,8 +279,17 @@ export function PlayerView() {
                   keyboardShortcut: data.keyboardShortcut,
                   shortcuts: data.shortcuts,
                 }}
+                onChangeActive={(active) =>
+                  run(
+                    setActive.mutateAsync({ active }),
+                    active ? '노래 신청 기능을 켰습니다.' : '노래 신청 기능을 껐습니다.',
+                  )
+                }
                 onChangeSourceType={(sourceType) =>
                   run(setSourceType.mutateAsync({ sourceType }), '송출 소스를 변경했습니다.')
+                }
+                onChangeRequestPolicy={(policy) =>
+                  run(setRequestPolicy.mutateAsync(policy), '신청 제한을 저장했습니다.')
                 }
                 onRegenerate={() =>
                   run(

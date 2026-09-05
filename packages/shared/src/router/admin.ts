@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
 import { sendMail } from '../lib/nodemailer';
-import { adminUsersService, ServiceError, signupService, whitelistService } from '../services';
+import { adminUsersService, provisionService, ServiceError, signupService, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
 
 /** 패스코드 유효시간 — 넘으면 소모 전이라도 무효 (#20) */
@@ -124,6 +124,14 @@ export const adminRouter = t.router({
   setSignupSettings: adminProcedure
     .input(z.object({ autoApprove: z.boolean().optional(), askReason: z.boolean().optional() }))
     .mutation(({ ctx, input }) => signupService.setSettings(ctx.prisma, input)),
+
+  /* ── 기본 즐겨찾기 재생목록 (#246) ── */
+  getDefaultPlaylist: adminProcedure.query(({ ctx }) =>
+    provisionService.getDefaultPlaylistUrl(ctx.prisma),
+  ),
+  setDefaultPlaylist: adminProcedure
+    .input(z.object({ url: z.string().max(300) }))
+    .mutation(({ ctx, input }) => provisionService.setDefaultPlaylistUrl(ctx.prisma, input.url)),
 
   /* ── 스트리머 관리 (#10 PR B) ── */
   listStreamers: adminProcedure.query(({ ctx }) => adminUsersService.listStreamers(ctx.prisma)),

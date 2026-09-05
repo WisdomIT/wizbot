@@ -76,7 +76,7 @@ export function PlaylistView({ channelId }: { channelId: string }) {
                   최대 {data.maxQueueLength}곡
                   {data.maxDurationSeconds > 0 &&
                     ` · ${formatTime(data.maxDurationSeconds)} 이하의 영상만 신청 가능`}
-                  {data.oneRequestPerUser && ' · 1인 1곡'}
+                  {data.maxPerRequester !== null && ` · 1인 ${data.maxPerRequester}곡`}
                 </CardDescription>
               )}
             </CardHeader>

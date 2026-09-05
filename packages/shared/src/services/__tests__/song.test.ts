@@ -28,7 +28,7 @@ const VIDEO = {
 const DEFAULT_SETTING = {
   userId: USER_ID,
   songActive: true,
-  songOneRequestPerUser: false,
+  songMaxPerRequester: null,
   songMaxDurationSeconds: 600,
   songMaxQueueLength: 30,
 };
@@ -109,14 +109,35 @@ describe('requestSong', () => {
     });
   });
 
-  it('1인 1곡 옵션은 채널ID 로 판별한다 (닉네임 변경과 무관)', async () => {
+  it('1인당 곡 수는 채널ID 로 판별한다 (닉네임 변경과 무관, #237)', async () => {
     const { prisma } = createPrisma(
       [queueItem({ requesterChannelId: 'my-channel', requester: '예전닉네임' })],
-      { songOneRequestPerUser: true },
+      { songMaxPerRequester: 1 },
     );
     await expect(requestSong(prisma, USER_ID, 'x', REQUESTER)).rejects.toMatchObject({
       code: 'CONFLICT',
     });
+  });
+
+  it('1인당 곡 수만큼은 허용하고 넘으면 거부 (#237)', async () => {
+    const inQueue = [
+      queueItem({ id: 1, requesterChannelId: 'my-channel' }),
+      queueItem({ id: 2, requesterChannelId: 'my-channel', youtubeId: 'other-1' }),
+    ];
+    const allow = createPrisma([inQueue[0]], { songMaxPerRequester: 2 });
+    await expect(requestSong(allow.prisma, USER_ID, 'x', REQUESTER)).resolves.toBeTruthy();
+    const block = createPrisma(inQueue, { songMaxPerRequester: 2 });
+    await expect(requestSong(block.prisma, USER_ID, 'x', REQUESTER)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+  });
+
+  it('무제한(null)이면 몇 곡이든 신청할 수 있다 (#237)', async () => {
+    const { prisma } = createPrisma(
+      [queueItem({ requesterChannelId: 'my-channel' }), queueItem({ id: 2, requesterChannelId: 'my-channel', youtubeId: 'other-1' })],
+      { songMaxPerRequester: null },
+    );
+    await expect(requestSong(prisma, USER_ID, 'x', REQUESTER)).resolves.toBeTruthy();
   });
 
   it('길이 제한을 넘으면 거부', async () => {
@@ -145,7 +166,7 @@ describe('콘솔 큐 편집 (#5 2-b)', () => {
       songActive: false,
       songMaxQueueLength: 1,
       songMaxDurationSeconds: 10,
-      songOneRequestPerUser: true,
+      songMaxPerRequester: 1,
     });
 
     await expect(

@@ -84,7 +84,7 @@ export const functionCommand = {
       if (await commandService.findFunctionCommandByName(ctx.prisma, userId, name)) {
         return {
           ok: true,
-          message: 'function 명령어는 삭제할 수 없습니다. 사이트를 통해 삭제해주세요.',
+          message: '기능 명령어는 채팅으로 삭제할 수 없습니다. 사이트에서 삭제해주세요.',
         };
       }
 
@@ -117,7 +117,7 @@ export const functionCommand = {
       if (await commandService.findFunctionCommandByName(ctx.prisma, userId, name)) {
         return {
           ok: true,
-          message: 'function 명령어는 수정할 수 없습니다. 사이트를 통해 수정해주세요.',
+          message: '기능 명령어는 채팅으로 수정할 수 없습니다. 사이트에서 수정해주세요.',
         };
       }
 
@@ -169,7 +169,7 @@ export const functionCommand = {
 
       return {
         ok: true,
-        message: `반복 출력 메시지가 생성되었습니다. 반복:${setting.chatbotDefaultRepeat}초 id: ${repeat.id}`,
+        message: `반복 메시지를 추가했습니다. (${setting.chatbotDefaultRepeat}초마다 · 번호 ${repeat.id})`,
       };
     }),
 
@@ -181,14 +181,14 @@ export const functionCommand = {
       if (!target) {
         return {
           ok: true,
-          message: `삭제할 반복 메시지의 id를 입력하거나, all 옵션을 입력해주세요. 예) !${query.command} <id> or all`,
+          message: `삭제할 반복 메시지의 번호를 입력해주세요. 전부 지우려면 all. 예) !${query.command} 3`,
         };
       }
 
       if (target === 'all') {
         await repeatService.deleteAllRepeats(ctx.prisma, userId);
         await recordChatAudit(ctx.prisma, data, 'chat.repeatDelete', { target: '전체' });
-        return { ok: true, message: '유저의 모든 반복 메시지가 삭제되었습니다.' };
+        return { ok: true, message: '반복 메시지를 모두 삭제했습니다.' };
       }
 
       const repeat = await repeatService.deleteRepeat(ctx.prisma, userId, Number(target));

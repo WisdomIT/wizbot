@@ -58,7 +58,7 @@ export default function NewRepeat({ interval: intervalInitial }: { interval: num
       <DialogContent>
         <DialogHeader>
           <DialogTitle>새 반복 추가하기</DialogTitle>
-          <DialogDescription>새 반복 메시지를 추가합니다.</DialogDescription>
+          <DialogDescription>봇이 정해진 주기마다 채팅에 메시지를 보냅니다.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">

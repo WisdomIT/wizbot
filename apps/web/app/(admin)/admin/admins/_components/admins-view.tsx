@@ -134,8 +134,8 @@ function AddAdminDialog({ onDone }: { onDone: () => void }) {
         <DialogHeader>
           <DialogTitle>관리자 추가</DialogTitle>
           <DialogDescription>
-            비밀번호가 없는 매직 링크 방식입니다 — 오타가 곧 권한 오발급이므로 이메일을 두 번 입력해
-            확인합니다.
+            비밀번호 없이 메일로 받은 링크로 로그인합니다. 주소를 잘못 적으면 그 주소의 주인이
+            관리자 권한을 갖게 되므로, 이메일을 두 번 입력해 확인합니다.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>

@@ -4,6 +4,7 @@ export * as adminUsersService from './adminUsers';
 export * as agentService from './agent';
 export { AGENT_PROVIDER_CAPS } from './agent';
 export * as cafeService from './cafe';
+export * as chatBufferService from './chatBuffer';
 export * from './chzzkClient';
 export * as commandService from './command';
 export * from './errors';

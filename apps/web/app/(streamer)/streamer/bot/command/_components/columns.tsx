@@ -59,7 +59,9 @@ export function createColumns({
     }),
     col.accessor('type', {
       header: ({ column }) => <SortableHeader column={column}>타입</SortableHeader>,
-      cell: ({ getValue }) => <span className="text-sm">{getValue()}</span>,
+      cell: ({ getValue }) => (
+        <span className="text-sm">{getValue() === 'echo' ? '단순 응답' : '기능'}</span>
+      ),
     }),
     col.accessor('usageTokens', {
       header: '사용법',
