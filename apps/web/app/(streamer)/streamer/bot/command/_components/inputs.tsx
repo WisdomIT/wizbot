@@ -75,7 +75,7 @@ export function InputsFunction({
     <>
       <div className="grid grid-cols-4 items-center gap-4">
         <Label htmlFor="type2" className="text-right">
-          타입2
+          기능 분류
         </Label>
         <Select
           value={functionArgs.type}
@@ -88,7 +88,7 @@ export function InputsFunction({
           }}
         >
           <SelectTrigger id="type2" className="col-span-3">
-            <SelectValue placeholder="Function 타입을 선택하세요" />
+            <SelectValue placeholder="분류를 선택하세요" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="API_QUERY">치지직 조회</SelectItem>

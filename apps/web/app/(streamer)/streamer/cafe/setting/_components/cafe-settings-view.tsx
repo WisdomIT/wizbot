@@ -115,7 +115,7 @@ export function CafeSettingsView() {
           <Card>
             <CardHeader>
               <CardTitle>1. 카페 연결</CardTitle>
-              <CardDescription>카페 주소를 입력하면 카페 정보를 확인합니다.</CardDescription>
+              <CardDescription>카페 주소를 입력하면 어떤 카페인지 확인하고 연결합니다.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex gap-2">

@@ -67,15 +67,15 @@ export default function UpdateCommand({
     <Dialog open={!!repeat} onOpenChange={handleClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>명령어 수정하기</DialogTitle>
-          <DialogDescription>{repeat?.id}번 반복을 수정합니다.</DialogDescription>
+          <DialogTitle>반복 수정하기</DialogTitle>
+          <DialogDescription>{repeat?.id}번 반복 메시지를 수정합니다.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           {data ? (
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="response" className="text-right">
-                  메시지 (초)
+                  메시지
                 </Label>
                 <Input
                   id="response"
