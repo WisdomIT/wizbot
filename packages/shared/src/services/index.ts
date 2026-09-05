@@ -12,6 +12,7 @@ export * as inquiryService from './inquiry';
 export * as noticeService from './notice';
 export * as notifyService from './notify';
 export * as playbackService from './playback';
+export * as policyService from './policy';
 export * as provisionService from './provision';
 export * as repeatService from './repeat';
 export * as shortcutService from './shortcut';

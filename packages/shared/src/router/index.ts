@@ -8,6 +8,7 @@ import { commandRouter } from './command';
 import { inquiryRouter } from './inquiry';
 import { noticeRouter } from './notice';
 import { notifyRouter } from './notify';
+import { policyRouter } from './policy';
 import { shortcutRouter } from './shortcut';
 import { signupRouter } from './signup';
 import { songRouter } from './song';
@@ -20,6 +21,7 @@ export const appRouter = t.router({
   notice: noticeRouter,
   inquiry: inquiryRouter,
   notify: notifyRouter,
+  policy: policyRouter,
   admin: adminRouter,
   cafe: cafeRouter,
   chatbot: chatbotRouter,
