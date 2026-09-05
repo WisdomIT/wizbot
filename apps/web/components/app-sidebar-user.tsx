@@ -134,7 +134,8 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
                 title: channel.title,
                 description: channel.description,
                 avatar: channel.avatar,
-                href: `/${channel.title}`,
+                //  경로 식별자는 표시용 title 이 아니라 불변인 channelId (#72)
+                href: `/${channel.channelId}`,
               }}
             />
           ) : (
