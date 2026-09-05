@@ -117,10 +117,10 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
         </CardContent>
       </Card>
       <div className="text-muted-foreground *:[a]:hover:text-primary text-center text-xs text-balance *:[a]:underline *:[a]:underline-offset-4">
-        <Link className="mr-4" href="#">
+        <Link className="mr-4" href="/policy/terms">
           서비스 이용약관
         </Link>
-        <Link href="#">개인정보 처리방침</Link>
+        <Link href="/policy/privacy">개인정보 처리방침</Link>
       </div>
     </div>
   );
