@@ -225,6 +225,8 @@ async function resolveFromChat(userId: number, session: ChatSession, approve: bo
       return;
     }
     await agentService.claimPendingAction(prisma, actionId, approve ? 'APPROVED' : 'DECLINED');
+    //  웹은 카드 UI 가 상태를 보여주지만 채팅은 아무것도 안 보인다 — 접수 즉시 피드백 (실측 피드백)
+    await sendChat(userId, approve ? '카드를 승인했습니다 — 실행할게요.' : '카드를 거절했습니다.');
 
     let content: string;
     let isError = false;
