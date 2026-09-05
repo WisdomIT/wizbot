@@ -30,6 +30,8 @@ import { Switch } from '@/components/ui/switch';
 import { ShortcutInput } from './shortcut-input';
 
 export interface SongSettings {
+  /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
+  active: boolean;
   sourceType: 'NONE' | 'OBS' | 'ELECTRON';
   /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
   requestPolicy: { maxPerRequester: number | null; maxQueueLength: number };
@@ -51,6 +53,7 @@ const SHORTCUT_ACTIONS = [
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
   settings,
+  onChangeActive,
   onChangeSourceType,
   onChangeRequestPolicy,
   onRegenerate,
@@ -64,6 +67,7 @@ export function SettingsDialog({
   isApp = false,
 }: {
   settings: SongSettings;
+  onChangeActive: (active: boolean) => void;
   onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
   onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
   onRegenerate: () => void;
@@ -97,6 +101,20 @@ export function SettingsDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col">
+              <Label htmlFor="setting-active">노래 신청 기능</Label>
+              <span className="text-xs text-muted-foreground">
+                끄면 신청을 받지 않고, 노래 관련 채팅 명령어에도 꺼져 있다고 응답합니다.
+              </span>
+            </div>
+            <Switch
+              id="setting-active"
+              checked={settings.active}
+              onCheckedChange={onChangeActive}
+            />
+          </div>
+          <Separator />
           <SourceSection
             settings={settings}
             onChangeSourceType={onChangeSourceType}

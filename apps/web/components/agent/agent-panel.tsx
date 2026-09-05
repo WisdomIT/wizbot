@@ -65,7 +65,7 @@ const TOOL_LABEL: Record<string, string> = {
   control_playback: '재생 제어',
   set_volume: '볼륨 변경',
   clear_queue: '대기열 비우기',
-  set_song_request_policy: '신청 제한 변경',
+  set_song_request_policy: '노래 신청 설정 변경',
   enqueue_favorite: '즐겨찾기 재생',
   import_playlist: '재생목록 가져오기',
   create_inquiry: '문의 작성',

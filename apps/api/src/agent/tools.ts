@@ -260,10 +260,11 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'set_song_request_policy',
     description:
-      'Changes viewer song-request limits. maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). Omitted fields keep their current value (see get_user_setting).',
+      'Changes viewer song-request settings. enabled: turn the whole song-request feature on/off — when off, viewer requests are rejected and song chat commands reply that the feature is disabled. maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). Omitted fields keep their current value (see get_user_setting).',
     inputSchema: {
       type: 'object',
       properties: {
+        enabled: { type: 'boolean' },
         maxPerRequester: { type: 'number' },
         unlimitedPerRequester: { type: 'boolean' },
         maxQueueLength: { type: 'number' },
@@ -560,6 +561,10 @@ async function execute(
       return ok(toResult(await songService.clearQueue(prisma, userId, AGENT_ACTOR)));
     case 'set_song_request_policy': {
       const current = await userSettingService.getUserSetting(prisma, userId);
+      if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+        throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      }
+      const enabled = input.enabled === undefined ? current.songActive : input.enabled;
       const maxPerRequester =
         input.unlimitedPerRequester === true
           ? null
@@ -571,10 +576,11 @@ async function execute(
           ? requireIntInRange(input.maxQueueLength, 'maxQueueLength', 1, 100)
           : current.songMaxQueueLength;
       await userSettingService.updateUserSetting(prisma, userId, {
+        songActive: enabled,
         songMaxPerRequester: maxPerRequester,
         songMaxQueueLength: maxQueueLength,
       });
-      return ok(toResult({ maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength }));
+      return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength }));
     }
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(
