@@ -1,5 +1,6 @@
 import { publicProcedure, t } from '../trpc';
 import { adminRouter } from './admin';
+import { agentRouter } from './agent';
 import { auditRouter } from './audit';
 import { cafeRouter } from './cafe';
 import { chatbotRouter } from './chatbot';
@@ -15,6 +16,7 @@ import { userRouter } from './user';
 
 export const appRouter = t.router({
   audit: auditRouter,
+  agent: agentRouter,
   notice: noticeRouter,
   inquiry: inquiryRouter,
   notify: notifyRouter,
@@ -34,3 +36,6 @@ export const appRouter = t.router({
 });
 
 export type AppRouter = typeof appRouter;
+
+//  에이전트(#35)가 tool 로 문의를 만들 때 같은 운영자 알림을 쓴다
+export { notifyAdminsOfInquiry } from './inquiry';

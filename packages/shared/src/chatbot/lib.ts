@@ -80,3 +80,37 @@ export function formatDuration(ms: number): string {
     return `${hoursString}시간 ${minutesString}분 ${secondsString}초`;
   }
 }
+
+/**
+ * 에이전트 응답을 채팅용으로 (#238) — 마크다운 표기를 벗기고 100자 단위로 나눈다.
+ * 채팅은 흐르는 매체라 길게 쪼개봐야 도배다: 최대 maxParts 개, 넘치면 말줄임.
+ */
+export function splitForChat(text: string, maxParts = 3): string[] {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 $2')
+    .replace(/[*_`#>]/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) return [];
+
+  const parts: string[] = [];
+  let rest = plain;
+  while (rest && parts.length < maxParts) {
+    if (rest.length <= CHAT_MAX_LENGTH) {
+      parts.push(rest);
+      break;
+    }
+    //  한도 안의 마지막 공백에서 끊는다 — 단어 중간이 잘리지 않게
+    const window = rest.slice(0, CHAT_MAX_LENGTH);
+    const cut = window.lastIndexOf(' ') > CHAT_MAX_LENGTH * 0.6 ? window.lastIndexOf(' ') : CHAT_MAX_LENGTH;
+    parts.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest && parts.length === maxParts) {
+    const last = parts[maxParts - 1];
+    parts[maxParts - 1] = `${last.slice(0, CHAT_MAX_LENGTH - 1)}…`.slice(0, CHAT_MAX_LENGTH);
+  }
+  return parts;
+}

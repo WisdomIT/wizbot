@@ -5,7 +5,7 @@ import { inquiryService, notifyService } from '../services';
 import { adminProcedure, streamerProcedure, t } from '../trpc';
 
 /** 새 문의·추가 문의 알림 (#206) — 실패해도 문의 자체는 성공 */
-function notifyAdminsOfInquiry(
+export function notifyAdminsOfInquiry(
   prisma: PrismaClient,
   inquiry: { id: number; title: string },
   channel: { channelName: string; channelImageUrl: string | null } | null,

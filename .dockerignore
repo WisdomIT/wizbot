@@ -15,3 +15,6 @@
 *.md
 !README.md
 docs
+# 이용 안내 문서(#35 3/3)는 이미지에 실린다 — web 이 렌더하고 api 에이전트가 읽는다
+!docs/manual
+!docs/manual/**

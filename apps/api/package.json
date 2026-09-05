@@ -15,6 +15,8 @@
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
+    "@google/genai": "^2.20.0",
     "@prisma/client": "^6.19.3",
     "@trpc/client": "^11.18.0",
     "@trpc/server": "^11.18.0",
@@ -22,6 +24,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "^6.2.10",
+    "openai": "^7.8.0",
     "prisma": "^6.19.3",
     "zod": "^3.24.2"
   },

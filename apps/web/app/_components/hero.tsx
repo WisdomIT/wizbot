@@ -33,6 +33,9 @@ export default function Hero() {
             <Button asChild variant="secondary" className="px-4 font-bold">
               <Link href="/login">스트리머 로그인</Link>
             </Button>
+            <Button asChild variant="outline" className="px-4 font-bold">
+              <Link href="/manual">이용 안내</Link>
+            </Button>
           </div>
         </div>
       </div>

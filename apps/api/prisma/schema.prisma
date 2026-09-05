@@ -122,6 +122,157 @@ model NoticeRead {
   @@id([noticeId, userId])
 }
 
+/// 설정 도우미 에이전트 전역 설정 (#35) — 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
+/// 프로바이더(키·모델)는 AgentProvider 목록, 한도는 AgentLimit 규칙으로 분리됐다.
+model AgentSettings {
+  id               Int      @id @default(1)
+  enabled          Boolean  @default(false)
+  /// 프로바이더의 네이티브 웹 검색(서버 측) 사용 — 지원하는 프로바이더에서만 실린다
+  webSearchEnabled Boolean  @default(false)
+  /// 스트리머가 자기 대화를 목록에서 지울 수 있는지 — 기본 꺼짐, 운영자의 결정 (pelican #8)
+  allowConversationDelete Boolean @default(false)
+  updatedAt        DateTime @updatedAt @db.DateTime(6)
+}
+
+/// LLM 프로바이더 — 순서 있는 목록 (pelican-concierge #89 방식). 1순위가 답을 멈추면
+/// (크레딧 소진·쿼터·장애) 다음 항목이 이어받는다. 쉬는(cooldown) 상태는 메모리에만 둔다 —
+/// 장애 조치는 운영자의 설정을 바꾸는 일이 아니다.
+model AgentProvider {
+  id        Int               @id @default(autoincrement())
+  /// 낮을수록 먼저 시도
+  priority  Int
+  /// 표시명 — 사용량 내역에 이름으로 남는다 (항목을 지워도 내역이 읽히도록 id 가 아니라 이름)
+  name      String            @db.VarChar(60)
+  kind      AgentProviderKind
+  /// 로컬 OpenAI 호환 엔드포인트는 비울 수 있다
+  apiKey    String            @default("") @db.VarChar(255)
+  /// OPENAI_COMPAT 전용 — 엔드포인트 주소
+  baseUrl   String?           @db.VarChar(255)
+  model     String            @db.VarChar(100)
+  enabled   Boolean           @default(true)
+  createdAt DateTime          @default(now()) @db.DateTime(6)
+  updatedAt DateTime          @updatedAt @db.DateTime(6)
+}
+
+enum AgentProviderKind {
+  ANTHROPIC
+  OPENAI
+  GEMINI
+  /// 로컬 LLM 등 OpenAI 호환 엔드포인트
+  OPENAI_COMPAT
+}
+
+/// 사용 한도 규칙 (pelican-concierge #4 의 3축) — 기준 × 범위 × 주기. 여러 규칙은 전부(AND) 적용되고,
+/// 하나라도 초과하면 차단된다. GLOBAL 규칙 초과는 전체 차단.
+model AgentLimit {
+  id        Int              @id @default(autoincrement())
+  metric    AgentLimitMetric
+  scope     AgentLimitScope
+  period    AgentLimitPeriod
+  amount    Int
+  createdAt DateTime         @default(now()) @db.DateTime(6)
+}
+
+enum AgentLimitMetric {
+  /// input + output 토큰 합
+  TOKENS
+  /// 채팅(요청) 수
+  MESSAGES
+}
+
+enum AgentLimitScope {
+  STREAMER
+  GLOBAL
+}
+
+enum AgentLimitPeriod {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+}
+
+/// 에이전트 대화 (#35). replica 가 여러 개라 서버 메모리에 두지 않고 DB 로 잇는다.
+model AgentConversation {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String         @default("새 대화") @db.VarChar(200)
+  /// soft delete (pelican #8) — 스트리머 목록에서만 사라지고 어드민 로그·사용량 집계에는 남는다
+  deletedAt DateTime?      @db.DateTime(6)
+  createdAt DateTime       @default(now()) @db.DateTime(6)
+  updatedAt DateTime       @updatedAt @db.DateTime(6)
+  messages  AgentMessage[]
+  pendingActions AgentPendingAction[]
+
+  @@index([userId, updatedAt])
+}
+
+/// 승인 카드 (#35 조정 2, pelican tool_confirmation 이식). 파괴적 tool 은 모델이 부르는 순간
+/// 턴이 멈추고 이 행이 생긴다 — 실행 경로는 승인 mutation 뿐이라 모델이 뭐라 하든 시스템이 막는다.
+/// native 에는 같은 턴을 재개하기 위한 어댑터별 상태(메시지·response id 등)가 담긴다.
+model AgentPendingAction {
+  id             Int               @id @default(autoincrement())
+  conversationId Int
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// 재개는 같은 프로바이더로만 가능하다 (네이티브 상태가 어댑터별이므로)
+  providerId     Int
+  toolUseId      String            @db.VarChar(80)
+  tool           String            @db.VarChar(60)
+  input          Json
+  /// 화면 카드 내용 {title, lines}
+  card           Json
+  native         Json
+  status         AgentActionStatus @default(PENDING)
+  createdAt      DateTime          @default(now()) @db.DateTime(6)
+  expiresAt      DateTime          @db.DateTime(6)
+  resolvedAt     DateTime?         @db.DateTime(6)
+
+  @@index([conversationId, status])
+}
+
+enum AgentActionStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  EXPIRED
+}
+
+model AgentMessage {
+  id             Int               @id @default(autoincrement())
+  conversationId Int
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// user | assistant
+  role           String            @db.VarChar(12)
+  /// Anthropic MessageParam.content 그대로 (텍스트·tool_use·tool_result 블록 배열)
+  content        Json
+  createdAt      DateTime          @default(now()) @db.DateTime(6)
+
+  @@index([conversationId])
+}
+
+/// 요청 1회 = 1행. 한도 계산과 어드민 사용량 통계의 근거.
+/// provider·entryName: 어느 항목으로 청구됐는가 — 장애 조치 뒤 비용 내역이 거짓말하지 않도록
+model AgentUsage {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId  Int?
+  /// 이 요청(턴)의 마지막 어시스턴트 메시지 — 로그 화면이 채팅에 시각·모델·토큰을 붙일 근거
+  messageId       Int?
+  provider        String   @default("ANTHROPIC") @db.VarChar(20)
+  entryName       String?  @db.VarChar(60)
+  model           String   @db.VarChar(100)
+  inputTokens     Int
+  outputTokens    Int
+  cacheReadTokens Int      @default(0)
+  createdAt       DateTime @default(now()) @db.DateTime(6)
+
+  @@index([userId, createdAt])
+  //  GLOBAL 한도는 userId 없이 기간으로만 조회한다
+  @@index([createdAt])
+}
+
 /// SMTP 설정 (#215) — 단일 행(id=1). 재배포 없이 바꾸도록 DB(어드민 페이지)로 관리한다.
 /// 행이 없으면 SMTP_* 환경변수로 폴백 — 관리자 로그인이 패스코드 메일에 의존하므로 env 가 잠금 방지 탈출구다.
 model MailSettings {
@@ -224,6 +375,8 @@ enum AuditActor {
   ADMIN
   /// 챗봇 명령(!추가 등)으로 바꾼 경우 — 호출한 채팅 계정을 actorName 에 남긴다
   CHATBOT
+  /// 설정 도우미 에이전트 (#35) — 스트리머의 지시로 에이전트가 수행한 변경
+  AGENT
 }
 
 model Admin {
@@ -265,6 +418,8 @@ model User {
   playlists         SongFavorite[]
   cafeIntegration   CafeIntegration?
   auditLogs         AuditLog[]
+  agentConversations AgentConversation[]
+  agentUsages       AgentUsage[]
   noticeReads       NoticeRead[]
   inquiries         Inquiry[]
 }

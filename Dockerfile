@@ -71,6 +71,8 @@ COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/we
 COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 #  렌더용 폰트(OFL, vendoring) — standalone 트레이싱에도 넣었지만 명시적으로 복사한다
 COPY --from=web-build --chown=nextjs:nodejs /app/apps/web/fonts ./apps/web/fonts
+#  이용 안내 문서(#35 3/3) — /manual 이 런타임에 파일로 읽는다
+COPY --chown=nextjs:nodejs docs/manual ./docs/manual
 USER nextjs
 EXPOSE 3001
 CMD ["node", "apps/web/server.js"]
@@ -118,6 +120,8 @@ COPY --from=prod-deps-api /app/apps/api/prisma ./apps/api/prisma
 #  package.json 은 `pnpm exec prisma` 가 패키지 루트를 찾는 데 쓴다 (compose 의 migrate 서비스)
 COPY apps/api/package.json ./apps/api/
 COPY package.json pnpm-workspace.yaml ./
+#  이용 안내 문서(#35 3/3) — 에이전트가 매뉴얼 tool 로 읽는다
+COPY docs/manual ./docs/manual
 COPY --from=bundle-build /app/apps/api/dist ./apps/api/dist
 EXPOSE 3002
 WORKDIR /app/apps/api

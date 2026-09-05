@@ -25,6 +25,9 @@ export const AUDIT_EXCLUDED = new Set([
   'song.playNow',
   'song.addCurrentToFavorite',
   'songFavorite.enqueue',
+  //  에이전트 대화 CRUD 는 설정 변경이 아니다 (#35) — 에이전트가 수행한 실제 변경은 별도로 남는다
+  'agent.createConversation',
+  'agent.deleteConversation',
   //  공지 읽음 표시는 설정 변경이 아니다 (#206)
   'notice.markRead',
   'notice.markAllRead',
