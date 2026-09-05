@@ -41,6 +41,32 @@ const id = { type: 'number' as const };
  * 확인 카드가 뜨는 tool (pelican tool_confirmation 이식) — 호출 즉시 턴이 멈추고 카드가 뜬다.
  * 실행 경로는 승인 mutation 뿐이라 모델이 뭐라 하든 시스템이 막는다.
  */
+function requireText(value: unknown, label: string, max: number): string {
+  const text = String(value ?? '').trim();
+  if (!text) throw new ServiceError('INVALID_INPUT', `${label}을(를) 입력해주세요.`);
+  if (text.length > max) throw new ServiceError('INVALID_INPUT', `${label}은(는) ${max}자까지입니다. (현재 ${text.length}자)`);
+  return text;
+}
+
+/** 채팅으로 전송되는 텍스트 — 웹의 chatMessage 규칙과 동일 (100자) */
+function requireChatText(value: unknown, label: string): string {
+  return requireText(value, label, 100);
+}
+
+function requireId(value: unknown, label: string): number {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) throw new ServiceError('INVALID_INPUT', `${label} 은(는) 양의 정수 id 여야 합니다.`);
+  return id;
+}
+
+function requirePermission(value: unknown): ChatbotPermission {
+  const permission = String(value ?? '');
+  if (permission !== 'STREAMER' && permission !== 'MANAGER' && permission !== 'VIEWER') {
+    throw new ServiceError('INVALID_INPUT', 'permission 은 STREAMER/MANAGER/VIEWER 중 하나여야 합니다.');
+  }
+  return permission;
+}
+
 export const CONFIRM_TOOLS = new Set(['delete_command', 'delete_repeat', 'delete_shortcut', 'clear_queue', 'create_inquiry']);
 
 export const AGENT_TOOLS: ToolDef[] = [
@@ -346,9 +372,8 @@ async function buildCard(prisma: PrismaClient, userId: number, name: string, inp
       return { title: '대기열 비우기', lines: [`대기열의 ${queue.length}곡을 모두 삭제합니다.`, '삭제하면 되돌릴 수 없습니다.'] };
     }
     case 'create_inquiry': {
-      const title = String(input.title ?? '').trim();
-      const inquiryBody = String(input.body ?? '').trim();
-      if (!title || !inquiryBody) throw new ServiceError('INVALID_INPUT', '제목과 내용을 입력해주세요.');
+      const title = requireText(input.title, '제목', 200);
+      const inquiryBody = requireText(input.body, '내용', 64 * 1024);
       return {
         title: '운영자에게 문의 발송',
         lines: [`제목: ${title}`, inquiryBody.length > 200 ? `${inquiryBody.slice(0, 200)}…` : inquiryBody],
@@ -379,7 +404,7 @@ async function execute(
     case 'list_favorites':
       return ok(toResult(await songFavoriteService.listFavorites(prisma, userId)));
     case 'get_favorite':
-      return ok(toResult(await songFavoriteService.getFavorite(prisma, userId, Number(input.favoriteId))));
+      return ok(toResult(await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
     case 'list_shortcuts':
       return ok(toResult(await shortcutService.listShortcuts(prisma, userId)));
     case 'get_user_setting':
@@ -419,20 +444,20 @@ async function execute(
     /* ── 명령어 ── */
     case 'create_echo_command':
       return ok(toResult(await commandService.createEchoCommand(prisma, {
-        userId, command: String(input.command), response: String(input.response),
+        userId, command: requireText(input.command, '명령어 이름', 20), response: requireChatText(input.response, '응답'),
       })));
     case 'update_echo_command':
       return ok(toResult(await commandService.updateEchoCommand(prisma, {
-        userId, id: Number(input.id),
-        ...(typeof input.command === 'string' ? { command: input.command } : {}),
-        response: String(input.response),
+        userId, id: requireId(input.id, 'id'),
+        ...(typeof input.command === 'string' ? { command: requireText(input.command, '명령어 이름', 20) } : {}),
+        response: requireChatText(input.response, '응답'),
       })));
     case 'create_function_command': {
       const func = String(input.func);
       if (!isChatbotFunctionKey(func)) return pending(`알 수 없는 기능: ${func}. list_available_functions 로 확인하세요.`);
       const option = await resolveFunctionOption(prisma, userId, func, typeof input.option === 'string' ? input.option : null);
       return ok(toResult(await commandService.createFunctionCommand(prisma, {
-        userId, command: String(input.command), permission: String(input.permission) as ChatbotPermission,
+        userId, command: requireText(input.command, '명령어 이름', 20), permission: requirePermission(input.permission),
         function: func, option,
       })));
     }
@@ -441,18 +466,18 @@ async function execute(
       if (!isChatbotFunctionKey(func)) return pending(`알 수 없는 기능: ${func}. list_available_functions 로 확인하세요.`);
       const option = await resolveFunctionOption(prisma, userId, func, typeof input.option === 'string' ? input.option : null);
       return ok(toResult(await commandService.updateFunctionCommand(prisma, {
-        userId, id: Number(input.id), command: String(input.command),
-        permission: String(input.permission) as ChatbotPermission,
+        userId, id: requireId(input.id, 'id'), command: requireText(input.command, '명령어 이름', 20),
+        permission: requirePermission(input.permission),
         function: func, option,
       })));
     }
     case 'set_command_enabled':
       return ok(toResult(await commandService.setCommandEnabled(
-        prisma, userId, Number(input.id), input.type === 'function' ? 'function' : 'echo', input.enabled === true,
+        prisma, userId, requireId(input.id, 'id'), input.type === 'function' ? 'function' : 'echo', input.enabled === true,
       )));
     case 'delete_command': {
       const count = await commandService.deleteCommand(
-        prisma, userId, Number(input.id), input.type === 'function' ? 'function' : 'echo',
+        prisma, userId, requireId(input.id, 'id'), input.type === 'function' ? 'function' : 'echo',
       );
       return count > 0 ? ok('삭제했습니다.') : pending('해당 명령어가 없습니다.');
     }
@@ -460,16 +485,16 @@ async function execute(
     /* ── 반복 메시지 ── */
     case 'create_repeat':
       return ok(toResult(await repeatService.createRepeat(prisma, {
-        userId, response: String(input.response), interval: Number(input.intervalSeconds),
+        userId, response: requireChatText(input.response, '반복 메시지'), interval: requireId(input.intervalSeconds, '주기(초)'),
       })));
     case 'update_repeat':
       return ok(toResult(await repeatService.updateRepeat(prisma, {
-        userId, id: Number(input.id), response: String(input.response), interval: Number(input.intervalSeconds),
+        userId, id: requireId(input.id, 'id'), response: requireChatText(input.response, '반복 메시지'), interval: requireId(input.intervalSeconds, '주기(초)'),
       })));
     case 'set_repeat_enabled':
-      return ok(toResult(await repeatService.setRepeatEnabled(prisma, userId, Number(input.id), input.enabled === true)));
+      return ok(toResult(await repeatService.setRepeatEnabled(prisma, userId, requireId(input.id, 'id'), input.enabled === true)));
     case 'delete_repeat': {
-      await repeatService.deleteRepeat(prisma, userId, Number(input.id));
+      await repeatService.deleteRepeat(prisma, userId, requireId(input.id, 'id'));
       return ok('삭제했습니다.');
     }
 
@@ -481,10 +506,10 @@ async function execute(
       })));
     case 'update_shortcut':
       return ok(toResult(await shortcutService.updateShortcut(prisma, {
-        userId, id: Number(input.id), name: String(input.name), url: String(input.url), icon: String(input.icon),
+        userId, id: requireId(input.id, 'id'), name: String(input.name), url: String(input.url), icon: String(input.icon),
       })));
     case 'delete_shortcut': {
-      await shortcutService.deleteShortcut(prisma, userId, Number(input.id));
+      await shortcutService.deleteShortcut(prisma, userId, requireId(input.id, 'id'));
       return ok('삭제했습니다.');
     }
 
@@ -503,17 +528,19 @@ async function execute(
       }
     }
     case 'set_volume': {
-      const volume = Math.min(Math.max(Math.round(Number(input.volume)), 0), 100);
+      const raw = Number(input.volume);
+      if (!Number.isFinite(raw)) throw new ServiceError('INVALID_INPUT', 'volume 은 0~100 숫자여야 합니다.');
+      const volume = Math.min(Math.max(Math.round(raw), 0), 100);
       return ok(toResult(await playbackService.setVolume(prisma, userId, volume)));
     }
     case 'clear_queue':
       return ok(toResult(await songService.clearQueue(prisma, userId, AGENT_ACTOR)));
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(
-        prisma, userId, Number(input.favoriteId), { shuffle: input.shuffle === true, requester: AGENT_ACTOR },
+        prisma, userId, requireId(input.favoriteId, 'favoriteId'), { shuffle: input.shuffle === true, requester: AGENT_ACTOR },
       )));
     case 'import_playlist':
-      return ok(toResult(await songFavoriteService.importPlaylist(prisma, userId, Number(input.favoriteId), String(input.url))));
+      return ok(toResult(await songFavoriteService.importPlaylist(prisma, userId, requireId(input.favoriteId, 'favoriteId'), String(input.url))));
 
     /* ── 문의 ── */
     case 'create_inquiry': {
