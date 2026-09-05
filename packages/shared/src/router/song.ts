@@ -22,8 +22,8 @@ async function loadSourceState(
     sourceType: setting?.songSourceType ?? ('NONE' as const),
     readOnly,
     overlay: {
-      mode: setting?.songOverlayMode ?? ('ALWAYS' as const),
-      durationSeconds: setting?.songOverlayDurationSeconds ?? 10,
+      mode: setting?.songOverlayMode ?? ('TIMED' as const),
+      durationSeconds: setting?.songOverlayDurationSeconds ?? 15,
     },
   };
 }
@@ -57,7 +57,7 @@ export const songRouter = t.router({
       /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
       active: setting?.songActive ?? true,
       historyPublic: setting?.songHistoryPublic ?? false,
-      autoPlay: setting?.songAutoPlayFromDefault ?? false,
+      autoPlay: setting?.songAutoPlayFromDefault ?? true,
       /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
       requestPolicy: {
         maxPerRequester: setting === null ? 1 : setting.songMaxPerRequester,

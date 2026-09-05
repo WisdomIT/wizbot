@@ -13,7 +13,7 @@ export const songFavoriteRouter = t.router({
         select: { songAutoPlayFromDefault: true },
       }),
     ]);
-    return { favorites, autoPlay: setting?.songAutoPlayFromDefault ?? false };
+    return { favorites, autoPlay: setting?.songAutoPlayFromDefault ?? true };
   }),
 
   get: streamerProcedure

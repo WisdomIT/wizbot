@@ -56,15 +56,19 @@ function isMusicChannel(uploader: string): boolean {
 /**
  * 검색 — 음악 카테고리를 우선한다.
  * 상위 결과 중 음악 채널이 있으면 그것을, 없으면 첫 결과를 쓴다.
+ * sortBy 'popularity' 면 인기순 — 기본 즐겨찾기 폴백(#246)이 인기 곡을 고를 때 쓴다.
  */
-export async function searchVideo(query: string): Promise<YoutubeVideo | null> {
+export async function searchVideo(
+  query: string,
+  options: { sortBy?: 'relevance' | 'popularity' } = {},
+): Promise<YoutubeVideo | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
 
   let results;
   try {
     const yt = await getClient();
-    results = await yt.search(trimmed, { type: 'video' });
+    results = await yt.search(trimmed, { type: 'video', prioritize: options.sortBy ?? 'relevance' });
   } catch (error) {
     throw new ServiceError(
       'INVALID_INPUT',
