@@ -573,6 +573,29 @@ model SiteSetting {
   updatedAt DateTime @updatedAt
 }
 
+/// 서비스 이용약관·개인정보처리방침 (#252). 종류별로 버전을 쌓고, publishedAt 최신이 현재 버전.
+model PolicyDocument {
+  id          Int        @id @default(autoincrement())
+  type        PolicyType
+  /// 버전 문자열 — "1.0" 형식 권장, 자유 입력
+  version     String     @db.VarChar(40)
+  /// 등록 날짜 — 현재 버전 판정과 이력 표시 기준 (어드민이 지정)
+  publishedAt DateTime   @db.DateTime(6)
+  /// 마크다운 본문
+  body        String     @db.MediumText
+  createdAt   DateTime   @default(now()) @db.DateTime(6)
+  updatedAt   DateTime   @updatedAt @db.DateTime(6)
+
+  @@index([type, publishedAt])
+}
+
+enum PolicyType {
+  /// 서비스 이용약관
+  TERMS
+  /// 개인정보처리방침
+  PRIVACY
+}
+
 model SongPlayback {
   id            Int        @id @default(autoincrement())
   userId        Int        @unique // 각 유저당 한 개의 재생정보
