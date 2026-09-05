@@ -147,6 +147,14 @@ export const chatbotFunctionDefinitions = {
     usageTokens: (c) => [cmd(c)],
   },
 
+  agentChat: {
+    name: '에이전트 호출',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '위즈봇 에이전트를 채팅으로 부릅니다.',
+    description:
+      '콘솔의 위즈봇 에이전트를 채팅에서 그대로 씁니다.\n\n호출 후 60초 동안 스트리머의 채팅을 요청으로 알아듣고, 요청과 함께 한 번에 부를 수도 있습니다. 예) !에이전트 대기열 비워줘',
+    usageTokens: (c) => [cmd(c), arg('요청(선택)')],
+  },
   getCommandListUrl: {
     name: '명령어 목록 링크',
     type: 'WIZBOT_CONFIG',

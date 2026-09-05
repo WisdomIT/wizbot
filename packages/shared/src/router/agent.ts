@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
+import { getAgentChatMode } from '../chatbot/agentBridge';
 import { agentService } from '../services';
-import { adminProcedure, streamerProcedure, t } from '../trpc';
+import { adminProcedure, internalProcedure, streamerProcedure, t } from '../trpc';
 
 const providerFields = {
   name: z.string().max(60),
@@ -44,6 +45,15 @@ export const agentRouter = t.router({
   deleteConversation: streamerProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(({ ctx, input }) => agentService.removeConversation(ctx.prisma, ctx.user.id, input.id)),
+
+  /** 파싱 창(#238) — 워커가 스트리머의 일반 채팅을 넘긴다. 창이 없으면 무시된다 */
+  chatRelay: internalProcedure
+    .input(z.object({ userId: z.number().int().positive(), content: z.string().max(500) }))
+    .mutation(async ({ input }) => {
+      const mode = getAgentChatMode();
+      if (!mode) return { active: false };
+      return mode.relay(input);
+    }),
 
   /* ── 어드민: 전역 설정 ── */
   adminSettings: adminProcedure.query(({ ctx }) => agentService.getSettings(ctx.prisma)),

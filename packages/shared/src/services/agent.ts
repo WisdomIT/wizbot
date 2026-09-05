@@ -282,6 +282,24 @@ export async function checkLimits(prisma: PrismaClient, userId: number): Promise
   return { blocked: false };
 }
 
+/** 한도 대비 사용 비율의 최댓값 (0~) — 임박 경고용(#238). 규칙이 없으면 0 */
+export async function usageRatio(prisma: PrismaClient, userId: number): Promise<number> {
+  const limits = await listLimits(prisma);
+  let max = 0;
+  for (const limit of limits) {
+    const since = new Date(Date.now() - PERIOD_MS[limit.period]);
+    const where = { createdAt: { gte: since }, ...(limit.scope === 'STREAMER' ? { userId } : {}) };
+    const used =
+      limit.metric === 'MESSAGES'
+        ? await prisma.agentUsage.count({ where })
+        : await prisma.agentUsage
+            .aggregate({ where, _sum: { inputTokens: true, outputTokens: true } })
+            .then((sum) => (sum._sum.inputTokens ?? 0) + (sum._sum.outputTokens ?? 0));
+    max = Math.max(max, used / limit.amount);
+  }
+  return max;
+}
+
 /** 채팅 시작 전 확인 — 켜짐 + 프로바이더 존재 + 한도. 통과하면 켜진 프로바이더 목록(키 원문)을 돌려준다 */
 export async function assertAvailable(prisma: PrismaClient, userId: number) {
   const settings = await getSettings(prisma);
