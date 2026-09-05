@@ -167,8 +167,8 @@ export default function UpdateCommand({
                   <SelectValue placeholder="타입을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="echo">echo</SelectItem>
-                  <SelectItem value="function">function</SelectItem>
+                  <SelectItem value="echo">단순 응답 (echo)</SelectItem>
+                  <SelectItem value="function">기능 (function)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

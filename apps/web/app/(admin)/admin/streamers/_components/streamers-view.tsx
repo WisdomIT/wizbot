@@ -119,7 +119,7 @@ export function StreamersView() {
                       ) : (
                         <Badge>공개</Badge>
                       )}
-                      {!streamer.whitelisted && <Badge variant="destructive">입장권 없음</Badge>}
+                      {!streamer.whitelisted && <Badge variant="destructive">화이트리스트 없음</Badge>}
                       {!streamer.oauthExpiresAt && <Badge variant="outline">연동 없음</Badge>}
                     </div>
                   </TableCell>
@@ -217,7 +217,7 @@ function DeleteStreamerDialog({
               화이트리스트에서도 삭제
             </Label>
             <p className="text-xs text-muted-foreground">
-              끄면 입장권은 남아 같은 계정으로 다시 로그인하면 재가입됩니다.
+              끄면 화이트리스트에는 남아 있어, 같은 계정으로 다시 로그인하면 재가입할 수 있습니다.
             </p>
           </div>
           <Switch

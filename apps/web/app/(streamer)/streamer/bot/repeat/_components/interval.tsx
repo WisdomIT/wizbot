@@ -52,7 +52,7 @@ export default function UpdateInterval({ interval: intervalInitial }: { interval
       <DialogContent>
         <DialogHeader>
           <DialogTitle>기본 반복 주기 변경하기</DialogTitle>
-          <DialogDescription>기본 반복 주기를 변경합니다.</DialogDescription>
+          <DialogDescription>채팅 명령(!반복 추가 등)으로 만드는 반복 메시지에 적용되는 주기입니다.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">

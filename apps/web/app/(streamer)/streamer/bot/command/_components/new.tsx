@@ -87,7 +87,7 @@ export default function NewCommand() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>새 명령어 추가하기</DialogTitle>
-          <DialogDescription>새 echo 혹은 function 명령어를 추가합니다.</DialogDescription>
+          <DialogDescription>시청자가 채팅에 입력하면 봇이 응답하는 명령어를 추가합니다.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
@@ -118,8 +118,8 @@ export default function NewCommand() {
                   <SelectValue placeholder="타입을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="echo">echo</SelectItem>
-                  <SelectItem value="function">function</SelectItem>
+                  <SelectItem value="echo">단순 응답 (echo)</SelectItem>
+                  <SelectItem value="function">기능 (function)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

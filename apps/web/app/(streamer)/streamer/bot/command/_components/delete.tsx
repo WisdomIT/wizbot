@@ -47,13 +47,13 @@ export default function DeleteCommand({
     <Dialog open={!!command} onOpenChange={() => setDeleteTarget(null)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>정말 이 명령어를 삭제하시겠습니까?</DialogTitle>
+          <DialogTitle>이 명령어를 삭제할까요?</DialogTitle>
           <DialogDescription>
-            삭제된 명령어는 복구할 수 없습니다. 정말 삭제하시겠습니까?
+            삭제하면 복구할 수 없습니다.
           </DialogDescription>
           <Alert>
             <Terminal className="h-4 w-4" />
-            <AlertTitle>삭제 명령어</AlertTitle>
+            <AlertTitle>삭제할 명령어</AlertTitle>
             <AlertDescription>!{command?.command}</AlertDescription>
           </Alert>
         </DialogHeader>

@@ -288,7 +288,7 @@ export function CafeEditor({ channelId }: { channelId: string }) {
               <Switch id="align-to-canvas" checked={alignToCanvas} onCheckedChange={setAlignToCanvas} />
               <Label htmlFor="align-to-canvas" className="text-sm">캔버스 기준으로 정렬</Label>
             </div>
-            <p className="text-xs text-muted-foreground">기본은 선택한 요소들이 차지한 영역 기준입니다. 균등 분배는 3개 이상일 때 첫/끝 요소를 두고 사이 간격을 같게 합니다.</p>
+            <p className="text-xs text-muted-foreground">선택한 요소들이 차지한 영역을 기준으로 정렬합니다. 균등 분배는 요소가 3개 이상일 때 양 끝은 그대로 두고 사이 간격을 같게 만듭니다.</p>
           </div>
         ) : (
           <PropertyPanel element={single} onChange={(patch) => single && updateElement(single.id, patch)} onRemove={removeSelected} onAlign={align} />
@@ -569,7 +569,7 @@ function PropertyPanel({ element, onChange, onRemove, onAlign }: { element: Cafe
               <SelectContent>{[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={String(n)}>{n}줄</SelectItem>)}</SelectContent>
             </Select>
           </Field>
-          <p className="text-xs text-muted-foreground">글자 크기가 「자동」이면 (영역 높이 ÷ 줄 수)의 80%로 시작해 가로를 넘지 않게 줄이고, 그래도 넘치면 마지막 줄을 …으로 자릅니다.</p>
+          <p className="text-xs text-muted-foreground">글자 크기가 「자동」이면 영역 크기에 맞춰 알맞게 줄어들고, 그래도 넘치는 내용은 마지막 줄에서 …으로 잘립니다.</p>
           {element.kind === 'openedAt' && (
             <Field label="시간 형식">
               <Select value={element.timeFormat} onValueChange={(timeFormat) => onChange({ timeFormat } as Partial<CafeElement>)}>
