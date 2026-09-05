@@ -117,7 +117,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         command: { type: 'string' },
         func: { type: 'string', description: '기능 키' },
         permission: { type: 'string', enum: ['STREAMER', 'MANAGER', 'VIEWER'], description: '누가 쓸 수 있는지' },
-        option: { type: 'string', description: '기능별 옵션 (카탈로그에 option 이 있는 기능만)' },
+        option: { type: 'string', description: '대상 지정이 필요한 기능의 옵션 — updateSpecificCommandEcho 는 대상 echo 명령어의 이름 또는 id' },
       },
       required: ['command', 'func', 'permission'], additionalProperties: false,
     },
@@ -290,6 +290,36 @@ export async function executeConfirmed(
   return { content: result.text, isError: !result.ok };
 }
 
+/**
+ * function 명령어의 option 검증·해석 (#238 실측 버그) — updateSpecificCommandEcho 의 option 은
+ * echo 명령어 **id** 인데 에이전트가 이름("멤버")을 넘겨 깨진 값이 저장됐다. 웹 라우터의 검증을
+ * tool 쪽에도 두되, 이름으로 와도 소유한 echo 를 찾아 id 로 바꿔준다.
+ */
+async function resolveFunctionOption(
+  prisma: PrismaClient,
+  userId: number,
+  func: string,
+  option: string | null,
+): Promise<string | null> {
+  const definition = chatbotFunctionDefinitionMap[func as keyof typeof chatbotFunctionDefinitionMap];
+  if (!definition?.option) return null; // option 을 안 쓰는 기능 — 넘어온 값은 버린다
+  if (definition.option.input === 'echoCommandSelect') {
+    if (!option?.trim()) {
+      throw new ServiceError('INVALID_INPUT', `${func} 는 대상 echo 명령어(option)가 필요합니다. list_commands 로 확인하세요.`);
+    }
+    const trimmed = option.trim();
+    const byId = /^\d+$/.test(trimmed)
+      ? await prisma.chatbotEchoCommand.findFirst({ where: { userId, id: Number(trimmed) } })
+      : null;
+    const target = byId ?? (await commandService.findEchoCommandByName(prisma, userId, trimmed));
+    if (!target) {
+      throw new ServiceError('INVALID_INPUT', `대상 echo 명령어를 찾을 수 없습니다: ${trimmed}. list_commands 로 이름/id 를 확인하세요.`);
+    }
+    return String(target.id);
+  }
+  return option;
+}
+
 /** 카드 내용 — 무엇이 실행되는지 검증하며 구체적으로. 대상이 없으면 여기서 던진다 */
 async function buildCard(prisma: PrismaClient, userId: number, name: string, input: Record<string, unknown>): Promise<PendingCard> {
   switch (name) {
@@ -400,18 +430,20 @@ async function execute(
     case 'create_function_command': {
       const func = String(input.func);
       if (!isChatbotFunctionKey(func)) return pending(`알 수 없는 기능: ${func}. list_available_functions 로 확인하세요.`);
+      const option = await resolveFunctionOption(prisma, userId, func, typeof input.option === 'string' ? input.option : null);
       return ok(toResult(await commandService.createFunctionCommand(prisma, {
         userId, command: String(input.command), permission: String(input.permission) as ChatbotPermission,
-        function: func, option: typeof input.option === 'string' ? input.option : null,
+        function: func, option,
       })));
     }
     case 'update_function_command': {
       const func = String(input.func);
       if (!isChatbotFunctionKey(func)) return pending(`알 수 없는 기능: ${func}. list_available_functions 로 확인하세요.`);
+      const option = await resolveFunctionOption(prisma, userId, func, typeof input.option === 'string' ? input.option : null);
       return ok(toResult(await commandService.updateFunctionCommand(prisma, {
         userId, id: Number(input.id), command: String(input.command),
         permission: String(input.permission) as ChatbotPermission,
-        function: func, option: typeof input.option === 'string' ? input.option : null,
+        function: func, option,
       })));
     }
     case 'set_command_enabled':
