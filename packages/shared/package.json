@@ -14,7 +14,8 @@
     "./router": "./src/router/index.ts",
     "./services": "./src/services/index.ts",
     "./services/inquiry": "./src/services/inquiry.ts",
-    "./trpc": "./src/trpc.ts"
+    "./trpc": "./src/trpc.ts",
+    "./lib/manual": "./src/lib/manual.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -69,6 +69,9 @@ const TOOL_LABEL: Record<string, string> = {
   import_playlist: '재생목록 가져오기',
   create_inquiry: '문의 작성',
   web_search: '웹 검색',
+  list_manual_pages: '이용 안내 목록',
+  read_manual_page: '이용 안내 읽기',
+  search_manual: '이용 안내 검색',
 };
 
 /* ── dock 폭 (pelican cgResize 이식): MIN 384px(24rem), max 60vw≤800, localStorage 저장 ── */
