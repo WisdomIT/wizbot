@@ -189,7 +189,7 @@ function FavoriteListCard({
     <Card className="md:w-80 md:shrink-0">
       <CardHeader>
         <CardTitle>즐겨찾기</CardTitle>
-        <CardDescription>「대표」 태그가 자동 재생의 출처입니다.</CardDescription>
+        <CardDescription>자동 재생은 「대표」로 지정한 즐겨찾기에서 곡을 고릅니다.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <form
