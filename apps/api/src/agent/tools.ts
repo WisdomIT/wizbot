@@ -1,5 +1,6 @@
 import type { ChatbotPermission, PrismaClient } from '@prisma/client';
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '@wizbot/shared/chatbot/definitions';
+import { getManualPage, listManualPages, searchManual } from '@wizbot/shared/lib/manual';
 import { notifyAdminsOfInquiry } from '@wizbot/shared/router';
 import {
   commandService,
@@ -60,6 +61,29 @@ export const AGENT_TOOLS: ToolDef[] = [
       type: 'object',
       properties: { query: { type: 'string', description: '경로/행위자 부분 일치 (선택)' }, limit: { type: 'number', description: '기본 20, 최대 50' } },
       required: [], additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_manual_pages',
+    description: 'Lists the user manual pages (slug, title, audience, description). The manual is the source of truth for how Wizbot features work.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'read_manual_page',
+    description: 'Reads one manual page in full. Use the slug from list_manual_pages or search_manual.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' } },
+      required: ['slug'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_manual',
+    description: 'Searches the manual by keyword and returns matching pages with a snippet. Use before answering how-to or policy questions.',
+    inputSchema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Korean keyword' } },
+      required: ['query'], additionalProperties: false,
     },
   },
   {
@@ -344,6 +368,15 @@ async function execute(
       });
       return ok(toResult(rows.map((row) => ({ ...row, input: JSON.stringify(row.input)?.slice(0, 200) }))));
     }
+    case 'list_manual_pages':
+      return ok(toResult(listManualPages()));
+    case 'read_manual_page': {
+      const page = getManualPage(String(input.slug));
+      if (!page) return pending(`해당 문서가 없습니다: ${String(input.slug)}. list_manual_pages 로 확인하세요.`);
+      return ok(`# ${page.title}\n\n${page.body}`.slice(0, RESULT_MAX_CHARS));
+    }
+    case 'search_manual':
+      return ok(toResult(searchManual(String(input.query))));
     case 'list_available_functions':
       return ok(toResult(
         Object.entries(chatbotFunctionDefinitionMap).map(([key, def]) => ({

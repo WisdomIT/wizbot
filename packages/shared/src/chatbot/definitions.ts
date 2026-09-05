@@ -55,14 +55,14 @@ export const chatbotFunctionDefinitions = {
   updateCommandEcho: {
     name: 'echo 명령어 수정',
     type: 'WIZBOT_CONFIG',
-    descriptionShort: '특정 메시지로 응답하는 명령어를 수정합니다.',
+    descriptionShort: '아무 echo 명령어나 이름을 지정해 수정합니다.',
     description: '특정 메시지로 응답하는 echo 명령어를 수정합니다.',
     usageTokens: (c) => [cmd(c), arg('명령어 이름'), arg('응답')],
   },
   updateSpecificCommandEcho: {
     name: 'echo 명령어 수정 (지정)',
     type: 'WIZBOT_CONFIG',
-    descriptionShort: '특정 echo 명령어를 수정합니다.',
+    descriptionShort: '정해둔 echo 명령어 하나만 수정합니다.',
     description:
       '특정 echo 명령어를 수정합니다.\n\n"!멤버 수정" 과 같이 특정 명령어를 시청자가 수정할 수 있도록 하는 데 사용하기 좋습니다.',
     usageTokens: (c) => [cmd(c), arg('응답')],
