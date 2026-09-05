@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CHAT_MAX_LENGTH, clampChatMessage, fitChatMessage, formatDuration, splitContent } from '../lib';
+import { CHAT_MAX_LENGTH, clampChatMessage, fitChatMessage, formatDuration, splitContent, splitForChat } from '../lib';
 
 describe('splitContent', () => {
   it('명령어 뒤 인수를 slice 개수만큼 나누고 마지막 조각에 나머지를 합친다', () => {
@@ -81,5 +81,27 @@ describe('clampChatMessage', () => {
 
   it('한도 안이면 건드리지 않는다', () => {
     expect(clampChatMessage('짧은 메시지')).toBe('짧은 메시지');
+  });
+});
+
+describe('splitForChat (#238)', () => {
+  it('마크다운을 벗기고 100자 단위로 나눈다', () => {
+    const text = '**결과**: `!멤버` 명령어를 삭제했습니다. ' + '가나다라마바사 '.repeat(20);
+    const parts = splitForChat(text);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts[0]).not.toContain('**');
+    expect(parts[0]).not.toContain('`');
+    for (const part of parts) expect(part.length).toBeLessThanOrEqual(100);
+  });
+
+  it('최대 3건 — 넘치면 말줄임', () => {
+    const parts = splitForChat('가나다라마바사아자차 '.repeat(60));
+    expect(parts).toHaveLength(3);
+    expect(parts[2].endsWith('…')).toBe(true);
+  });
+
+  it('짧은 답은 한 건, 빈 답은 0건', () => {
+    expect(splitForChat('처리했습니다.')).toEqual(['처리했습니다.']);
+    expect(splitForChat('   ')).toEqual([]);
   });
 });

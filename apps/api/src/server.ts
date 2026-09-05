@@ -4,13 +4,18 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import * as trpcExpress from '@trpc/server/adapters/express';
+import { registerAgentChatMode } from '@wizbot/shared/chatbot';
 import { appRouter } from '@wizbot/shared/router';
 import express from 'express';
 
 import { agentChatHandler } from './agent/chat';
+import { agentChatMode } from './agent/chatMode';
 import { agentResumeHandler } from './agent/resume';
 import { createContext } from './context';
 import { songEventsHandler } from './song-events';
+
+//  채팅 에이전트(#238) — 챗봇 함수·릴레이 라우트가 이 구현을 부른다
+registerAgentChatMode(agentChatMode);
 
 const app = express();
 

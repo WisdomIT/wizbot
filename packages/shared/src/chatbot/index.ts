@@ -4,6 +4,9 @@ import type { ChzzkOpenClient } from 'chzzk-open-sdk';
 
 import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
+import { functionAgent } from './agent';
+export { type AgentChatMode,getAgentChatMode, registerAgentChatMode } from './agentBridge';
+export { clampChatMessage, splitForChat } from './lib';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
 import { ChatbotFunctionKey } from './definitions';
@@ -43,6 +46,7 @@ export const functions = {
   ...functionCommand,
   ...functionSong,
   ...functionChzzk,
+  ...functionAgent,
 } satisfies Record<ChatbotFunctionKey, ChatbotFunctionHandler>;
 
 export function getChatbotFunction(name: string): ChatbotFunctionHandler | undefined {
@@ -201,6 +205,12 @@ export function getChatbotDatabaseInitial(userId: number): ChatbotDatabaseInitia
       permission: 'VIEWER',
       command: '명령어',
       function: 'getCommandListUrl',
+    },
+    {
+      userId: userId,
+      permission: 'STREAMER',
+      command: '에이전트',
+      function: 'agentChat',
     },
     {
       userId: userId,
