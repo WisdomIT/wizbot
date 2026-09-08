@@ -27,7 +27,8 @@ export interface AuditRowData {
   inputText: string | null;
   actorType: string;
   actorLabel: string;
-  channel?: { userId: number; channelId: string; channelName: string } | null;
+  /** 대상 채널. userId 가 null 이면 탈퇴한 계정 (접근 기록은 탈퇴 후에도 남는다, #254) */
+  channel?: { userId: number | null; channelId: string; channelName: string } | null;
 }
 
 export function AuditHeaderRow({ showChannel = false }: { showChannel?: boolean }) {
@@ -89,7 +90,10 @@ export function AuditRow({ log, showChannel = false }: { log: AuditRowData; show
         <TableCell>
           {log.channel ? (
             <div className="flex flex-col">
-              <span>{log.channel.channelName}</span>
+              <span className="flex items-center gap-1.5">
+                {log.channel.channelName}
+                {log.channel.userId === null && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">탈퇴</Badge>}
+              </span>
               <span className="font-mono text-[11px] text-muted-foreground">{log.channel.channelId}</span>
             </div>
           ) : (

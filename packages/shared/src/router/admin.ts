@@ -152,6 +152,7 @@ export const adminRouter = t.router({
     .mutation(({ ctx, input }) =>
       adminUsersService.deleteStreamer(ctx.prisma, input.userId, {
         removeWhitelist: input.removeWhitelist,
+        actor: { type: 'ADMIN', id: ctx.user.id },
       }),
     ),
 

@@ -105,7 +105,7 @@ export function AdminAuditView() {
       <p className="text-sm text-muted-foreground">
         모든 채널의 설정 변경 기록과 접근 기록(로그인·관리자 대행 시작/종료)입니다.
         내용을 누르면 기록된 입력 전체를 볼 수 있습니다. 토큰류 값은 기록 시점에 이미 가려져 있습니다.
-        접속지 IP 는 수집하지 않습니다.
+        스트리머가 탈퇴하면 설정 변경 기록은 함께 지워지고 접근 기록만 「탈퇴」 표시로 남습니다. 접속지 IP 는 수집하지 않습니다.
       </p>
 
       <div className="flex flex-wrap items-end gap-2">

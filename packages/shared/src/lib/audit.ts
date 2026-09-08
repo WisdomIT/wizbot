@@ -34,6 +34,8 @@ export const AUDIT_EXCLUDED = new Set([
   //  문의는 게시판 활동 — 설정 변경이 아니고 스레드 자체가 기록이다 (#206)
   'inquiry.create',
   'inquiry.reply',
+  //  탈퇴는 서비스가 access.withdraw 로 직접 남긴다 (#254) — 미들웨어 시점엔 User 가 이미 없어 FK 로 실패한다
+  'user.deleteSelf',
 ]);
 
 /** 값이 이보다 길면 잘라 남긴다 — 배경 base64(수 MB)·레이아웃 JSON 이 통째로 쌓이지 않게 */
@@ -94,7 +96,6 @@ export const AUDIT_LABELS: Record<string, string> = {
   'songFavorite.removeSong': '즐겨찾기 곡 삭제',
   'user.updateUserSetting': '계정 설정 변경',
   'user.saveTheme': '테마 변경',
-  'user.deleteAccount': '탈퇴',
   'cafe.setEnabled': '카페 연동 사용 변경',
   'cafe.link': '카페 연결',
   'cafe.requestJoin': '카페 봇 가입 요청',
@@ -125,6 +126,7 @@ export function chatActorName(sender: { senderNickname: string; senderChannelId?
 /**
  * 접근 기록 (#254) — 개인정보처리시스템 접속기록 보관 요건에 대응한다. 변경 기록과 같은 테이블에
  * `access.` 접두어로 남기고, 어드민 「감사 기록」 페이지에서 종류 필터로 구분한다.
+ * 스트리머가 탈퇴해도 접근 기록은 지우지 않는다 — User 연결만 끊기고(userId null) 채널 식별자는 input 에 남는다.
  * 접속지 IP 는 기록하지 않는다 — 서비스가 IP 를 어디서도 수집하지 않고 개인정보처리방침도 그렇게 적혀 있다.
  */
 export const ACCESS_AUDIT_LABELS: Record<string, string> = {
@@ -132,7 +134,21 @@ export const ACCESS_AUDIT_LABELS: Record<string, string> = {
   'access.adminLogin': '관리자 로그인',
   'access.actingStart': '관리자 대행 시작',
   'access.actingEnd': '관리자 대행 종료',
+  'access.withdraw': '탈퇴 (계정 삭제)',
 };
+
+/** 접근 기록의 input 에 남기는 대상 채널 식별자 — 탈퇴 후 userId 가 비어도 누구의 기록인지 알 수 있게 */
+export interface AccessSubject {
+  channelId: string;
+  channelName: string;
+}
+
+/** 접근 기록 input 에서 채널 식별자를 꺼낸다 (없거나 모양이 다르면 null) */
+export function accessSubjectOf(input: unknown): AccessSubject | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const { channelId, channelName } = input as Record<string, unknown>;
+  return typeof channelId === 'string' && typeof channelName === 'string' ? { channelId, channelName } : null;
+}
 
 /** 로그인·대행 같은 접근 기록인지 — 설정 변경과 화면에서 구분한다 */
 export function isAccessProcedure(procedure: string): boolean {

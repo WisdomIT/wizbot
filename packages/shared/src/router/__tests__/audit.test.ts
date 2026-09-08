@@ -27,7 +27,7 @@ function createCaller(overrides: Partial<Context> = {}) {
       create: vi.fn().mockResolvedValue({}),
     },
     admin: { findMany: vi.fn().mockResolvedValue([{ id: 1, email: 'admin@example.com' }]) },
-    user: { findUnique: vi.fn().mockResolvedValue({ id: STREAMER.id }) },
+    user: { findUnique: vi.fn().mockResolvedValue(STREAMER) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };
@@ -58,6 +58,19 @@ describe('audit.adminLogs (#254)', () => {
       { id: 8, actorLabel: '관리자 · #99 (삭제됨)', channel: null },
     ]);
     expect(prisma.admin.findMany).toHaveBeenCalledWith({ where: { id: { in: [1, 99] } }, select: { id: true, email: true } });
+  });
+
+  it('탈퇴한 계정의 접근 기록은 input 의 식별자로 채널을 보여 준다 (userId null)', async () => {
+    const { caller, prisma } = asAdmin();
+    prisma.auditLog.findMany.mockResolvedValue([
+      row({ id: 5, userId: null, user: null, procedure: 'access.login', input: { channelId: 'gone', channelName: '탈퇴자' } }),
+      row({ id: 4, userId: null, user: null, actorType: 'ADMIN', actorId: 1, procedure: 'access.withdraw', input: { channelId: 'gone', channelName: '탈퇴자' } }),
+    ]);
+    const result = await caller.audit.adminLogs({ kind: 'access' });
+    expect(result.logs.map((log) => log.channel)).toEqual([
+      { userId: null, channelId: 'gone', channelName: '탈퇴자' },
+      { userId: null, channelId: 'gone', channelName: '탈퇴자' },
+    ]);
   });
 
   it('채널·행위자·종류(접근)·기간 필터가 where 에 반영된다', async () => {
@@ -96,9 +109,10 @@ describe('audit.recordActing (#254)', () => {
     const { caller, prisma } = asAdmin();
     await expect(caller.audit.recordActing({ userId: 7, phase: 'start' })).resolves.toEqual({ ok: true });
     await caller.audit.recordActing({ userId: 7, phase: 'end' });
+    const subject = { channelId: 'chan7', channelName: '스트리머7' };
     expect(prisma.auditLog.create.mock.calls.map((call) => call[0].data)).toEqual([
-      { userId: 7, actorType: 'ADMIN', actorId: 1, procedure: 'access.actingStart' },
-      { userId: 7, actorType: 'ADMIN', actorId: 1, procedure: 'access.actingEnd' },
+      { userId: 7, actorType: 'ADMIN', actorId: 1, procedure: 'access.actingStart', input: subject },
+      { userId: 7, actorType: 'ADMIN', actorId: 1, procedure: 'access.actingEnd', input: subject },
     ]);
   });
 

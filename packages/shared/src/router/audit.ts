@@ -1,11 +1,25 @@
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
+import { accessSubjectOf } from '../lib/audit';
 import { accessLogService, ServiceError } from '../services';
 import { adminProcedure, streamerProcedure, t } from '../trpc';
 
 const AUDIT_ACTORS = ['STREAMER', 'ADMIN', 'CHATBOT', 'AGENT'] as const;
 const ACCESS_PREFIX = 'access.';
+
+interface AuditChannel {
+  /** 탈퇴한 계정이면 null */
+  userId: number | null;
+  channelId: string;
+  channelName: string;
+}
+
+function channelOf(row: { user: { id: number; channelId: string; channelName: string } | null; input: unknown }): AuditChannel | null {
+  if (row.user) return { userId: row.user.id, channelId: row.user.channelId, channelName: row.user.channelName };
+  const subject = accessSubjectOf(row.input);
+  return subject ? { userId: null, ...subject } : null;
+}
 
 /**
  * 설정 변경 기록 조회 (#175). 스트리머 본인 콘솔과 어드민 대행 콘솔(#71)이 같은 화면을 쓴다 —
@@ -103,8 +117,9 @@ export const auditRouter = t.router({
             : row.actorType === 'CHATBOT' ? `채팅 · ${row.actorName ?? '(알 수 없음)'}`
             : row.actorType === 'AGENT' ? `에이전트${row.actorName ? ` · ${row.actorName}` : ''}`
             : '스트리머 본인',
-          /** 대상 스트리머. 어드민 로그인처럼 대상이 없거나 탈퇴한 경우 null */
-          channel: row.user ? { userId: row.user.id, channelId: row.user.channelId, channelName: row.user.channelName } : null,
+          //  대상 스트리머. 탈퇴했으면 User 연결은 끊겼지만 접근 기록의 input 에 식별자가 남아 있다 (userId null 로 표시).
+          //  어드민 로그인처럼 애초에 대상이 없으면 null
+          channel: channelOf(row),
         })),
         nextCursor: rows.length > input.limit ? page[page.length - 1]?.id ?? null : null,
       };
@@ -117,13 +132,17 @@ export const auditRouter = t.router({
   recordActing: adminProcedure
     .input(z.object({ userId: z.number().int().positive(), phase: z.enum(['start', 'end']) }))
     .mutation(async ({ ctx, input }) => {
-      const target = await ctx.prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } });
+      const target = await ctx.prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { id: true, channelId: true, channelName: true },
+      });
       if (!target) throw new ServiceError('NOT_FOUND', '스트리머를 찾을 수 없습니다.');
       await accessLogService.recordAccess(ctx.prisma, {
         procedure: input.phase === 'start' ? 'access.actingStart' : 'access.actingEnd',
         actorType: 'ADMIN',
         actorId: ctx.user.id,
         userId: target.id,
+        subject: { channelId: target.channelId, channelName: target.channelName },
       });
       return { ok: true as const };
     }),

@@ -170,6 +170,7 @@ export const userRouter = t.router({
         actorType: 'STREAMER',
         actorId: user.id,
         userId: user.id,
+        subject: { channelId, channelName },
       });
 
       return {
@@ -215,9 +216,9 @@ export const userRouter = t.router({
     .mutation(({ ctx, input }) =>
       accountService.setChatbotActive(ctx.prisma, ctx.user.id, input.active),
     ),
-  /** 본인 탈퇴 — 어드민의 탈퇴 처리와 같은 서비스(연관 데이터 cascade 삭제) */
+  /** 본인 탈퇴 — 어드민의 탈퇴 처리와 같은 서비스(연관 데이터 cascade 삭제). 접근 기록은 남는다 (#254) */
   deleteSelf: streamerProcedure.mutation(({ ctx }) =>
-    adminUsersService.deleteStreamer(ctx.prisma, ctx.user.id),
+    adminUsersService.deleteStreamer(ctx.prisma, ctx.user.id, { actor: { type: 'STREAMER', id: ctx.user.id } }),
   ),
 
   getUserSetting: streamerProcedure.query(({ ctx }) =>
