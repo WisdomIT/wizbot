@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { BellRing, Bot, ClipboardList, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ScrollText, ShieldCheck, Users } from 'lucide-react';
+import { BellRing, Bot, ClipboardList, History, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ScrollText, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -76,6 +76,11 @@ const menu = [
     name: '에이전트',
     url: '/admin/agent',
     icon: <Bot />,
+  },
+  {
+    name: '감사 기록',
+    url: '/admin/audit',
+    icon: <History />,
   },
 ];
 

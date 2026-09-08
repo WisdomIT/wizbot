@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getChatbotDatabaseInitial } from '../chatbot';
 import { themeInputSchema } from '../lib/theme';
 import {
+  accessLogService,
   accountService,
   adminUsersService,
   createChzzkLoginClient,
@@ -163,6 +164,14 @@ export const userRouter = t.router({
       });
       // 승인 후 첫 로그인이면 채팅 안내를 멈춘다
       await signupService.acknowledge(ctx.prisma, channelId);
+      //  접근 기록 (#254) — 로그인 성공. 신청자(applicant)는 User 가 없어 남기지 않는다
+      await accessLogService.recordAccess(ctx.prisma, {
+        procedure: 'access.login',
+        actorType: 'STREAMER',
+        actorId: user.id,
+        userId: user.id,
+        subject: { channelId, channelName },
+      });
 
       return {
         kind: 'streamer' as const,
@@ -207,9 +216,9 @@ export const userRouter = t.router({
     .mutation(({ ctx, input }) =>
       accountService.setChatbotActive(ctx.prisma, ctx.user.id, input.active),
     ),
-  /** 본인 탈퇴 — 어드민의 탈퇴 처리와 같은 서비스(연관 데이터 cascade 삭제) */
+  /** 본인 탈퇴 — 어드민의 탈퇴 처리와 같은 서비스(연관 데이터 cascade 삭제). 접근 기록은 남는다 (#254) */
   deleteSelf: streamerProcedure.mutation(({ ctx }) =>
-    adminUsersService.deleteStreamer(ctx.prisma, ctx.user.id),
+    adminUsersService.deleteStreamer(ctx.prisma, ctx.user.id, { actor: { type: 'STREAMER', id: ctx.user.id } }),
   ),
 
   getUserSetting: streamerProcedure.query(({ ctx }) =>

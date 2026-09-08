@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { getChatbotDatabaseInitial } from '../chatbot';
 import { sendMail } from '../lib/nodemailer';
-import { adminUsersService, provisionService, ServiceError, signupService, whitelistService } from '../services';
+import { accessLogService, adminUsersService, provisionService, ServiceError, signupService, whitelistService } from '../services';
 import { adminProcedure, publicProcedure, t } from '../trpc';
 
 /** 패스코드 유효시간 — 넘으면 소모 전이라도 무효 (#20) */
@@ -92,6 +92,13 @@ export const adminRouter = t.router({
         throw invalid();
       }
 
+      //  접근 기록 (#254) — 어드민 로그인 성공. 대상 스트리머가 없으므로 userId 는 비운다
+      await accessLogService.recordAccess(ctx.prisma, {
+        procedure: 'access.adminLogin',
+        actorType: 'ADMIN',
+        actorId: adminFind.id,
+      });
+
       return { id: adminFind.id };
     }),
 
@@ -145,6 +152,7 @@ export const adminRouter = t.router({
     .mutation(({ ctx, input }) =>
       adminUsersService.deleteStreamer(ctx.prisma, input.userId, {
         removeWhitelist: input.removeWhitelist,
+        actor: { type: 'ADMIN', id: ctx.user.id },
       }),
     ),
 

@@ -1,5 +1,6 @@
-import type { PrismaClient } from '@prisma/client';
+import type { AuditActor, PrismaClient } from '@prisma/client';
 
+import { recordAccess } from './accessLog';
 import { ServiceError } from './errors';
 
 /* ── 스트리머 관리 (#10 PR B) ── */
@@ -48,14 +49,27 @@ export async function setStreamerHidden(prisma: PrismaClient, userId: number, hi
  * 화이트리스트 항목은 별개(입장권)라 남는다 — 재가입을 막으려면 화이트리스트에서도 삭제할 것.
  * 챗봇 워커는 다음 폴링(≤60초)에서 채널 연결을 정리한다.
  */
+/**
+ * 탈퇴 처리 — 본인(user.deleteSelf)과 어드민(admin.deleteStreamer)이 같이 쓴다. 연관 데이터는 스키마 cascade.
+ * 감사 기록(#254)은 둘로 나눈다: 설정 변경 기록은 계정과 함께 지우고, 접근 기록(access.*)은 남긴다 —
+ * FK 가 SetNull 이라 userId 만 비고 채널 식별자는 input 에 남아 있다. 탈퇴 자체도 access.withdraw 로 남긴다.
+ */
 export async function deleteStreamer(
   prisma: PrismaClient,
   userId: number,
-  options: { removeWhitelist?: boolean } = {},
+  options: { removeWhitelist?: boolean; actor?: { type: AuditActor; id: number } } = {},
 ) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new ServiceError('NOT_FOUND', '존재하지 않는 스트리머입니다.');
+  //  user 를 지우기 전에 — 지운 뒤엔 userId 가 비어 어느 계정 것이었는지 찾을 수 없다
+  await prisma.auditLog.deleteMany({ where: { userId, NOT: { procedure: { startsWith: 'access.' } } } });
   await prisma.user.delete({ where: { id: userId } });
+  await recordAccess(prisma, {
+    procedure: 'access.withdraw',
+    actorType: options.actor?.type ?? 'STREAMER',
+    actorId: options.actor?.id ?? userId,
+    subject: { channelId: user.channelId, channelName: user.channelName },
+  });
   // 화이트리스트 = 입장권. 기본은 남긴다(다시 로그인하면 재가입). 같이 지우면 재로그인도 막힌다 (#96)
   if (options.removeWhitelist) {
     await prisma.whitelist.deleteMany({ where: { channelId: user.channelId } });
