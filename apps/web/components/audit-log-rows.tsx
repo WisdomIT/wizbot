@@ -91,7 +91,12 @@ export function AuditRow({ log, showChannel = false }: { log: AuditRowData; show
           {log.channel ? (
             <div className="flex flex-col">
               <span className="flex items-center gap-1.5">
-                {log.channel.channelName}
+                {/* 탈퇴하지 않은 채널은 이름을 누르면 그 스트리머의 대행 콘솔을 연다 (#71) — 스트리머 목록과 같은 진입점 */}
+                {log.channel.userId === null ? (
+                  log.channel.channelName
+                ) : (
+                  <a href={`/admin/streamers/${log.channel.userId}/enter`} className="font-medium hover:underline">{log.channel.channelName}</a>
+                )}
                 {log.channel.userId === null && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">탈퇴</Badge>}
               </span>
               <span className="font-mono text-[11px] text-muted-foreground">{log.channel.channelId}</span>
