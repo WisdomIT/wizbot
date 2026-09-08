@@ -26,7 +26,7 @@
     "@wizbot/eslint-config": "workspace:^",
     "eslint": "^10",
     "tsup": "^8.5.0",
-    "tsx": "^4.20.3",
+    "tsx": "^4.23.13",
     "typescript": "^5.8.2"
   }
 }

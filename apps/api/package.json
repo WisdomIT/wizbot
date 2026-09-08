@@ -15,8 +15,8 @@
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
-    "@google/genai": "^2.20.0",
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@google/genai": "^2.21.0",
     "@prisma/client": "^6.19.3",
     "@trpc/client": "^11.18.0",
     "@trpc/server": "^11.18.0",
@@ -24,8 +24,8 @@
     "chzzk-open-sdk": "^1.0.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "jose": "^6.2.10",
-    "openai": "^7.8.0",
+    "jose": "^6.2.12",
+    "openai": "^7.10.0",
     "prisma": "^6.19.3",
     "zod": "^4.5.4"
   },
@@ -35,7 +35,7 @@
     "@wizbot/eslint-config": "workspace:^",
     "eslint": "^10",
     "tsup": "^8.5.0",
-    "tsx": "^4.20.3",
+    "tsx": "^4.23.13",
     "typescript": "^5.8.2"
   }
 }
