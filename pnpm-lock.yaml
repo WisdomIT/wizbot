@@ -28,7 +28,7 @@ importers:
     dependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.122.0
-        version: 0.122.0(zod@3.24.2)
+        version: 0.122.0(zod@4.5.4)
       '@google/genai':
         specifier: ^2.20.0
         version: 2.20.0
@@ -58,13 +58,13 @@ importers:
         version: 6.2.10
       openai:
         specifier: ^7.8.0
-        version: 7.8.0(undici@7.29.1)(ws@8.21.3)(zod@3.24.2)
+        version: 7.8.0(undici@7.29.1)(ws@8.21.3)(zod@4.5.4)
       prisma:
         specifier: ^6.19.3
         version: 6.19.3(typescript@5.8.3)
       zod:
-        specifier: ^3.24.2
-        version: 3.24.2
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@types/express':
         specifier: ^5.0.6
@@ -419,8 +419,8 @@ importers:
         specifier: ^5.8.2
         version: 5.8.3
       zod:
-        specifier: ^3.24.2
-        version: 3.24.2
+        specifier: ^4.5.4
+        version: 4.5.4
 
 packages:
 
@@ -5626,14 +5626,11 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  zod@3.24.2:
-    resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
-
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.5.4:
+    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -5642,12 +5639,12 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@anthropic-ai/sdk@0.122.0(zod@3.24.2)':
+  '@anthropic-ai/sdk@0.122.0(zod@4.5.4)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
-      zod: 3.24.2
+      zod: 4.5.4
 
   '@babel/code-frame@7.29.7':
     dependencies:
@@ -7789,13 +7786,13 @@ snapshots:
     dependencies:
       devtools-protocol: 0.0.1666840
       mitt: 3.0.1
-      zod: 3.24.2
+      zod: 3.25.76
 
   chromium-pickle-js@0.2.0: {}
 
   chzzk-open-sdk@1.0.0:
     dependencies:
-      zod: 4.4.3
+      zod: 4.5.4
 
   chzzk@1.10.4:
     dependencies:
@@ -8471,8 +8468,8 @@ snapshots:
       '@babel/parser': 7.29.8
       eslint: 10.9.1(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 3.25.76
-      zod-validation-error: 4.0.2(zod@3.25.76)
+      zod: 4.5.4
+      zod-validation-error: 4.0.2(zod@4.5.4)
     transitivePeerDependencies:
       - supports-color
 
@@ -9997,11 +9994,11 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@7.8.0(undici@7.29.1)(ws@8.21.3)(zod@3.24.2):
+  openai@7.8.0(undici@7.29.1)(ws@8.21.3)(zod@4.5.4):
     optionalDependencies:
       undici: 7.29.1
       ws: 8.21.3
-      zod: 3.24.2
+      zod: 4.5.4
 
   optionator@0.9.4:
     dependencies:
@@ -11358,14 +11355,12 @@ snapshots:
       fflate: 0.8.3
       meriyah: 7.3.2
 
-  zod-validation-error@4.0.2(zod@3.25.76):
+  zod-validation-error@4.0.2(zod@4.5.4):
     dependencies:
-      zod: 3.25.76
-
-  zod@3.24.2: {}
+      zod: 4.5.4
 
   zod@3.25.76: {}
 
-  zod@4.4.3: {}
+  zod@4.5.4: {}
 
   zwitch@2.0.4: {}
