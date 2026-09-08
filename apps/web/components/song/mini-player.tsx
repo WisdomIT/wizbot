@@ -1,12 +1,23 @@
 'use client';
 
-import { ArrowDownCircle, ListMusic, Maximize2, Music, Pause, Play, Repeat1, SkipForward, Volume2 } from 'lucide-react';
+import {
+  ArrowDownCircle,
+  ListMusic,
+  Maximize2,
+  Music,
+  Pause,
+  Play,
+  Repeat1,
+  SkipForward,
+  Volume2,
+} from 'lucide-react';
 
 import { formatTime, type PlaybackView, type PlayerControls } from '@/components/song/song-player';
 import { Button } from '@/components/ui/button';
 
 import { AppTitleBar } from './app-title-bar';
 import { DRAG, NO_DRAG } from './drag-region';
+import { FavoriteHeartButton } from './favorite-heart-button';
 
 /**
  * 미니 플레이어 (#97 #85).
@@ -34,6 +45,7 @@ export function MiniPlayer({
   onToggleQueue,
   onExpand,
   onPlaySong,
+  favorite,
   platform,
   windowControls,
   update,
@@ -48,6 +60,12 @@ export function MiniPlayer({
   onToggleQueue: () => void;
   onExpand: () => void;
   onPlaySong: (song: MiniQueueItem) => void;
+  /**
+   * 지금 곡을 원클릭으로 담을 즐겨찾기 (#264) — 미니는 고를 공간이 없어 대표 하나로 간다.
+   * 즐겨찾기가 하나도 없으면 undefined 를 주고, 버튼은 숨긴다. 결정은 상위(player-view)에서.
+   * 미니는 토스트를 띄우지 않으므로(#85) 담긴 뒤에는 하트를 채워 보여준다 — added 가 그 상태
+   */
+  favorite?: { name: string; added: boolean; onAdd: () => void };
   platform: string;
   windowControls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
   /** 설치할 수 있는 새 버전 (#117) — 미니는 공간이 없어 타이틀바 아이콘으로만 알린다 */
@@ -163,6 +181,9 @@ export function MiniPlayer({
           >
             <Repeat1 />
           </Button>
+          {favorite && (
+            <FavoriteHeartButton favorite={favorite} disabled={!playback.youtubeId} />
+          )}
 
           {/* 볼륨이 남는 폭을 전부 차지하면 손잡이(드래그 영역)가 사라진다 — 오른쪽에 고정 폭으로 (#202) */}
           <Volume2 className="ml-auto size-4 shrink-0 text-muted-foreground" />

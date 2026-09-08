@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { pickDefaultFavorite } from '@/lib/default-favorite';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 type Status = 'PLAYED' | 'SKIPPED' | 'CANCELED' | 'FAILED';
@@ -102,9 +103,8 @@ export function HistoryView() {
   const requeue = useMutation(trpc.song.requeueFromHistory.mutationOptions());
   const addToFavorite = useMutation(trpc.songFavorite.addItem.mutationOptions());
 
-  const defaultFavorite =
-    favorites.data?.favorites.find((favorite) => favorite.isDefault) ??
-    favorites.data?.favorites[0];
+  // 미니 플레이어·큰 창 하트와 같은 규칙 (#264)
+  const defaultFavorite = pickDefaultFavorite(favorites.data?.favorites ?? []);
 
   const items = data?.pages.flatMap((page) => page.items) ?? [];
 

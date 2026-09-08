@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AppTitleBar } from '@/components/song/app-title-bar';
 import { FavoritePlayDialog } from '@/components/song/favorite-play-dialog';
+import { FavoriteHeartButton } from '@/components/song/favorite-heart-button';
 import { MiniPlayer } from '@/components/song/mini-player';
 import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +50,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAppShell } from '@/src/hooks/use-app-shell';
+import { useDefaultFavorite } from '@/src/hooks/use-default-favorite';
 import { useSongEvents } from '@/src/hooks/use-song-events';
 import { useTRPC } from '@/src/utils/trpc-react';
 
@@ -111,6 +113,9 @@ export function PlayerView() {
 
   const shell = useAppShell();
 
+  // 미니 플레이어 하트 버튼의 대상 (#264) — 큰 창은 AddToFavoriteButton 이 따로 고른다
+  const { defaultFavorite } = useDefaultFavorite();
+
   // 미니 플레이어는 창이 작아 토스트가 화면을 통째로 덮는다 — 조용히 처리한다
   const quiet = shell.isApp && shell.mode === 'mini';
 
@@ -157,7 +162,7 @@ export function PlayerView() {
     );
   }
 
-  const { playback, queue, source, historyPublic, autoPlay } = data;
+  const { playback, queue, source, historyPublic, autoPlay, currentInFavorites } = data;
 
   const playerControls = {
     volume: playback.volume,
@@ -190,6 +195,17 @@ export function PlayerView() {
         onExpand={() => shell.setMode('desktop')}
         onPlaySong={(song) =>
           run(playNow.mutateAsync({ id: song.id }), `${song.title} 재생을 시작합니다.`)
+        }
+        favorite={
+          defaultFavorite && {
+            name: defaultFavorite.name,
+            added: currentInFavorites.includes(defaultFavorite.id),
+            onAdd: () =>
+              run(
+                addCurrentToFavorite.mutateAsync({ favoriteId: defaultFavorite.id }),
+                `"${defaultFavorite.name}"에 담았습니다.`,
+              ),
+          }
         }
         platform={shell.platform}
         windowControls={shell.windowControls}
@@ -261,8 +277,12 @@ export function PlayerView() {
             <div className="flex items-center gap-1 rounded-full bg-background/80 backdrop-blur">
               {playback.youtubeId && (
                 <AddToFavoriteButton
-                  onAdd={(favoriteId) =>
-                    run(addCurrentToFavorite.mutateAsync({ favoriteId }), '즐겨찾기에 담았습니다.')
+                  currentInFavorites={currentInFavorites}
+                  onAdd={(favorite) =>
+                    run(
+                      addCurrentToFavorite.mutateAsync({ favoriteId: favorite.id }),
+                      `"${favorite.name}"에 담았습니다.`,
+                    )
                   }
                 />
               )}
@@ -685,38 +705,51 @@ function AddSongForm({
 }
 
 /** 지금 재생 중인 곡을 즐겨찾기에 담는다 */
-function AddToFavoriteButton({ onAdd }: { onAdd: (favoriteId: number) => void }) {
-  const trpc = useTRPC();
-  const { data } = useQuery(trpc.songFavorite.list.queryOptions());
-  const favorites = data?.favorites ?? [];
+function AddToFavoriteButton({
+  currentInFavorites,
+  onAdd,
+}: {
+  /** 지금 곡이 이미 담긴 즐겨찾기 id (#264) */
+  currentInFavorites: number[];
+  onAdd: (favorite: { id: number; name: string }) => void;
+}) {
+  const { favorites, defaultFavorite } = useDefaultFavorite();
 
-  if (favorites.length === 0) return null;
+  if (!defaultFavorite) return null;
 
-  // 즐겨찾기가 하나뿐이면 고를 것도 없다
+  // 즐겨찾기가 하나뿐이면 고를 것도 없다 — 미니 플레이어 하트와 같은 동작 (#264)
   if (favorites.length === 1) {
     return (
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="즐겨찾기에 담기"
-        title="즐겨찾기에 담기"
-        onClick={() => onAdd(favorites[0]!.id)}
-      >
-        <Heart />
-      </Button>
+      <FavoriteHeartButton
+        favorite={{
+          name: defaultFavorite.name,
+          added: currentInFavorites.includes(defaultFavorite.id),
+          onAdd: () => onAdd(defaultFavorite),
+        }}
+      />
     );
   }
 
   return (
-    <Select onValueChange={(value) => onAdd(Number(value))}>
+    <Select
+      onValueChange={(value) => {
+        const favorite = favorites.find((candidate) => String(candidate.id) === value);
+        if (favorite) onAdd(favorite);
+      }}
+    >
       <SelectTrigger className="h-9 w-9 border-0 p-0 shadow-none [&>svg:last-child]:hidden">
         <SelectValue placeholder={<Heart className="size-4" />} />
       </SelectTrigger>
       <SelectContent>
         {favorites.map((favorite) => (
-          <SelectItem key={favorite.id} value={String(favorite.id)}>
+          <SelectItem
+            key={favorite.id}
+            value={String(favorite.id)}
+            disabled={currentInFavorites.includes(favorite.id)}
+          >
             {favorite.name}
             {favorite.isDefault ? ' (대표)' : ''}
+            {currentInFavorites.includes(favorite.id) ? ' · 담김' : ''}
           </SelectItem>
         ))}
       </SelectContent>
