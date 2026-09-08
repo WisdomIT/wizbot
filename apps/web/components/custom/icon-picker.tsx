@@ -1,9 +1,8 @@
 'use client';
 
-import { iconNames } from 'lucide-react/dynamic';
 import { useMemo, useState } from 'react';
 
-import { DynamicIcon, resolveIconName } from '@/components/custom/dynamic-icon';
+import { allIconNames, DynamicIcon, resolveIconName } from '@/components/custom/dynamic-icon';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,6 +25,8 @@ import { cn } from '@/lib/utils';
  * 값은 lucide 표준 이름(kebab-case)을 그대로 쓴다. 예전에는 PascalCase 로 변환해 저장했는데
  * 숫자가 낀 이름(gamepad-2 → Gamepad2)이 되돌려지지 않아 렌더가 깨졌다.
  * DB 에 남아 있는 PascalCase 값은 DynamicIcon 의 정규화 매칭이 처리한다.
+ *
+ * lucide 1.0 에서 삭제된 브랜드 아이콘(youtube, twitch …)은 brand-icons 에 보존한 것을 함께 검색한다 (#268).
  */
 
 const MAX_RESULTS = 60;
@@ -97,7 +98,7 @@ export function IconPicker({
     const query = search.trim().toLowerCase().replace(/\s+/g, '-');
     if (!query) return [...CURATED];
 
-    const matched = (iconNames as readonly string[]).filter((name) => name.includes(query));
+    const matched = (allIconNames as readonly string[]).filter((name) => name.includes(query));
     // 검색어로 시작하는 이름을 앞으로
     matched.sort((a, b) => {
       const aStarts = a.startsWith(query) ? 0 : 1;

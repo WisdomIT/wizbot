@@ -1,10 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BookOpen, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BookOpen, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
+import { Youtube } from '@/components/custom/brand-icons';
 import {
   Sidebar,
   SidebarContent,
