@@ -27,7 +27,7 @@
     "jose": "^6.2.10",
     "openai": "^7.8.0",
     "prisma": "^6.19.3",
-    "zod": "^3.24.2"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

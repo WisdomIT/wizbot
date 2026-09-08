@@ -151,7 +151,7 @@ export const adminRouter = t.router({
   /* ── 관리자 계정 관리 (#10 PR B) ── */
   listAdmins: adminProcedure.query(({ ctx }) => adminUsersService.listAdmins(ctx.prisma)),
   addAdmin: adminProcedure
-    .input(z.object({ email: z.string().email('올바른 이메일 주소를 입력해주세요.') }))
+    .input(z.object({ email: z.email('올바른 이메일 주소를 입력해주세요.') }))
     .mutation(({ ctx, input }) => adminUsersService.addAdmin(ctx.prisma, input.email)),
   removeAdmin: adminProcedure
     .input(z.object({ id: z.number() }))

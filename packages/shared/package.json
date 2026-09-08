@@ -34,7 +34,7 @@
     "@wizbot/eslint-config": "workspace:^",
     "eslint": "^10",
     "typescript": "^5.8.2",
-    "zod": "^3.24.2"
+    "zod": "^4.5.4"
   },
   "dependencies": {
     "chzzk": "^1.10.4",
