@@ -67,8 +67,7 @@ let lastState: PlayerState | null = null;
 /** 트레이에서 종료를 골랐을 때만 실제로 끝낸다 (창을 닫으면 숨기기만 한다) */
 let quitting = false;
 /** 컴퓨터 시작과 함께 켜진 경우 — 창을 띄우지 않고 트레이에만 남는다 */
-const startedHidden =
-  process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAsHidden;
+const startedHidden = process.argv.includes('--hidden');
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -429,7 +428,7 @@ if (!app.requestSingleInstanceLock()) {
 
   ipcMain.on('app:set-auto-launch', (_event, enabled: boolean) => {
     // 자동 실행으로 켜질 때는 창을 띄우지 않는다 — 부팅할 때마다 창이 뜨면 성가시다
-    app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true, args: ['--hidden'] });
+    app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] });
   });
 
   ipcMain.on('app:window', (_event, action: 'minimize' | 'toggle-maximize' | 'close') => {
