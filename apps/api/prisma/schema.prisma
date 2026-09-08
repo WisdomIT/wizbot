@@ -350,22 +350,23 @@ enum InquiryAuthor {
 
 /// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
 /// 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라, 스트리머 본인도 자기 기록을 본다.
+/// 접근 기록(#254)도 같은 테이블에 `access.*` procedure 로 남긴다 — 로그인·어드민 대행 시작/종료.
 model AuditLog {
   id        Int        @id @default(autoincrement())
-  /// 대상 스트리머
-  userId    Int
+  /// 대상 스트리머. 어드민 로그인(access.adminLogin)처럼 대상 스트리머가 없는 접근 기록은 null (#254)
+  userId    Int?
   actorType AuditActor
   /// STREAMER 면 userId, ADMIN 이면 Admin.id. CHATBOT 은 계정 id 가 없어 null
   actorId   Int?
   /// CHATBOT — 채팅으로 호출한 사람 (닉네임 · 치지직 채널 id)
   actorName String?    @db.VarChar(120)
-  /// tRPC 경로 (command.create 등)
+  /// tRPC 경로 (command.create 등). 접근 기록은 access.login / access.adminLogin / access.actingStart / access.actingEnd
   procedure String     @db.VarChar(100)
   /// 정리된 입력 — 토큰류 키 제거·대용량 값 절단 (lib/audit.ts)
   input     Json?
   createdAt DateTime   @default(now()) @db.DateTime(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, id])
 }

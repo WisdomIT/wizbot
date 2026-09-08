@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getChatbotDatabaseInitial } from '../chatbot';
 import { themeInputSchema } from '../lib/theme';
 import {
+  accessLogService,
   accountService,
   adminUsersService,
   createChzzkLoginClient,
@@ -163,6 +164,13 @@ export const userRouter = t.router({
       });
       // 승인 후 첫 로그인이면 채팅 안내를 멈춘다
       await signupService.acknowledge(ctx.prisma, channelId);
+      //  접근 기록 (#254) — 로그인 성공. 신청자(applicant)는 User 가 없어 남기지 않는다
+      await accessLogService.recordAccess(ctx.prisma, {
+        procedure: 'access.login',
+        actorType: 'STREAMER',
+        actorId: user.id,
+        userId: user.id,
+      });
 
       return {
         kind: 'streamer' as const,

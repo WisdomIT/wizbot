@@ -1,4 +1,5 @@
 export * as chzzkLiveService from '../lib/chzzkLive';
+export * as accessLogService from './accessLog';
 export * as accountService from './account';
 export * as adminUsersService from './adminUsers';
 export * as agentService from './agent';

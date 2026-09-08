@@ -122,6 +122,23 @@ export function chatActorName(sender: { senderNickname: string; senderChannelId?
   return name.slice(0, 120);
 }
 
+/**
+ * 접근 기록 (#254) — 개인정보처리시스템 접속기록 보관 요건에 대응한다. 변경 기록과 같은 테이블에
+ * `access.` 접두어로 남기고, 어드민 「감사 기록」 페이지에서 종류 필터로 구분한다.
+ * 접속지 IP 는 기록하지 않는다 — 서비스가 IP 를 어디서도 수집하지 않고 개인정보처리방침도 그렇게 적혀 있다.
+ */
+export const ACCESS_AUDIT_LABELS: Record<string, string> = {
+  'access.login': '로그인 (치지직)',
+  'access.adminLogin': '관리자 로그인',
+  'access.actingStart': '관리자 대행 시작',
+  'access.actingEnd': '관리자 대행 종료',
+};
+
+/** 로그인·대행 같은 접근 기록인지 — 설정 변경과 화면에서 구분한다 */
+export function isAccessProcedure(procedure: string): boolean {
+  return procedure.startsWith('access.');
+}
+
 export function auditLabel(procedure: string): string {
-  return AUDIT_LABELS[procedure] ?? CHAT_AUDIT_LABELS[procedure] ?? procedure;
+  return AUDIT_LABELS[procedure] ?? CHAT_AUDIT_LABELS[procedure] ?? ACCESS_AUDIT_LABELS[procedure] ?? procedure;
 }
