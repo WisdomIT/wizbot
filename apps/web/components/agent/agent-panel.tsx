@@ -164,9 +164,10 @@ export function AgentPanel() {
 
   return (
     <TooltipProvider>
-      {/* 우측 하단 버튼·dock 과 겹치는 페이지 요소를 위한 여백 — 이 컴포넌트는 스트리머 콘솔에만 마운트된다 */}
+      {/* 우측 하단 버튼·dock 과 겹치는 요소를 위한 여백 — 이 컴포넌트는 스트리머 콘솔에만 마운트된다.
+          본문 하단 여백은 푸터(#257)가 대신하므로, 버튼이 푸터 오른쪽 끝(GitHub)을 가리지 않게만 비운다 */}
       <style>{`
-        main { padding-bottom: 6rem; }
+        footer.site-footer { padding-right: 5.5rem; }
         html.agent-open body { padding-right: var(--agent-w, 24rem); }
         @media (max-width: 1023px) { html.agent-open body { padding-right: 0; } }
       `}</style>

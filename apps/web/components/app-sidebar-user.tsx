@@ -8,6 +8,7 @@ import { JSX, useSyncExternalStore } from 'react';
 
 import { NavSecondary } from '@/components/nav-secondary';
 import { VIEWER_NOTICE_SEEN_EVENT, VIEWER_NOTICE_SEEN_KEY } from '@/components/notice/notice-seen';
+import { SiteFooter } from '@/components/site-footer';
 import {
   Sidebar,
   SidebarContent,
@@ -156,6 +157,7 @@ export function AppSidebarUser({ channel, shortcuts, children, ...props }: AppSi
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        <SiteFooter />
         <ViewerPlayerBar channelId={channel.channelId} />
       </SidebarInset>
     </>
