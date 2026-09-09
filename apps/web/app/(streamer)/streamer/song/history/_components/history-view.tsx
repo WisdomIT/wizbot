@@ -2,13 +2,13 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff, Heart, RotateCcw } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { SearchInput } from '@/components/data-table/search-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { pickDefaultFavorite } from '@/lib/default-favorite';
+import { useSearchState } from '@/src/hooks/use-search-state';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 type Status = 'PLAYED' | 'SKIPPED' | 'CANCELED' | 'FAILED';
@@ -56,15 +57,18 @@ function formatWhen(value: string | Date) {
   });
 }
 
+const STATUSES: Status[] = ['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED'];
+/** URL 쿼리 상태 (#265) — 필터만. 「더 보기」로 이어 붙인 위치는 커서라 주소에 남기지 않는다 */
+const DEFAULTS = { status: 'ALL', q: '' };
+
 /** 재생 기록 (#5 4단계) — 큐에서 사라진 곡도 전부 남는다 */
 export function HistoryView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const [status, setStatus] = useState<Status | 'ALL'>('ALL');
-  const [search, setSearch] = useState('');
-  // 입력할 때마다 조회하지 않도록 제출 시점의 값만 쿼리에 넣는다
-  const [appliedSearch, setAppliedSearch] = useState('');
+  const [state, setState] = useSearchState(DEFAULTS);
+  const status: Status | 'ALL' = STATUSES.includes(state.status as Status) ? (state.status as Status) : 'ALL';
+  const appliedSearch = state.q.trim();
 
   const filters = {
     ...(status === 'ALL' ? {} : { status }),
@@ -120,7 +124,7 @@ export function HistoryView() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={status} onValueChange={(value) => setStatus(value as Status | 'ALL')}>
+            <Select value={status} onValueChange={(value) => setState({ status: value })}>
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
@@ -133,34 +137,18 @@ export function HistoryView() {
               </SelectContent>
             </Select>
 
-            <form
-              className="flex flex-1 items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setAppliedSearch(search.trim());
-              }}
-            >
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+            <div className="flex flex-1 items-center gap-2">
+              <SearchInput
+                value={state.q}
+                onChange={(q) => setState({ q })}
                 placeholder="제목 또는 신청자 검색"
               />
-              <Button type="submit" variant="outline">
-                검색
-              </Button>
-              {appliedSearch && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setSearch('');
-                    setAppliedSearch('');
-                  }}
-                >
+              {(appliedSearch || status !== 'ALL') && (
+                <Button type="button" variant="ghost" onClick={() => setState({ q: '', status: 'ALL' })}>
                   초기화
                 </Button>
               )}
-            </form>
+            </div>
           </div>
 
           {isPending ? (

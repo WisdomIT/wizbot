@@ -24,6 +24,7 @@ function createCaller(overrides: Partial<Context> = {}) {
   const prisma = {
     auditLog: {
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
       create: vi.fn().mockResolvedValue({}),
     },
     admin: { findMany: vi.fn().mockResolvedValue([{ id: 1, email: 'admin@example.com' }]) },
@@ -48,9 +49,10 @@ describe('audit.adminLogs (#254)', () => {
       row({ id: 9, actorType: 'ADMIN', actorId: 1, procedure: 'access.actingStart', input: null }),
       row({ id: 8, userId: null, user: null, actorType: 'ADMIN', actorId: 99, procedure: 'access.adminLogin', input: null }),
     ]);
+    prisma.auditLog.count.mockResolvedValue(3);
     const result = await caller.audit.adminLogs({});
-    expect(prisma.auditLog.findMany.mock.calls[0][0].where).toEqual({});
-    expect(result.nextCursor).toBeNull();
+    expect(prisma.auditLog.findMany.mock.calls[0][0]).toMatchObject({ where: {}, skip: 0, take: 50 });
+    expect(result.total).toBe(3);
     expect(result.logs).toMatchObject([
       { id: 10, actorLabel: '스트리머 본인', inputText: '{"command":"!안녕"}', channel: { userId: 7, channelId: 'chan7', channelName: '스트리머7' } },
       { id: 9, actorLabel: '관리자 · admin@example.com', inputText: null },
@@ -77,9 +79,10 @@ describe('audit.adminLogs (#254)', () => {
     const { caller, prisma } = asAdmin();
     const from = new Date('2026-09-01T00:00:00Z');
     const to = new Date('2026-09-02T00:00:00Z');
-    await caller.audit.adminLogs({ userId: 7, actorType: 'ADMIN', kind: 'access', from, to, cursor: 100 });
+    await caller.audit.adminLogs({ userId: 7, actorType: 'ADMIN', kind: 'access', from, to, page: 3, perPage: 20 });
+    expect(prisma.auditLog.findMany.mock.calls[0][0]).toMatchObject({ skip: 40, take: 20 });
+    expect(prisma.auditLog.count.mock.calls[0][0].where).toEqual(prisma.auditLog.findMany.mock.calls[0][0].where);
     expect(prisma.auditLog.findMany.mock.calls[0][0].where).toEqual({
-      id: { lt: 100 },
       userId: 7,
       actorType: 'ADMIN',
       procedure: { startsWith: 'access.' },
@@ -95,12 +98,23 @@ describe('audit.adminLogs (#254)', () => {
     expect(prisma.auditLog.findMany.mock.calls[1][0].where).toEqual({ procedure: 'access.login' });
   });
 
-  it('limit 보다 한 건 더 오면 nextCursor 가 마지막 행 id', async () => {
+  it('키워드 검색 (#265) — 경로·라벨 역매핑·입력 JSON·채팅 닉네임을 OR 로', async () => {
     const { caller, prisma } = asAdmin();
-    prisma.auditLog.findMany.mockResolvedValue([row({ id: 3 }), row({ id: 2 }), row({ id: 1 })]);
-    const result = await caller.audit.adminLogs({ limit: 2 });
-    expect(result.logs.map((log) => log.id)).toEqual([3, 2]);
-    expect(result.nextCursor).toBe(2);
+    await caller.audit.adminLogs({ q: '명령어 추가' });
+    expect(prisma.auditLog.findMany.mock.calls[0][0].where).toEqual({
+      OR: [
+        { procedure: { contains: '명령어 추가' } },
+        { procedure: { in: ['command.create', 'chat.commandCreate'] } },
+        { input: { path: '$', string_contains: '명령어 추가' } },
+        { actorName: { contains: '명령어 추가' } },
+      ],
+    });
+  });
+
+  it('공백뿐인 검색어는 무시한다', async () => {
+    const { caller, prisma } = asAdmin();
+    await caller.audit.adminLogs({ q: '   ' });
+    expect(prisma.auditLog.findMany.mock.calls[0][0].where).toEqual({});
   });
 });
 
@@ -133,7 +147,30 @@ describe('audit.logs — 스트리머 본인 (#175)', () => {
     const { caller, prisma } = createCaller({ user: { id: 7, role: 'streamer' } });
     prisma.auditLog.findMany.mockResolvedValue([row({ actorType: 'ADMIN', actorId: 1, procedure: 'access.actingStart', input: null })]);
     const result = await caller.audit.logs({});
-    expect(prisma.auditLog.findMany.mock.calls[0][0].where).toEqual({ userId: 7 });
+    expect(prisma.auditLog.findMany.mock.calls[0][0]).toMatchObject({ where: { userId: 7 }, skip: 0, take: 50 });
     expect(result.logs[0]).toMatchObject({ procedure: 'access.actingStart', actorLabel: '관리자' });
+    expect(result.total).toBe(0);
+  });
+
+  it('행위자·기간·키워드 필터와 페이지 (#265) — 본인 스코프는 항상 유지', async () => {
+    vi.useFakeTimers({ now: new Date('2026-09-10T00:00:00Z') });
+    try {
+      const { caller, prisma } = createCaller({ user: { id: 7, role: 'streamer' } });
+      await caller.audit.logs({ actorType: 'CHATBOT', days: 7, q: 'zzz', page: 2, perPage: 20 });
+      const call = prisma.auditLog.findMany.mock.calls[0][0];
+      expect(call).toMatchObject({ skip: 20, take: 20 });
+      expect(call.where).toMatchObject({
+        userId: 7,
+        actorType: 'CHATBOT',
+        createdAt: { gte: new Date('2026-09-03T00:00:00Z') },
+      });
+      expect(call.where.OR).toHaveLength(3); // 라벨에 없는 키워드 — IN 절이 빠진다
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('다른 스트리머 기록은 못 본다 — 비로그인은 UNAUTHORIZED', async () => {
+    await expect(createCaller().caller.audit.logs({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });

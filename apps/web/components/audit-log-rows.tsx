@@ -4,7 +4,6 @@ import { auditLabel, isAccessProcedure } from '@wizbot/shared/lib/audit';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -60,16 +59,6 @@ export function AuditSkeletonRow({ colSpan }: { colSpan: number }) {
   return (
     <TableRow>
       <TableCell colSpan={colSpan}><Skeleton className="h-16 w-full" /></TableCell>
-    </TableRow>
-  );
-}
-
-export function AuditMoreRow({ colSpan, onMore }: { colSpan: number; onMore: () => void }) {
-  return (
-    <TableRow>
-      <TableCell colSpan={colSpan} className="text-center">
-        <Button variant="outline" size="sm" onClick={onMore}>더 보기</Button>
-      </TableCell>
     </TableRow>
   );
 }

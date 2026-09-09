@@ -2,11 +2,23 @@ import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { accessSubjectOf } from '../lib/audit';
-import { accessLogService, ServiceError } from '../services';
+import { accessLogService, auditService, ServiceError } from '../services';
 import { adminProcedure, streamerProcedure, t } from '../trpc';
 
 const AUDIT_ACTORS = ['STREAMER', 'ADMIN', 'CHATBOT', 'AGENT'] as const;
 const ACCESS_PREFIX = 'access.';
+
+/** 페이지 버튼 방식 (#265) — 어드민 에이전트 로그(agent.adminConversations)와 같은 모양. total 로 페이지 수를 만든다 */
+const pageInput = {
+  page: z.number().int().min(1).default(1),
+  perPage: z.number().int().min(1).max(100).default(50),
+  /** 키워드 — 경로·한글 라벨·입력 내용·채팅 닉네임 (auditService.auditSearchWhere) */
+  q: z.string().trim().max(100).optional(),
+};
+
+function pageArgs(input: { page: number; perPage: number }) {
+  return { skip: (input.page - 1) * input.perPage, take: input.perPage };
+}
 
 interface AuditChannel {
   /** 탈퇴한 계정이면 null */
@@ -28,17 +40,29 @@ function channelOf(row: { user: { id: number; channelId: string; channelName: st
  */
 export const auditRouter = t.router({
   logs: streamerProcedure
-    .input(z.object({ cursor: z.number().int().positive().nullish(), limit: z.number().int().min(1).max(100).default(50) }))
+    .input(
+      z.object({
+        ...pageInput,
+        actorType: z.enum(AUDIT_ACTORS).optional(),
+        /** 최근 N일 */
+        days: z.number().int().min(1).max(3650).optional(),
+      }),
+    )
     .query(async ({ ctx, input }) => {
-      const rows = await ctx.prisma.auditLog.findMany({
-        where: { userId: ctx.user.id, ...(input.cursor ? { id: { lt: input.cursor } } : {}) },
-        orderBy: { id: 'desc' },
-        take: input.limit + 1,
-      });
-      const page = rows.slice(0, input.limit);
+      const where: Prisma.AuditLogWhereInput = {
+        userId: ctx.user.id,
+        ...(input.actorType ? { actorType: input.actorType } : {}),
+        ...(input.days ? { createdAt: { gte: auditService.sinceDays(input.days) } } : {}),
+        ...(auditService.auditSearchWhere(input.q ?? '') ?? {}),
+      };
+      const [rows, total] = await Promise.all([
+        ctx.prisma.auditLog.findMany({ where, orderBy: { id: 'desc' }, ...pageArgs(input) }),
+        ctx.prisma.auditLog.count({ where }),
+      ]);
       //  행위자 표기: 본인 / 관리자(개인 식별 없이) / 채팅 호출자(닉네임·채널 id, 챗봇 명령일 때)
       return {
-        logs: page.map((row) => ({
+        total,
+        logs: rows.map((row) => ({
           id: row.id,
           createdAt: row.createdAt,
           procedure: row.procedure,
@@ -51,7 +75,6 @@ export const auditRouter = t.router({
             : row.actorType === 'AGENT' ? `에이전트${row.actorName ? ` · ${row.actorName}` : ''}`
             : '본인',
         })),
-        nextCursor: rows.length > input.limit ? page[page.length - 1]?.id ?? null : null,
       };
     }),
 
@@ -62,8 +85,7 @@ export const auditRouter = t.router({
   adminLogs: adminProcedure
     .input(
       z.object({
-        cursor: z.number().int().positive().nullish(),
-        limit: z.number().int().min(1).max(100).default(50),
+        ...pageInput,
         /** 대상 스트리머 (User.id) */
         userId: z.number().int().positive().optional(),
         actorType: z.enum(AUDIT_ACTORS).optional(),
@@ -76,7 +98,6 @@ export const auditRouter = t.router({
     )
     .query(async ({ ctx, input }) => {
       const where: Prisma.AuditLogWhereInput = {
-        ...(input.cursor ? { id: { lt: input.cursor } } : {}),
         ...(input.userId ? { userId: input.userId } : {}),
         ...(input.actorType ? { actorType: input.actorType } : {}),
         ...(input.procedure
@@ -89,24 +110,28 @@ export const auditRouter = t.router({
         ...(input.from || input.to
           ? { createdAt: { ...(input.from ? { gte: input.from } : {}), ...(input.to ? { lte: input.to } : {}) } }
           : {}),
+        ...(auditService.auditSearchWhere(input.q ?? '') ?? {}),
       };
-      const rows = await ctx.prisma.auditLog.findMany({
-        where,
-        orderBy: { id: 'desc' },
-        take: input.limit + 1,
-        include: { user: { select: { id: true, channelId: true, channelName: true } } },
-      });
-      const page = rows.slice(0, input.limit);
+      const [rows, total] = await Promise.all([
+        ctx.prisma.auditLog.findMany({
+          where,
+          orderBy: { id: 'desc' },
+          ...pageArgs(input),
+          include: { user: { select: { id: true, channelId: true, channelName: true } } },
+        }),
+        ctx.prisma.auditLog.count({ where }),
+      ]);
 
       //  관리자 행위자는 이메일로 식별한다 — 지워진 계정은 id 만 남는다
-      const adminIds = [...new Set(page.filter((row) => row.actorType === 'ADMIN' && row.actorId != null).map((row) => row.actorId as number))];
+      const adminIds = [...new Set(rows.filter((row) => row.actorType === 'ADMIN' && row.actorId != null).map((row) => row.actorId as number))];
       const admins = adminIds.length > 0
         ? await ctx.prisma.admin.findMany({ where: { id: { in: adminIds } }, select: { id: true, email: true } })
         : [];
       const adminEmail = new Map(admins.map((admin) => [admin.id, admin.email]));
 
       return {
-        logs: page.map((row) => ({
+        total,
+        logs: rows.map((row) => ({
           id: row.id,
           createdAt: row.createdAt,
           procedure: row.procedure,
@@ -121,7 +146,6 @@ export const auditRouter = t.router({
           //  어드민 로그인처럼 애초에 대상이 없으면 null
           channel: channelOf(row),
         })),
-        nextCursor: rows.length > input.limit ? page[page.length - 1]?.id ?? null : null,
       };
     }),
 
