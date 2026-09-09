@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { AUDIT_EXCLUDED, auditLabel, sanitizeAuditInput } from '../../lib/audit';
 import { type Context, streamerProcedure, t } from '../../trpc';
+import { auditSearchWhere, proceduresMatchingLabel, sinceDays } from '../audit';
 
 describe('sanitizeAuditInput (#175)', () => {
   it('비밀 키는 값 대신 (비공개)', () => {
@@ -72,5 +73,35 @@ describe('auditLabel', () => {
   it('알려진 경로는 한글, 모르는 경로는 원문', () => {
     expect(auditLabel('command.create')).toBe('명령어 추가');
     expect(auditLabel('unknown.path')).toBe('unknown.path');
+  });
+});
+
+describe('auditService (#265)', () => {
+  it('라벨 역매핑 — 대소문자·공백을 무시하고 부분 일치', () => {
+    expect(proceduresMatchingLabel('반복 메시지')).toEqual([
+      'command.createRepeat',
+      'command.updateRepeat',
+      'command.removeRepeat',
+      'chat.repeatCreate',
+      'chat.repeatDelete',
+    ]);
+    expect(proceduresMatchingLabel('관리자대행')).toEqual(['access.actingStart', 'access.actingEnd']);
+    expect(proceduresMatchingLabel('없는말')).toEqual([]);
+  });
+
+  it('검색 where — 빈 키워드는 null, 라벨이 안 맞으면 IN 절 없이', () => {
+    expect(auditSearchWhere('')).toBeNull();
+    expect(auditSearchWhere('  ')).toBeNull();
+    expect(auditSearchWhere(' !안녕 ')).toEqual({
+      OR: [
+        { procedure: { contains: '!안녕' } },
+        { input: { path: '$', string_contains: '!안녕' } },
+        { actorName: { contains: '!안녕' } },
+      ],
+    });
+  });
+
+  it('sinceDays 는 N일 전 시각', () => {
+    expect(sinceDays(7, new Date('2026-09-10T00:00:00Z'))).toEqual(new Date('2026-09-03T00:00:00Z'));
   });
 });

@@ -1,17 +1,17 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ACCESS_AUDIT_LABELS, AUDIT_LABELS, CHAT_AUDIT_LABELS } from '@wizbot/shared/lib/audit';
-import { useState } from 'react';
 
 import {
   auditColumnCount,
   AuditHeaderRow,
   AuditMessageRow,
-  AuditMoreRow,
   AuditRow,
   AuditSkeletonRow,
 } from '@/components/audit-log-rows';
+import { SearchInput } from '@/components/data-table/search-input';
+import { TablePagination } from '@/components/data-table/table-controls';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,24 +25,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableHeader } from '@/components/ui/table';
+import { pageOf, useSearchState } from '@/src/hooks/use-search-state';
 import { useTRPC } from '@/src/utils/trpc-react';
 
-const PAGE_SIZE = 50;
 const COLUMNS = auditColumnCount(true);
 /** Radix Select 는 빈 문자열 값을 못 쓴다 — 「전체」 항목의 값 */
 const ALL = 'ALL';
+const PAGE_SIZES = ['20', '50', '100'];
 
 type ActorType = 'STREAMER' | 'ADMIN' | 'CHATBOT' | 'AGENT';
 type Kind = 'change' | 'access';
-
-interface Filters {
-  userId?: number;
-  actorType?: ActorType;
-  kind?: Kind;
-  procedure?: string;
-  from?: Date;
-  to?: Date;
-}
 
 const ACTOR_OPTIONS: { value: ActorType; label: string }[] = [
   { value: 'STREAMER', label: '스트리머 본인' },
@@ -65,40 +57,42 @@ function endOfDay(date: string): Date | undefined {
   return date ? new Date(`${date}T23:59:59.999`) : undefined;
 }
 
+/** URL 쿼리 상태 (#265) — 기본값은 주소에서 생략된다 */
+const DEFAULTS = { page: '1', size: '50', q: '', user: ALL, actor: ALL, kind: ALL, proc: ALL, from: '', to: '' };
+const FILTER_KEYS = ['q', 'user', 'actor', 'kind', 'proc', 'from', 'to'] as const;
+
 /**
  * 어드민 감사 기록 (#254). 모든 채널의 설정 변경 기록(#175)과 접근 기록(로그인·대행 시작/종료)을
- * 한 목록에서 본다. 필터를 바꾸면 커서 목록을 처음부터 다시 시작한다 (키로 리셋).
+ * 한 목록에서 본다. 페이지 버튼 + 키워드 검색 (#265), 상태는 전부 URL 에.
  */
 export function AdminAuditView() {
   const trpc = useTRPC();
   const streamers = useQuery(trpc.admin.listStreamers.queryOptions());
+  const [state, setState] = useSearchState(DEFAULTS);
+  const page = pageOf(state.page);
+  const perPage = PAGE_SIZES.includes(state.size) ? Number(state.size) : 50;
+  const isFiltered = FILTER_KEYS.some((key) => state[key] !== DEFAULTS[key]);
 
-  const [userId, setUserId] = useState(ALL);
-  const [actorType, setActorType] = useState(ALL);
-  const [kind, setKind] = useState(ALL);
-  const [procedure, setProcedure] = useState(ALL);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const { data, isPending, error } = useQuery(
+    trpc.audit.adminLogs.queryOptions(
+      {
+        page,
+        perPage,
+        q: state.q || undefined,
+        userId: state.user === ALL ? undefined : Number(state.user),
+        actorType: state.actor === ALL ? undefined : (state.actor as ActorType),
+        kind: state.kind === ALL ? undefined : (state.kind as Kind),
+        procedure: state.proc === ALL ? undefined : state.proc,
+        from: startOfDay(state.from),
+        to: endOfDay(state.to),
+      },
+      { placeholderData: keepPreviousData },
+    ),
+  );
 
-  const filters: Filters = {
-    userId: userId === ALL ? undefined : Number(userId),
-    actorType: actorType === ALL ? undefined : (actorType as ActorType),
-    kind: kind === ALL ? undefined : (kind as Kind),
-    procedure: procedure === ALL ? undefined : procedure,
-    from: startOfDay(from),
-    to: endOfDay(to),
-  };
-  const filterKey = JSON.stringify([userId, actorType, kind, procedure, from, to]);
-  const isFiltered = userId !== ALL || actorType !== ALL || kind !== ALL || procedure !== ALL || from !== '' || to !== '';
-
-  function reset() {
-    setUserId(ALL);
-    setActorType(ALL);
-    setKind(ALL);
-    setProcedure(ALL);
-    setFrom('');
-    setTo('');
-  }
+  /** 필터가 바뀌면 1페이지로 */
+  const setFilter = (patch: Partial<typeof DEFAULTS>) => setState({ ...patch, page: '1' });
+  const reset = () => setFilter(Object.fromEntries(FILTER_KEYS.map((key) => [key, DEFAULTS[key]])));
 
   return (
     <div className="flex flex-col gap-4 py-4">
@@ -109,8 +103,16 @@ export function AdminAuditView() {
       </p>
 
       <div className="flex flex-wrap items-end gap-2">
+        <FilterField label="검색">
+          <SearchInput
+            value={state.q}
+            onChange={(q) => setFilter({ q })}
+            placeholder="변경 항목·내용·닉네임"
+            className="w-56"
+          />
+        </FilterField>
         <FilterField label="채널">
-          <Select value={userId} onValueChange={setUserId}>
+          <Select value={state.user} onValueChange={(user) => setFilter({ user })}>
             <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>전체 채널</SelectItem>
@@ -121,7 +123,7 @@ export function AdminAuditView() {
           </Select>
         </FilterField>
         <FilterField label="행위자">
-          <Select value={actorType} onValueChange={setActorType}>
+          <Select value={state.actor} onValueChange={(actor) => setFilter({ actor })}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>전체 행위자</SelectItem>
@@ -132,7 +134,7 @@ export function AdminAuditView() {
           </Select>
         </FilterField>
         <FilterField label="종류">
-          <Select value={kind} onValueChange={setKind} disabled={procedure !== ALL}>
+          <Select value={state.kind} onValueChange={(kind) => setFilter({ kind })} disabled={state.proc !== ALL}>
             <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>전체</SelectItem>
@@ -142,7 +144,7 @@ export function AdminAuditView() {
           </Select>
         </FilterField>
         <FilterField label="항목">
-          <Select value={procedure} onValueChange={setProcedure}>
+          <Select value={state.proc} onValueChange={(proc) => setFilter({ proc })}>
             <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>전체 항목</SelectItem>
@@ -158,14 +160,24 @@ export function AdminAuditView() {
           </Select>
         </FilterField>
         <FilterField label="시작일">
-          <Input type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} className="w-40" />
+          <Input type="date" value={state.from} max={state.to || undefined} onChange={(event) => setFilter({ from: event.target.value })} className="w-40" />
         </FilterField>
         <FilterField label="종료일">
-          <Input type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} className="w-40" />
+          <Input type="date" value={state.to} min={state.from || undefined} onChange={(event) => setFilter({ to: event.target.value })} className="w-40" />
         </FilterField>
         {isFiltered && (
           <Button type="button" variant="ghost" onClick={reset}>초기화</Button>
         )}
+        <FilterField label="표시">
+          <Select value={String(perPage)} onValueChange={(size) => setFilter({ size })}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZES.map((size) => (
+                <SelectItem key={size} value={size}>{size}건씩</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
       </div>
 
       <div className="rounded-md border">
@@ -174,10 +186,29 @@ export function AdminAuditView() {
             <AuditHeaderRow showChannel />
           </TableHeader>
           <TableBody>
-            <AuditPages key={filterKey} filters={filters} />
+            {isPending ? (
+              <AuditSkeletonRow colSpan={COLUMNS} />
+            ) : error ? (
+              <AuditMessageRow colSpan={COLUMNS}>기록을 불러오지 못했습니다: {error.message}</AuditMessageRow>
+            ) : data.logs.length === 0 ? (
+              <AuditMessageRow colSpan={COLUMNS} tall>
+                {isFiltered ? '조건에 맞는 기록이 없습니다.' : '아직 기록이 없습니다.'}
+              </AuditMessageRow>
+            ) : (
+              data.logs.map((log) => <AuditRow key={log.id} log={log} showChannel />)
+            )}
           </TableBody>
         </Table>
       </div>
+
+      {data && (
+        <TablePagination
+          page={page}
+          perPage={perPage}
+          total={data.total}
+          onPage={(next) => setState({ page: String(next) }, { history: 'push' })}
+        />
+      )}
     </div>
   );
 }
@@ -188,43 +219,5 @@ function FilterField({ label, children }: { label: string; children: React.React
       <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
     </div>
-  );
-}
-
-/** 커서 목록 — 필터가 바뀌면 부모가 key 로 이 컴포넌트를 새로 만들어 첫 페이지부터 */
-function AuditPages({ filters }: { filters: Filters }) {
-  const [cursors, setCursors] = useState<(number | null)[]>([null]);
-  return (
-    <>
-      {cursors.map((cursor, index) => (
-        <AuditPage
-          key={cursor ?? 'first'}
-          cursor={cursor}
-          filters={filters}
-          isLast={index === cursors.length - 1}
-          onMore={(next) => setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]))}
-        />
-      ))}
-    </>
-  );
-}
-
-function AuditPage({ cursor, filters, isLast, onMore }: { cursor: number | null; filters: Filters; isLast: boolean; onMore: (next: number) => void }) {
-  const trpc = useTRPC();
-  const { data, isPending, error } = useQuery(trpc.audit.adminLogs.queryOptions({ ...filters, limit: PAGE_SIZE, cursor }));
-
-  if (isPending) return <AuditSkeletonRow colSpan={COLUMNS} />;
-  if (error) return <AuditMessageRow colSpan={COLUMNS}>기록을 불러오지 못했습니다: {error.message}</AuditMessageRow>;
-
-  return (
-    <>
-      {cursor === null && data.logs.length === 0 && (
-        <AuditMessageRow colSpan={COLUMNS} tall>조건에 맞는 기록이 없습니다.</AuditMessageRow>
-      )}
-      {data.logs.map((log) => (
-        <AuditRow key={log.id} log={log} showChannel />
-      ))}
-      {isLast && data.nextCursor != null && <AuditMoreRow colSpan={COLUMNS} onMore={() => onMore(data.nextCursor!)} />}
-    </>
   );
 }
