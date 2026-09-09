@@ -50,10 +50,15 @@ export const songRouter = t.router({
         },
       }),
     ]);
+    // 지금 곡이 담긴 즐겨찾기 — 하트 채움 표시용 (#264). 재생 중일 때만 한 번 더 조회한다
+    const currentInFavorites = playback.youtubeId
+      ? await songFavoriteService.listFavoritesContaining(ctx.prisma, ctx.user.id, playback.youtubeId)
+      : [];
     return {
       playback,
       queue,
       source,
+      currentInFavorites,
       /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
       active: setting?.songActive ?? true,
       historyPublic: setting?.songHistoryPublic ?? false,

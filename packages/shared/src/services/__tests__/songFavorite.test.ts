@@ -12,6 +12,7 @@ import {
   deleteFavorite,
   enqueueFavorite,
   importPlaylist,
+  listFavoritesContaining,
   pickAutoPlayItem,
   reorderFavoriteItems,
   setDefaultFavorite,
@@ -163,6 +164,17 @@ describe('songFavorite', () => {
       const picked = await pickAutoPlayItem(prisma, USER_ID, 'aaaaaaaaaaa');
       expect(picked?.youtubeId).toBe('bbbbbbbbbbb');
     }
+  });
+
+  it('곡이 담긴 즐겨찾기 id 만 돌려준다 — 내 즐겨찾기로 한정해서', async () => {
+    const { prisma, songFavoriteItem } = createPrisma([{ favoriteId: 5 }, { favoriteId: 7 }]);
+
+    await expect(listFavoritesContaining(prisma, USER_ID, 'aaaaaaaaaaa')).resolves.toEqual([5, 7]);
+    expect(songFavoriteItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { youtubeId: 'aaaaaaaaaaa', favorite: { userId: USER_ID } },
+      }),
+    );
   });
 
   it('대표 즐겨찾기가 없으면 자동 재생하지 않는다', async () => {
