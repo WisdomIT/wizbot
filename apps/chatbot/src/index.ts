@@ -140,6 +140,25 @@ async function refreshPendingTokens(): Promise<void> {
   }
 }
 
+/** 보관 기간 지난 데이터 파기 (#255) — 하루 1회. 워커가 재시작하면 바로 한 번 더 돈다(무해). 실패하면 1시간 뒤 재시도 */
+const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const PURGE_RETRY_MS = 60 * 60 * 1000;
+let lastPurgeAt = 0;
+
+async function purgeExpired(): Promise<void> {
+  if (Date.now() - lastPurgeAt < PURGE_INTERVAL_MS) return;
+  try {
+    const { agentConversations, accessLogs } = await trpc.retention.purgeExpired.mutate();
+    lastPurgeAt = Date.now();
+    if (agentConversations || accessLogs) {
+      console.log(`🧹 보관 기간 경과 파기: 에이전트 대화 ${agentConversations}, 접근 기록 ${accessLogs}`);
+    }
+  } catch (error) {
+    lastPurgeAt = Date.now() - PURGE_INTERVAL_MS + PURGE_RETRY_MS;
+    console.error('❌ 보관 기간 경과 파기 실패:', error);
+  }
+}
+
 // 재진입 가드 — 채널 연결(connectedTimeoutMs 최대 10s×채널 수)로 한 번의 폴링이 주기(60s)를
 // 넘길 수 있다. 겹쳐 실행되면 같은 반복 id 의 타이머가 이중 생성·누수된다 (PR #61 리뷰).
 let polling = false;
@@ -152,6 +171,7 @@ async function poll(): Promise<void> {
     await syncRepeats();
     await syncApprovalNotices();
     await refreshPendingTokens();
+    await purgeExpired();
     await refreshChannelProfiles();
     lastPollAt = new Date();
   } catch (error) {
