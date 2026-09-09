@@ -18,6 +18,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { SiteFooter } from './site-footer';
 
 const title = {
   title: '위즈봇',
@@ -118,6 +119,7 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
             {children}
           </BodyBreadcrumb>
         )}
+        <SiteFooter />
       </SidebarInset>
     </>
   );

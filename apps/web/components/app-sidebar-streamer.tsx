@@ -20,6 +20,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { SiteFooter } from './site-footer';
 import { StreamerPlayerBar } from './song/streamer-player-bar';
 
 const group = {
@@ -222,6 +223,8 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        {/* 어드민 대행(nested)은 바깥 어드민 셸이 이미 붙인다 (#257) */}
+        {!nested && <SiteFooter />}
         <StreamerPlayerBar />
         {/* 설정 도우미 (#35) — 어드민에서 켰을 때만 뜬다 */}
         <AgentPanel />
