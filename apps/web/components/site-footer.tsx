@@ -27,7 +27,7 @@ export function SiteFooter({ className }: { className?: string }) {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-6">
           <span className="shrink-0 font-semibold text-foreground">
-            © {new Date().getFullYear()}{' '}
+            ©{' '}
             <a href="https://github.com/WisdomIT" target="_blank" rel="noreferrer" className={link}>
               WisdomIT
             </a>
