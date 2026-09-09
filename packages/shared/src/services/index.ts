@@ -16,6 +16,7 @@ export * as playbackService from './playback';
 export * as policyService from './policy';
 export * as provisionService from './provision';
 export * as repeatService from './repeat';
+export * as retentionService from './retention';
 export * as shortcutService from './shortcut';
 export * as signupService from './signup';
 export * as songService from './song';
