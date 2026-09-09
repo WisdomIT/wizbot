@@ -25,8 +25,8 @@ import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AppTitleBar } from '@/components/song/app-title-bar';
-import { FavoritePlayDialog } from '@/components/song/favorite-play-dialog';
 import { FavoriteHeartButton } from '@/components/song/favorite-heart-button';
+import { FavoritePlayDialog } from '@/components/song/favorite-play-dialog';
 import { MiniPlayer } from '@/components/song/mini-player';
 import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
 import { Badge } from '@/components/ui/badge';
