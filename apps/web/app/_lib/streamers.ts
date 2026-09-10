@@ -22,13 +22,13 @@ export interface ShortcutProps {
 }
 
 /**
- * 공개 페이지용 스트리머 데이터 (#23).
+ * 공개 페이지용 스트리머 데이터 (#23) — 팔로워 많은 순 (#271).
  * 'use server' 액션(POST 엔드포인트 노출)이 아닌 서버 전용 유틸이며,
- * 60초 캐시로 방문마다 API 를 왕복하지 않는다.
+ * 60초 캐시로 방문마다 API 를 왕복하지 않는다. limit 은 캐시 키에 포함된다.
  */
 export const getStreamers = unstable_cache(
-  async (): Promise<StreamerProps[]> => {
-    const request = await trpc.user.getUsersPublic.query();
+  async (limit?: number): Promise<StreamerProps[]> => {
+    const request = await trpc.user.getUsersPublic.query(limit ? { limit } : undefined);
 
     return request.map((user) => {
       const shortcuts = user.userShortcuts.map((shortcut) => ({

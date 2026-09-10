@@ -129,7 +129,14 @@ export const adminRouter = t.router({
     ),
   getSignupSettings: adminProcedure.query(({ ctx }) => signupService.getSettings(ctx.prisma)),
   setSignupSettings: adminProcedure
-    .input(z.object({ autoApprove: z.boolean().optional(), askReason: z.boolean().optional() }))
+    .input(
+      z.object({
+        autoApprove: z.boolean().optional(),
+        askReason: z.boolean().optional(),
+        /** 새 스트리머 기본 공개 기준 팔로워 수 (#271) */
+        publicFollowerThreshold: z.number().int().min(0).max(1_000_000).optional(),
+      }),
+    )
     .mutation(({ ctx, input }) => signupService.setSettings(ctx.prisma, input)),
 
   /* ── 기본 즐겨찾기 재생목록 (#246) ── */

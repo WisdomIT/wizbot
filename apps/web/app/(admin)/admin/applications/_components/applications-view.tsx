@@ -228,7 +228,7 @@ function SignupSettings() {
   const { data: settings } = useQuery(trpc.admin.getSignupSettings.queryOptions());
   const setSettings = useMutation(trpc.admin.setSignupSettings.mutationOptions());
 
-  function update(patch: { autoApprove?: boolean; askReason?: boolean }, label: string) {
+  function update(patch: { autoApprove?: boolean; askReason?: boolean; publicFollowerThreshold?: number }, label: string) {
     toast.promise(setSettings.mutateAsync(patch), {
       loading: '저장 중...',
       success: () => {
@@ -274,6 +274,58 @@ function SignupSettings() {
           aria-label="신청 즉시 자동 승인"
         />
       </div>
+      <FollowerThresholdField
+        value={settings?.publicFollowerThreshold}
+        disabled={busy}
+        onSave={(next) => update({ publicFollowerThreshold: next }, `팔로워 ${next.toLocaleString('ko-KR')}명 미만은 숨김으로 등록됩니다.`)}
+      />
+    </div>
+  );
+}
+
+/**
+ * 새 스트리머 기본 공개 기준 팔로워 수 (#271) — 미만이면 목록에서 숨긴 채로 등록된다. 기존 계정에는 소급하지 않는다.
+ * 입력 중에는 로컬 값, 포커스를 잃거나 Enter 로 저장
+ */
+function FollowerThresholdField({ value, disabled, onSave }: { value: number | undefined; disabled: boolean; onSave: (next: number) => void }) {
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  //  서버 값이 바뀌면 입력을 맞춘다 — 렌더 중 보정 (#200 패턴)
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setText(value === undefined ? '' : String(value));
+  }
+
+  function commit() {
+    const next = Number(text);
+    if (!Number.isInteger(next) || next < 0) {
+      setText(value === undefined ? '' : String(value));
+      return;
+    }
+    if (next !== value) onSave(next);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor="public-follower-threshold" className="text-sm whitespace-nowrap">
+        공개 기준 팔로워
+      </Label>
+      <Input
+        id="public-follower-threshold"
+        type="number"
+        min={0}
+        step={1}
+        inputMode="numeric"
+        value={text}
+        disabled={disabled}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
+        className="w-24"
+        title="이 수 미만이면 새 스트리머를 목록에서 숨긴 채로 등록합니다"
+      />
     </div>
   );
 }

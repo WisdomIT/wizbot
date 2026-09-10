@@ -305,6 +305,8 @@ enum NotifyKind {
   INQUIRY
   /// 워커·API 의 심각한 오류 — 발생처는 앞으로 넓힌다
   ERROR
+  /// 새 스트리머 등록 완료 — 자동/수동 승인·화이트리스트 어느 경로든 (#271)
+  STREAMER_JOINED
 }
 
 /// 문의사항 (#206 3/3). 스트리머가 쓰고 어드민이 답한다 — 본문은 마크다운(GFM), 메시지 스레드.
@@ -403,6 +405,8 @@ model User {
   channelImageUrl   String?  @db.Text
   channelName       String   @db.VarChar(50)
   hidden            Boolean  @db.TinyInt @default(false)
+  /// 치지직 팔로워 수 — 로그인 때마다 갱신되는 스냅샷 (#271). 랜딩 정렬·신규 등록 알림·기본 공개 판정에 쓴다
+  followerCount     Int?
 
   // OAuth credentials relationship (분리된 OAuth 정보)
   oauth             OAuthCredential?

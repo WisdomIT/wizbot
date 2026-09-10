@@ -6,8 +6,11 @@ import { Card, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { getStreamers } from '../_lib/streamers';
 
+/** 랜딩에는 팔로워 많은 순으로 8명만 (#271) — 전체는 /list */
+const LANDING_LIMIT = 8;
+
 export default function Streamers() {
-  const streamerList = use(getStreamers());
+  const streamerList = use(getStreamers(LANDING_LIMIT));
 
   return (
     <section id="team" className="container lg:w-[75%] py-24 sm:py-32 mx-auto  px-4 md:px-0">

@@ -3,7 +3,14 @@ import type { ChzzkTokenSet, TokenStore } from 'chzzk-open-sdk';
 
 import { createChzzkClientWithStore } from './chzzkClient';
 import { ServiceError } from './errors';
-import { type InitialCommands, provisionStreamer } from './provision';
+import {
+  DEFAULT_PUBLIC_FOLLOWER_THRESHOLD,
+  fetchFollowerCount,
+  type InitialCommands,
+  parsePublicFollowerThreshold,
+  provisionStreamer,
+  PUBLIC_FOLLOWER_THRESHOLD_KEY,
+} from './provision';
 
 /**
  * 사이트 내 사용 신청 (#96).
@@ -16,12 +23,18 @@ import { type InitialCommands, provisionStreamer } from './provision';
 /** SiteSetting 키. 값은 'true' | 'false' */
 export const AUTO_APPROVE_KEY = 'signup.autoApprove';
 export const ASK_REASON_KEY = 'signup.askReason';
+export { DEFAULT_PUBLIC_FOLLOWER_THRESHOLD, PUBLIC_FOLLOWER_THRESHOLD_KEY };
 
 export type SignupSettings = {
   /** 켜면 신청 즉시 화이트리스트 등록. 기본 꺼짐 */
   autoApprove: boolean;
   /** 신청 화면에 사유 입력칸을 보일지. 기본 켜짐 */
   askReason: boolean;
+  /**
+   * 새 스트리머를 목록에 공개할 팔로워 기준 (#271). 미만이면 hidden 으로 만들어진다. 0 이면 전부 공개.
+   * 기존 유저에는 소급하지 않는다 — 어드민 스트리머 관리의 공개/숨김 토글은 그대로
+   */
+  publicFollowerThreshold: number;
 };
 
 export type ChannelIdentity = {
@@ -133,7 +146,7 @@ export async function refreshPendingTokens(prisma: PrismaClient) {
 
 export async function getSettings(prisma: PrismaClient): Promise<SignupSettings> {
   const rows = await prisma.siteSetting.findMany({
-    where: { key: { in: [AUTO_APPROVE_KEY, ASK_REASON_KEY] } },
+    where: { key: { in: [AUTO_APPROVE_KEY, ASK_REASON_KEY, PUBLIC_FOLLOWER_THRESHOLD_KEY] } },
   });
   const value = (key: string) => rows.find((row) => row.key === key)?.value;
   return {
@@ -142,6 +155,7 @@ export async function getSettings(prisma: PrismaClient): Promise<SignupSettings>
     autoApprove: value(AUTO_APPROVE_KEY) === 'true',
     //  설정이 없으면 보인다
     askReason: value(ASK_REASON_KEY) !== 'false',
+    publicFollowerThreshold: parsePublicFollowerThreshold(value(PUBLIC_FOLLOWER_THRESHOLD_KEY)),
   };
 }
 
@@ -150,13 +164,16 @@ export async function getAutoApprove(prisma: PrismaClient): Promise<boolean> {
 }
 
 export async function setSettings(prisma: PrismaClient, patch: Partial<SignupSettings>) {
-  const entries: [string, boolean | undefined][] = [
-    [AUTO_APPROVE_KEY, patch.autoApprove],
-    [ASK_REASON_KEY, patch.askReason],
+  const entries: [string, string | undefined][] = [
+    [AUTO_APPROVE_KEY, patch.autoApprove === undefined ? undefined : String(patch.autoApprove)],
+    [ASK_REASON_KEY, patch.askReason === undefined ? undefined : String(patch.askReason)],
+    [PUBLIC_FOLLOWER_THRESHOLD_KEY, patch.publicFollowerThreshold === undefined ? undefined : String(patch.publicFollowerThreshold)],
   ];
-  for (const [key, enabled] of entries) {
-    if (enabled === undefined) continue;
-    const value = enabled ? 'true' : 'false';
+  if (patch.publicFollowerThreshold !== undefined && (!Number.isInteger(patch.publicFollowerThreshold) || patch.publicFollowerThreshold < 0)) {
+    throw new ServiceError('INVALID_INPUT', '공개 기준 팔로워 수는 0 이상의 정수여야 합니다.');
+  }
+  for (const [key, value] of entries) {
+    if (value === undefined) continue;
     await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
   }
   return getSettings(prisma);
@@ -343,14 +360,17 @@ export async function approve(
     return updated;
   });
 
+  //  신청 행에는 팔로워 수가 없다 — 기본 공개 판정(#271)을 위해 치지직에 한 번 묻는다. 실패하면 공개
+  const followerCount = await fetchFollowerCount(existing.channelId);
   await provisionStreamer(
     prisma,
     {
       channelId: existing.channelId,
       channelName: existing.channelName,
       channelImageUrl: existing.channelImageUrl,
+      followerCount,
     },
-    { tokens, initialCommands: options.initialCommands },
+    { tokens, initialCommands: options.initialCommands, joinedVia: 'MANUAL_APPROVE' },
   );
 
   return { ...application, botConnects: tokens !== null };
