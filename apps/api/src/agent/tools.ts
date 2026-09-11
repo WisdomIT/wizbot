@@ -4,6 +4,7 @@ import { getManualPage, listManualPages, searchManual } from '@wizbot/shared/lib
 import { notifyAdminsOfInquiry } from '@wizbot/shared/router';
 import {
   chatBufferService,
+  commandLogService,
   commandService,
   getChzzkAppClient,
   getChzzkClientForUser,
@@ -87,7 +88,19 @@ export const CONFIRM_TOOLS = new Set([
 
 export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
-  { name: 'list_commands', description: '이 채널의 챗봇 명령어(단순 응답 echo·기능 function) 전체 목록.', inputSchema: noInput },
+  { name: 'list_commands', description: '이 채널의 챗봇 명령어(단순 응답 echo·기능 function) 전체 목록. 각 항목의 stats 에 총·30일·7일 호출 수.', inputSchema: noInput },
+  {
+    name: 'get_command_stats',
+    description: '명령어 사용 통계 — 기간(7일/30일) 내 명령어별 호출 순위, 일별 추이, 없는/꺼진 명령어·용법 오류·권한 없음 호출 목록. 어떤 명령어가 쓰이는지 묻는 질문에는 추측하지 말고 이것으로 조회한다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        days: { type: 'number', enum: [7, 30], description: '집계 기간. 기본 30' },
+        commandId: { type: 'number', description: '한 명령어만 볼 때 그 id (list_commands 의 id). 그 명령어의 일별 추이를 돌려준다' },
+      },
+      required: [], additionalProperties: false,
+    },
+  },
   { name: 'list_repeats', description: '반복 메시지(주기적으로 채팅에 보내는 메시지) 목록.', inputSchema: noInput },
   { name: 'get_playback', description: '뮤직 플레이어 상태 — 재생 중인 곡, 재생/일시정지, 볼륨, 대기열.', inputSchema: noInput },
   { name: 'list_favorites', description: '즐겨찾기(미리 담아두는 재생목록) 목록.', inputSchema: noInput },
@@ -606,8 +619,29 @@ async function execute(
 
   switch (name) {
     /* ── 읽기 ── */
-    case 'list_commands':
-      return ok(toResult(await commandService.listCommands(prisma, userId)));
+    case 'list_commands': {
+      const [list, recent] = await Promise.all([
+        commandService.listCommands(prisma, userId),
+        commandLogService.recentCountsByCommand(prisma, userId),
+      ]);
+      return ok(toResult({
+        echo: list.echo.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'ECHO', item.id, item.totalCount) })),
+        function: list.function.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'FUNCTION', item.id, item.totalCount) })),
+      }));
+    }
+    case 'get_command_stats': {
+      const days = input.days === 7 ? 7 : 30;
+      const stats = await commandLogService.getStats(prisma, userId, days);
+      if (input.commandId !== undefined) {
+        const commandId = requireId(input.commandId, 'commandId');
+        const entry = stats.ranking.find((row) => row.id === commandId);
+        if (!entry) return ok(toResult({ days, commandId, calls: 0, note: '기간 내 호출이 없거나 없는 id 입니다.' }));
+        const series = stats.daily.series.find((line) => line.name === `!${entry.command}`);
+        return ok(toResult({ days, command: entry, daily: series ? stats.daily.labels.map((label, i) => ({ date: label, calls: series.values[i] })) : null }));
+      }
+      //  일별 추이는 화면용 — 모델에는 순위·미매칭만 (토큰 절약)
+      return ok(toResult({ days, total: stats.total, matched: stats.matched, ranking: stats.ranking.slice(0, 20), unmatched: stats.unmatched }));
+    }
     case 'list_repeats':
       return ok(toResult(await repeatService.listRepeats(prisma, userId)));
     case 'get_playback':

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BookOpen, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User } from 'lucide-react';
+import { ArrowLeft, BookOpen, BotMessageSquare, ChartColumn, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -49,6 +49,11 @@ const data = {
       name: '반복',
       url: '/streamer/bot/repeat',
       icon: <BotMessageSquare />,
+    },
+    {
+      name: '통계',
+      url: '/streamer/bot/stats',
+      icon: <ChartColumn />,
     },
   ],
   song: [
