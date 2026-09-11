@@ -24,7 +24,7 @@ export function SiteFooter({ className }: { className?: string }) {
         className,
       )}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-6">
           <span className="shrink-0 font-semibold text-foreground">
             ©{' '}
