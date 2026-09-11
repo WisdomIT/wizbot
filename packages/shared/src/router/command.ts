@@ -71,6 +71,11 @@ export const commandRouter = t.router({
     };
   }),
 
+  /** 통계 대시보드 (#276 2단계) — 최근 7일/30일 순위·일별 추이·미매칭 */
+  getCommandStats: streamerProcedure
+    .input(z.object({ days: z.union([z.literal(7), z.literal(30)]).default(30) }))
+    .query(({ ctx, input }) => commandLogService.getStats(ctx.prisma, ctx.user.id, input.days)),
+
   getCommandById: streamerProcedure
     .input(z.object({ id: z.number(), type: commandTypeSchema }))
     .query(async ({ ctx, input }) => {

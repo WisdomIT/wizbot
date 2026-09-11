@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { COMMAND_LOG_RETENTION_DAYS, purgeExpired, recentCountsByCommand, record, statsFor } from '../commandLog';
+import { COMMAND_LOG_RETENTION_DAYS, getStats, purgeExpired, recentCountsByCommand, record, statsFor } from '../commandLog';
 
 const NOW = new Date('2026-09-12T00:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -73,5 +73,68 @@ describe('commandLog (#276)', () => {
     expect(chatbotCommandLog.deleteMany).toHaveBeenCalledWith({
       where: { createdAt: { lt: new Date(NOW.getTime() - COMMAND_LOG_RETENTION_DAYS * DAY_MS) } },
     });
+  });
+});
+
+describe('getStats — 통계 대시보드 (#276 2단계)', () => {
+  const NOW_KST = new Date('2026-09-12T03:00:00Z'); // 한국 시간 12일 12:00
+  const at = (iso: string) => new Date(iso);
+
+  function createStatsPrisma(rows: object[], echo: object[] = [], func: object[] = []) {
+    const prisma = {
+      chatbotCommandLog: { findMany: vi.fn().mockResolvedValue(rows) },
+      chatbotEchoCommand: { findMany: vi.fn().mockResolvedValue(echo) },
+      chatbotFunctionCommand: { findMany: vi.fn().mockResolvedValue(func) },
+    };
+    return { prisma: prisma as unknown as PrismaClient, ...prisma };
+  }
+
+  it('순위는 현재 이름으로 합치고, 삭제된 명령어는 로그 이름 + deleted', async () => {
+    const rows = [
+      { command: '카페', matchedType: 'ECHO', matchedId: 1, outcome: 'OK', createdAt: at('2026-09-12T01:00:00Z') },
+      { command: '옛이름', matchedType: 'ECHO', matchedId: 1, outcome: 'OK', createdAt: at('2026-09-11T01:00:00Z') },
+      { command: '방제', matchedType: 'FUNCTION', matchedId: 10, outcome: 'NO_PERMISSION', createdAt: at('2026-09-12T02:00:00Z') },
+      { command: '지운것', matchedType: 'ECHO', matchedId: 99, outcome: 'OK', createdAt: at('2026-09-12T02:00:00Z') },
+      { command: '없는명령', matchedType: 'NONE', matchedId: null, outcome: 'NOT_FOUND', createdAt: at('2026-09-12T02:00:00Z') },
+    ];
+    const { prisma, chatbotCommandLog } = createStatsPrisma(rows, [{ id: 1, command: '카페새이름' }], [{ id: 10, command: '방제' }]);
+    const stats = await getStats(prisma, 1, 7, NOW_KST);
+
+    expect(stats).toMatchObject({ days: 7, total: 5, matched: 4 });
+    expect(stats.ranking).toEqual([
+      { type: 'ECHO', id: 1, command: '카페새이름', count: 2, deleted: false },
+      { type: 'FUNCTION', id: 10, command: '방제', count: 1, deleted: false },
+      { type: 'ECHO', id: 99, command: '지운것', count: 1, deleted: true },
+    ]);
+    expect(stats.unmatched).toEqual([
+      { command: '방제', outcome: 'NO_PERMISSION', count: 1 },
+      { command: '없는명령', outcome: 'NOT_FOUND', count: 1 },
+    ]);
+    // 7일 창: 한국 시간 9/6 자정부터
+    expect(chatbotCommandLog.findMany.mock.calls[0][0].where.createdAt).toEqual({ gte: new Date('2026-09-05T15:00:00Z') });
+  });
+
+  it('일별 추이는 한국 시간 자정 버킷, 상위 5개 + 기타', async () => {
+    const rows = [];
+    for (let id = 1; id <= 6; id++) {
+      for (let n = 0; n < id; n++) rows.push({ command: `c${id}`, matchedType: 'ECHO', matchedId: id, outcome: 'OK', createdAt: at('2026-09-12T01:00:00Z') });
+    }
+    //  한국 시간으로는 11일 23:30 — 11일 버킷
+    rows.push({ command: 'c6', matchedType: 'ECHO', matchedId: 6, outcome: 'OK', createdAt: at('2026-09-11T14:30:00Z') });
+    const { prisma } = createStatsPrisma(rows);
+    const stats = await getStats(prisma, 1, 7, NOW_KST);
+
+    expect(stats.daily.labels).toEqual(['09-06', '09-07', '09-08', '09-09', '09-10', '09-11', '09-12']);
+    expect(stats.daily.series.map((line) => line.name)).toEqual(['!c6', '!c5', '!c4', '!c3', '!c2', '기타']);
+    expect(stats.daily.series[0].values).toEqual([0, 0, 0, 0, 0, 1, 6]);
+    expect(stats.daily.series[5]).toEqual({ name: '기타', values: [0, 0, 0, 0, 0, 0, 1] });
+  });
+
+  it('호출이 없으면 빈 순위·0 으로 채운 라벨', async () => {
+    const { prisma } = createStatsPrisma([]);
+    const stats = await getStats(prisma, 1, 30, NOW_KST);
+    expect(stats).toMatchObject({ total: 0, matched: 0, ranking: [], unmatched: [] });
+    expect(stats.daily.labels).toHaveLength(30);
+    expect(stats.daily.series).toEqual([]);
   });
 });
