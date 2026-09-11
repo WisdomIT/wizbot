@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { Command } from './columns';
+import { CommandSuggestions } from './command-suggestions';
 import { DataTable } from './data-table';
 
 /** 명령어 목록 — 클라이언트에서 조회하고 표시값은 shared 정의로 파생한다 (#22) */
@@ -83,5 +84,11 @@ export function CommandsView() {
     }),
   ];
 
-  return <DataTable data={commands} onToggle={handleToggle} />;
+  return (
+    <>
+      {/* 사용 패턴 기반 제안 (#276) — 본인 콘솔에서만 */}
+      <CommandSuggestions />
+      <DataTable data={commands} onToggle={handleToggle} />
+    </>
+  );
 }

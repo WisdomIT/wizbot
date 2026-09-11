@@ -25,6 +25,7 @@ export * as songService from './song';
 export * from './songEvents';
 export * as songFavoriteService from './songFavorite';
 export * as songHistoryService from './songHistory';
+export * as suggestionService from './suggestion';
 export * as themeService from './theme';
 export * as userSettingService from './userSetting';
 export * as whitelistService from './whitelist';
