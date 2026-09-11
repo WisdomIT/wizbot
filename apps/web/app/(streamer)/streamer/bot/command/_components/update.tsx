@@ -34,6 +34,13 @@ import { useTRPC } from '@/src/utils/trpc-react';
 import { Command } from './columns';
 import { FunctionArgs, InputsEcho, InputsFunction } from './inputs';
 
+/** confirm 문구용 (#262) — 넓히려는 권한에 맞춰 */
+const PERMISSION_LABEL: Record<FunctionArgs['permission'], string> = {
+  STREAMER: '스트리머',
+  MANAGER: '매니저',
+  VIEWER: '시청자',
+};
+
 /** getCommandById 응답 */
 type CommandDetail = NonNullable<ReturnType<typeof useCommandDetail>['data']>;
 
@@ -201,7 +208,7 @@ function UpdateCommandForm({
       <ConfirmDialog
         open={confirmOpen}
         title="에이전트 권한을 넓힐까요?"
-        description="에이전트는 방송 제목·카테고리 변경, 시청자 채팅 제한 등 채널 설정 기능도 실행할 수 있습니다. 매니저에게 권한을 주면 이 기능들도 함께 쓸 수 있게 됩니다. 계속할까요?"
+        description={`에이전트는 방송 제목·카테고리 변경, 시청자 채팅 제한 등 채널 설정 기능도 실행할 수 있습니다. ${PERMISSION_LABEL[functionArgs.permission]}에게 권한을 주면 이 기능들도 함께 쓸 수 있게 됩니다.${functionArgs.permission === 'VIEWER' ? ' 시청자는 누구나 부를 수 있습니다.' : ''} 계속할까요?`}
         confirmLabel="계속"
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => {
