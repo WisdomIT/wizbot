@@ -108,9 +108,9 @@ function kstStartOfDay(now: Date, daysAgo: number): Date {
 }
 
 export type StatsWindow = 7 | 30;
-/** 순위·추이 시리즈에 이름을 붙이는 상위 개수 — 나머지는 「기타」 */
-export const STATS_TOP = 10;
-export const STATS_SERIES = 5;
+/** 순위·추이 시리즈에 이름을 붙이는 상위 개수(기간 내 호출 수 순) — 나머지는 「기타」 */
+export const STATS_TOP = 20;
+export const STATS_SERIES = 20;
 export const STATS_UNMATCHED_TOP = 20;
 
 export interface CommandStatsReport {
@@ -120,7 +120,7 @@ export interface CommandStatsReport {
   matched: number;
   /** 명령어별 호출 수, 많은 순 (전부 — 화면이 상위 N 만 보이고 나머지는 「기타」로 접는다) */
   ranking: { type: 'ECHO' | 'FUNCTION'; id: number; command: string; count: number; deleted: boolean }[];
-  /** 일별 추이 — 한국 시간 자정 버킷. 상위 STATS_SERIES 개 + 「기타」 */
+  /** 일별 값 — 한국 시간 자정 버킷. 상위 STATS_SERIES 개 + 「기타」. 화면은 누적으로 그린다 */
   daily: { labels: string[]; series: { name: string; values: number[] }[] };
   /** 없는·꺼진 명령어, 용법 오류, 권한 없음 — 이름별, 많은 순 */
   unmatched: { command: string; outcome: 'NOT_FOUND' | 'USAGE_ERROR' | 'NO_PERMISSION'; count: number }[];

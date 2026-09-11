@@ -16,14 +16,23 @@ import { useTRPC } from '@/src/utils/trpc-react';
  * 「기타」는 회색. 값은 항상 글자로도 보인다 — 색만으로 읽지 않게.
  */
 
-const RANK_TOP = 10;
+const RANK_TOP = 20;
 const DEFAULTS = { days: '30' };
 const OUTCOME_LABEL = { NOT_FOUND: '없는 명령어', USAGE_ERROR: '용법 오류', NO_PERMISSION: '권한 없음' } as const;
 const fmt = (value: number) => value.toLocaleString('ko-KR');
 
-/** 시리즈 색 — 라이트/다크 각각 검증한 팔레트(dataviz). 「기타」는 muted */
-const SERIES_VARS = ['--viz-1', '--viz-2', '--viz-3', '--viz-4', '--viz-5'];
-const seriesColor = (index: number, name: string) => (name === '기타' ? 'var(--viz-etc)' : `var(${SERIES_VARS[index % SERIES_VARS.length]})`);
+/**
+ * 시리즈 색 — 라이트/다크 각각 검증한 8색 팔레트(dataviz)를 순서대로, 9번째부터는 같은 순서를 밝게·어둡게 섞어 20개까지.
+ * 색만으로 20개를 가르긴 어려우므로 범례 hover 로 한 선을 강조하고, 값은 항상 글자(툴팁·범례·표)로도 보인다. 「기타」는 muted
+ */
+const HUES = 8;
+const seriesColor = (index: number, name: string) => {
+  if (name === '기타') return 'var(--viz-etc)';
+  const base = `var(--viz-${(index % HUES) + 1})`;
+  const pass = Math.floor(index / HUES);
+  if (pass === 0) return base;
+  return pass === 1 ? `color-mix(in oklab, ${base} 60%, white)` : `color-mix(in oklab, ${base} 65%, black)`;
+};
 
 export function StatsView() {
   const trpc = useTRPC();
@@ -36,8 +45,8 @@ export function StatsView() {
   return (
     <div className="stats-viz flex max-w-5xl flex-col gap-4 py-4">
       <style>{`
-        .stats-viz { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; --viz-etc: #9a9a94; }
-        .dark .stats-viz { --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-etc: #6f6f6a; }
+        .stats-viz { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; --viz-6: #008300; --viz-7: #4a3aa7; --viz-8: #e34948; --viz-etc: #9a9a94; }
+        .dark .stats-viz { --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-6: #008300; --viz-7: #9085e9; --viz-8: #e66767; --viz-etc: #6f6f6a; }
       `}</style>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -88,7 +97,7 @@ export function StatsView() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">누적 호출 추이</CardTitle>
-              <CardDescription>기간 시작부터 그날까지 쌓인 호출 수. 한국 시간 자정 기준, 상위 5개 명령어와 기타.</CardDescription>
+              <CardDescription>기간 시작부터 그날까지 쌓인 호출 수. 한국 시간 자정 기준, 호출 수 상위 20개 명령어와 기타. 범례에 마우스를 올리면 그 명령어만 강조됩니다.</CardDescription>
             </CardHeader>
             <CardContent>
               {data.matched === 0 ? <Empty>기간 내 호출이 없습니다.</Empty> : <CumulativeLines labels={data.daily.labels} series={data.daily.series} />}
@@ -174,6 +183,7 @@ function RankingBars({ ranking }: { ranking: { type: string; id: number; command
 /** 누적 선 그래프 — 서버는 일별 값을 주고 여기서 누적한다. hover 로 그날까지의 누적 내역, 아래에 범례와 표 보기 */
 function CumulativeLines({ labels, series }: { labels: string[]; series: { name: string; values: number[] }[] }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [focus, setFocus] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const cumulative = series.map((line) => {
     let sum = 0;
@@ -214,7 +224,8 @@ function CumulativeLines({ labels, series }: { labels: string[]; series: { name:
               key={line.name}
               fill="none"
               stroke={colors[index]}
-              strokeWidth="2"
+              strokeWidth={focus === index ? 3 : 2}
+              strokeOpacity={focus === null || focus === index ? 1 : 0.15}
               vectorEffect="non-scaling-stroke"
               strokeLinejoin="round"
               points={line.values.map((value, i) => `${x(i)},${y(value)}`).join(' ')}
@@ -247,7 +258,12 @@ function CumulativeLines({ labels, series }: { labels: string[]; series: { name:
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
         {cumulative.map((line, index) => (
-          <span key={line.name} className="flex items-center gap-1">
+          <span
+            key={line.name}
+            className={`flex cursor-default items-center gap-1 ${focus !== null && focus !== index ? 'opacity-40' : ''}`}
+            onMouseEnter={() => setFocus(index)}
+            onMouseLeave={() => setFocus(null)}
+          >
             <span className="inline-block size-2 rounded-full" style={{ background: colors[index] }} />
             {line.name} ({fmt(line.values[line.values.length - 1] ?? 0)})
           </span>

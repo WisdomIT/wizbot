@@ -114,20 +114,22 @@ describe('getStats — 통계 대시보드 (#276 2단계)', () => {
     expect(chatbotCommandLog.findMany.mock.calls[0][0].where.createdAt).toEqual({ gte: new Date('2026-09-05T15:00:00Z') });
   });
 
-  it('일별 추이는 한국 시간 자정 버킷, 상위 5개 + 기타', async () => {
+  it('일별 값은 한국 시간 자정 버킷, 기간 내 호출 수 상위 20개 + 기타', async () => {
     const rows = [];
-    for (let id = 1; id <= 6; id++) {
+    for (let id = 1; id <= 21; id++) {
       for (let n = 0; n < id; n++) rows.push({ command: `c${id}`, matchedType: 'ECHO', matchedId: id, outcome: 'OK', createdAt: at('2026-09-12T01:00:00Z') });
     }
     //  한국 시간으로는 11일 23:30 — 11일 버킷
-    rows.push({ command: 'c6', matchedType: 'ECHO', matchedId: 6, outcome: 'OK', createdAt: at('2026-09-11T14:30:00Z') });
+    rows.push({ command: 'c21', matchedType: 'ECHO', matchedId: 21, outcome: 'OK', createdAt: at('2026-09-11T14:30:00Z') });
     const { prisma } = createStatsPrisma(rows);
     const stats = await getStats(prisma, 1, 7, NOW_KST);
 
     expect(stats.daily.labels).toEqual(['09-06', '09-07', '09-08', '09-09', '09-10', '09-11', '09-12']);
-    expect(stats.daily.series.map((line) => line.name)).toEqual(['!c6', '!c5', '!c4', '!c3', '!c2', '기타']);
-    expect(stats.daily.series[0].values).toEqual([0, 0, 0, 0, 0, 1, 6]);
-    expect(stats.daily.series[5]).toEqual({ name: '기타', values: [0, 0, 0, 0, 0, 0, 1] });
+    expect(stats.daily.series).toHaveLength(21);
+    expect(stats.daily.series[0]).toEqual({ name: '!c21', values: [0, 0, 0, 0, 0, 1, 21] });
+    expect(stats.daily.series[19].name).toBe('!c2');
+    // 21번째(c1, 1회)만 기타로
+    expect(stats.daily.series[20]).toEqual({ name: '기타', values: [0, 0, 0, 0, 0, 0, 1] });
   });
 
   it('호출이 없으면 빈 순위·0 으로 채운 라벨', async () => {
