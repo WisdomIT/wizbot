@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 import type { Prisma } from '@prisma/client';
-import { type AgentChatMode,clampChatMessage, splitForChat } from '@wizbot/shared/chatbot';
+import { type AgentChatMode, type AgentChatSender, clampChatMessage, splitForChat } from '@wizbot/shared/chatbot';
 import { agentService, getChzzkClientForUser, isServiceError } from '@wizbot/shared/services';
 
 import { prisma } from '../db';
@@ -14,6 +14,9 @@ import { AGENT_TOOLS, executeConfirmed, runTool } from './tools';
  * 콘솔 패널과 같은 대화(AgentConversation)·tool·한도·감사 경로를 쓰되,
  * 응답은 스트리밍 대신 모아서 치지직 채팅(100자 단위 최대 3건)으로 보낸다.
  * API replicas=1 전제로 창 상태는 메모리에 둔다 (재시작 시 창만 사라진다 — 60초짜리라 무해).
+ *
+ * 창은 **발화자 기준**이다 (#262) — 명령어 권한을 낮추면 스트리머와 매니저가 각자 창을 열고, 그 사람의
+ * 채팅만 자기 창으로 들어간다. 대화·한도·사용량의 주인은 계속 채널(스트리머 유저 id)이다.
  */
 
 const WINDOW_MS = 60_000;
@@ -22,6 +25,8 @@ const MAX_HISTORY_TURNS = 30;
 const TURN_TIMEOUT_MS = 120_000;
 
 interface ChatSession {
+  userId: number;
+  sender: AgentChatSender;
   conversationId: number;
   timer: NodeJS.Timeout;
   warned: boolean;
@@ -31,7 +36,9 @@ interface ChatSession {
   pendingActionId: number | null;
 }
 
-const sessions = new Map<number, ChatSession>();
+/** (채널 유저 id, 발화자 채널 id) → 창 */
+const sessions = new Map<string, ChatSession>();
+const keyOf = (userId: number, senderChannelId: string) => `${userId}:${senderChannelId}`;
 
 async function sendChat(userId: number, text: string) {
   try {
@@ -45,12 +52,18 @@ async function sendChatParts(userId: number, text: string) {
   for (const part of splitForChat(text)) await sendChat(userId, part);
 }
 
-function refreshWindow(userId: number, session: ChatSession) {
+function refreshWindow(session: ChatSession) {
+  const key = keyOf(session.userId, session.sender.channelId);
   clearTimeout(session.timer);
   session.timer = setTimeout(() => {
-    sessions.delete(userId);
-    void sendChat(userId, '에이전트 이용을 마쳤습니다. 다시 부르려면 !에이전트 를 입력해주세요.');
+    if (sessions.get(key) === session) sessions.delete(key);
+    void sendChat(session.userId, `${session.sender.nickname}님의 에이전트 이용을 마쳤습니다. 다시 부르려면 !에이전트 를 입력해주세요.`);
   }, WINDOW_MS);
+}
+
+/** 창이 아직 살아 있는지 — 만료로 지워진 창은 타이머를 되살리지 않는다 */
+function isLive(session: ChatSession) {
+  return sessions.get(keyOf(session.userId, session.sender.channelId)) === session;
 }
 
 function textOf(content: unknown): string {
@@ -68,14 +81,19 @@ const CHAT_SUFFIX = `
 ## Chat mode (this conversation happens in live Chzzk chat)
 Replies are posted as chat messages with a hard 100-character limit each, at most 3 messages per turn. Be extremely brief — one or two short sentences, plain text only: no markdown, no tables, no headings. For anything long, point to the console menu or a /manual page path instead of explaining in chat. Confirmation cards cannot be clicked here; the system announces the card and asks the user to reply 승인 or 거절. When you call a tool that shows a confirmation card, write no text at all in that turn — any text you write arrives after the announcement and reads out of order.`;
 
-async function ensureSession(userId: number): Promise<ChatSession> {
-  const existing = sessions.get(userId);
+async function ensureSession(userId: number, sender: AgentChatSender): Promise<ChatSession> {
+  const key = keyOf(userId, sender.channelId);
+  const existing = sessions.get(key);
   if (existing) {
-    refreshWindow(userId, existing);
+    //  닉네임은 바뀔 수 있다 — 최신으로
+    existing.sender = sender;
+    refreshWindow(existing);
     return existing;
   }
   const conversation = await agentService.createConversation(prisma, userId);
   const session: ChatSession = {
+    userId,
+    sender,
     conversationId: conversation.id,
     timer: setTimeout(() => {}, 0),
     warned: false,
@@ -83,8 +101,8 @@ async function ensureSession(userId: number): Promise<ChatSession> {
     queued: null,
     pendingActionId: null,
   };
-  sessions.set(userId, session);
-  refreshWindow(userId, session);
+  sessions.set(key, session);
+  refreshWindow(session);
   return session;
 }
 
@@ -107,7 +125,8 @@ async function processTurn(userId: number, session: ChatSession, text: string): 
       .slice(-MAX_HISTORY_TURNS);
 
     await agentService.appendMessage(prisma, session.conversationId, 'user', [{ type: 'text', text }]);
-    await agentService.setTitleFromFirstMessage(prisma, session.conversationId, `[채팅] ${text}`);
+    //  누가 시켰는지 제목에 남긴다 (#262) — 어드민 로그·콘솔 기록에서 구분된다
+    await agentService.setTitleFromFirstMessage(prisma, session.conversationId, `[채팅·${session.sender.nickname}] ${text}`);
 
     let buffer = '';
     const abort = new AbortController();
@@ -127,7 +146,7 @@ async function processTurn(userId: number, session: ChatSession, text: string): 
         onToolStart: () => {},
         runTool: async (name, input) => {
           try {
-            return await runTool(prisma, userId, session.conversationId, name, input);
+            return await runTool(prisma, userId, session.conversationId, name, input, session.sender);
           } catch (error) {
             return { content: isServiceError(error) ? error.message : '실행에 실패했습니다.', isError: true };
           }
@@ -164,7 +183,7 @@ async function processTurn(userId: number, session: ChatSession, text: string): 
     await sendChat(userId, '응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
   } finally {
     session.busy = false;
-    if (sessions.get(userId) === session) refreshWindow(userId, session);
+    if (isLive(session)) refreshWindow(session);
     const next = session.queued;
     session.queued = null;
     if (next) void processTurn(userId, session, next);
@@ -231,7 +250,7 @@ async function resolveFromChat(userId: number, session: ChatSession, approve: bo
     let content: string;
     let isError = false;
     if (approve) {
-      const executed = await executeConfirmed(prisma, userId, session.conversationId, action.tool, action.input as Record<string, unknown>);
+      const executed = await executeConfirmed(prisma, userId, session.conversationId, action.tool, action.input as Record<string, unknown>, session.sender);
       content = executed.content;
       isError = executed.isError;
     } else {
@@ -257,7 +276,7 @@ async function resolveFromChat(userId: number, session: ChatSession, approve: bo
         onToolStart: () => {},
         runTool: async (name, input) => {
           try {
-            return await runTool(prisma, userId, session.conversationId, name, input);
+            return await runTool(prisma, userId, session.conversationId, name, input, session.sender);
           } catch (error) {
             return { content: isServiceError(error) ? error.message : '실행에 실패했습니다.', isError: true };
           }
@@ -292,20 +311,20 @@ async function resolveFromChat(userId: number, session: ChatSession, approve: bo
     }
   } finally {
     session.busy = false;
-    if (sessions.get(userId) === session) refreshWindow(userId, session);
+    if (isLive(session)) refreshWindow(session);
   }
 }
 
 export const agentChatMode: AgentChatMode = {
-  async start({ userId, request }) {
+  async start({ userId, sender, request }) {
     try {
       await agentService.assertAvailable(prisma, userId);
     } catch (error) {
       return { ok: true, message: isServiceError(error) ? error.message : '에이전트를 사용할 수 없습니다.' };
     }
-    const session = await ensureSession(userId);
+    const session = await ensureSession(userId, sender);
     if (!request) {
-      return { ok: true, message: '무엇을 도와드릴까요? 60초 안에 채팅으로 말씀해주세요.' };
+      return { ok: true, message: `${sender.nickname}님, 무엇을 도와드릴까요? 60초 안에 채팅으로 말씀해주세요.` };
     }
     if (session.busy) {
       session.queued = request;
@@ -315,10 +334,13 @@ export const agentChatMode: AgentChatMode = {
     return { ok: true, message: '요청을 확인하고 있습니다…' };
   },
 
-  async relay({ userId, content }) {
-    const session = sessions.get(userId);
+  async relay({ userId, senderChannelId, senderRole, content }) {
+    //  창을 연 그 사람의 채팅만 — 다른 매니저·스트리머의 채팅은 각자 창으로 간다 (#262).
+    //  창이 열린 뒤 권한이 시청자로 내려간 사람은 더 받지 않는다
+    if (senderRole === 'VIEWER') return { active: false };
+    const session = sessions.get(keyOf(userId, senderChannelId));
     if (!session) return { active: false };
-    refreshWindow(userId, session);
+    refreshWindow(session);
     const trimmed = content.trim();
     if (session.pendingActionId && /^(승인|거절)$/.test(trimmed)) {
       void resolveFromChat(userId, session, trimmed === '승인');

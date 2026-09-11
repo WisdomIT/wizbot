@@ -48,7 +48,15 @@ export const agentRouter = t.router({
 
   /** 파싱 창(#238) — 워커가 스트리머의 일반 채팅을 넘긴다. 창이 없으면 무시된다 */
   chatRelay: internalProcedure
-    .input(z.object({ userId: z.number().int().positive(), content: z.string().max(500) }))
+    .input(
+      z.object({
+        userId: z.number().int().positive(),
+        /** 발화자 (#262) — API 가 그 사람이 연 창에만 넣는다 */
+        senderChannelId: z.string().max(64),
+        senderRole: z.enum(['STREAMER', 'MANAGER', 'VIEWER']),
+        content: z.string().max(500),
+      }),
+    )
     .mutation(async ({ input }) => {
       const mode = getAgentChatMode();
       if (!mode) return { active: false };

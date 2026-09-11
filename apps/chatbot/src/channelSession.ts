@@ -127,9 +127,12 @@ export class ChannelSession {
       // 봇 자신의 채팅, 명령어가 아닌 채팅은 무시
       if (senderChannelId === this.botChannelId) return;
       if (!content.startsWith('!')) {
-        //  채팅 에이전트 파싱 창 (#238) — 스트리머의 일반 채팅만 넘긴다. 창이 없으면 API 가 무시한다
-        if (senderRole === 'STREAMER') {
-          void trpc.agent.chatRelay.mutate({ userId: this.info.userId, content }).catch(() => {});
+        //  채팅 에이전트 파싱 창 (#238 #262) — 시청자는 거르고, 스트리머·매니저 채팅은 발화자와 함께 넘긴다.
+        //  그 사람이 연 창이 없으면 API 가 무시한다
+        if (senderRole !== 'VIEWER') {
+          void trpc.agent.chatRelay
+            .mutate({ userId: this.info.userId, senderChannelId, senderRole, content })
+            .catch(() => {});
         }
         return;
       }

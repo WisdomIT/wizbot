@@ -5,7 +5,7 @@ import type { ChzzkOpenClient } from 'chzzk-open-sdk';
 import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
 import { functionAgent } from './agent';
-export { type AgentChatMode,getAgentChatMode, registerAgentChatMode } from './agentBridge';
+export { type AgentChatMode, type AgentChatSender, getAgentChatMode, registerAgentChatMode } from './agentBridge';
 export { clampChatMessage, splitForChat } from './lib';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';

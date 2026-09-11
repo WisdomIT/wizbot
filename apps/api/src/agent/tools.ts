@@ -18,7 +18,7 @@ import {
 } from '@wizbot/shared/services';
 import { allowedChatSlowModeSecs, allowedMinFollowerMinutes, ChzzkError, type LiveSettingPatch } from 'chzzk-open-sdk';
 
-import { recordAgentAudit } from './audit';
+import { type AgentRequester, recordAgentAudit } from './audit';
 import type { PendingCard, ToolDef, ToolRunResult } from './llm/types';
 
 /**
@@ -480,26 +480,28 @@ export async function runTool(
   conversationId: number,
   name: string,
   input: Record<string, unknown>,
+  requester?: AgentRequester,
 ): Promise<ToolRunResult> {
   //  확인 대상은 실행하지 않는다 — 카드를 만들어 돌려주고 턴이 멈춘다.
   //  카드 생성 실패(대상 없음 등)는 ServiceError 로 던져져 모델에게 오류 결과로 돌아간다 (pelican 과 동일)
   if (CONFIRM_TOOLS.has(name)) {
     return { card: await buildCard(prisma, userId, name, input) };
   }
-  return executeConfirmed(prisma, userId, conversationId, name, input);
+  return executeConfirmed(prisma, userId, conversationId, name, input, requester);
 }
 
-/** 승인 뒤(또는 확인 불필요 tool)의 실제 실행 — 성공한 설정 변경은 감사 기록에 남는다 */
+/** 승인 뒤(또는 확인 불필요 tool)의 실제 실행 — 성공한 설정 변경은 감사 기록에 남는다 (채팅 요청은 시킨 사람도, #262) */
 export async function executeConfirmed(
   prisma: PrismaClient,
   userId: number,
   conversationId: number,
   name: string,
   input: Record<string, unknown>,
+  requester?: AgentRequester,
 ): Promise<{ content: string; isError: boolean }> {
   const result = await execute(prisma, userId, name, input);
   if (result.ok && AUDITED_TOOLS.has(name)) {
-    await recordAgentAudit(prisma, userId, conversationId, name, input);
+    await recordAgentAudit(prisma, userId, conversationId, name, input, requester);
   }
   return { content: result.text, isError: !result.ok };
 }
