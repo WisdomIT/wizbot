@@ -9,6 +9,7 @@ export * as cafeService from './cafe';
 export * as chatBufferService from './chatBuffer';
 export * from './chzzkClient';
 export * as commandService from './command';
+export * as commandLogService from './commandLog';
 export * from './errors';
 export * as inquiryService from './inquiry';
 export * as noticeService from './notice';

@@ -8,6 +8,8 @@ function createCaller(overrides: Partial<Context> = {}) {
   const prisma = {
     chatbotEchoCommand: { findMany: vi.fn().mockResolvedValue([]) },
     chatbotFunctionCommand: { findMany: vi.fn().mockResolvedValue([]) },
+    //  getCommandList 가 호출 수를 같이 싣는다 (#276)
+    chatbotCommandLog: { groupBy: vi.fn().mockResolvedValue([]) },
     chatbotRepeat: {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([]),

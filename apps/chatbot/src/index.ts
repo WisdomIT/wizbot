@@ -148,10 +148,10 @@ let lastPurgeAt = 0;
 async function purgeExpired(): Promise<void> {
   if (Date.now() - lastPurgeAt < PURGE_INTERVAL_MS) return;
   try {
-    const { agentConversations, accessLogs } = await trpc.retention.purgeExpired.mutate();
+    const { agentConversations, accessLogs, commandLogs } = await trpc.retention.purgeExpired.mutate();
     lastPurgeAt = Date.now();
-    if (agentConversations || accessLogs) {
-      console.log(`🧹 보관 기간 경과 파기: 에이전트 대화 ${agentConversations}, 접근 기록 ${accessLogs}`);
+    if (agentConversations || accessLogs || commandLogs) {
+      console.log(`🧹 보관 기간 경과 파기: 에이전트 대화 ${agentConversations}, 접근 기록 ${accessLogs}, 명령어 호출 로그 ${commandLogs}`);
     }
   } catch (error) {
     lastPurgeAt = Date.now() - PURGE_INTERVAL_MS + PURGE_RETRY_MS;

@@ -1,5 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
+import { COMMAND_LOG_RETENTION_DAYS, purgeExpired as purgeExpiredCommandLogs } from './commandLog';
+
 /**
  * 보관 기간 (#255) — 개인정보처리방침 제3조와 실태가 어긋나지 않게 기간이 지난 데이터를 물리 삭제한다.
  * 챗봇 워커가 하루 1회 retention.purgeExpired 를 부른다. 변경 기록(감사)·노래 신청 기록·사용량 통계는
@@ -13,6 +15,8 @@ export const RETENTION_DAYS = {
    * 채널 식별자만 담고 IP 는 기록하지 않는다 (#254)
    */
   accessLog: 365 * 2,
+  /** 명령어 호출 로그 (#276) — 통계용. 총 호출 수는 명령어 행에 누적돼 남는다 */
+  commandLog: COMMAND_LOG_RETENTION_DAYS,
 } as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -43,9 +47,10 @@ export async function purgeExpiredAccessLogs(prisma: PrismaClient, now = new Dat
 }
 
 export async function purgeExpired(prisma: PrismaClient, now = new Date()) {
-  const [agentConversations, accessLogs] = await Promise.all([
+  const [agentConversations, accessLogs, commandLogs] = await Promise.all([
     purgeExpiredAgentConversations(prisma, now),
     purgeExpiredAccessLogs(prisma, now),
+    purgeExpiredCommandLogs(prisma, now),
   ]);
-  return { agentConversations, accessLogs };
+  return { agentConversations, accessLogs, commandLogs };
 }

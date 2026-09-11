@@ -15,7 +15,8 @@ const daysAgo = (days: number) => new Date(NOW.getTime() - days * DAY_MS);
 function createPrisma() {
   const agentConversation = { deleteMany: vi.fn().mockResolvedValue({ count: 3 }) };
   const auditLog = { deleteMany: vi.fn().mockResolvedValue({ count: 5 }) };
-  return { prisma: { agentConversation, auditLog } as unknown as PrismaClient, agentConversation, auditLog };
+  const chatbotCommandLog = { deleteMany: vi.fn().mockResolvedValue({ count: 7 }) };
+  return { prisma: { agentConversation, auditLog, chatbotCommandLog } as unknown as PrismaClient, agentConversation, auditLog, chatbotCommandLog };
 }
 
 describe('retention (#255)', () => {
@@ -41,10 +42,11 @@ describe('retention (#255)', () => {
     });
   });
 
-  it('purgeExpired 는 둘 다 돌리고 건수를 돌려준다', async () => {
-    const { prisma, agentConversation, auditLog } = createPrisma();
-    await expect(purgeExpired(prisma, NOW)).resolves.toEqual({ agentConversations: 3, accessLogs: 5 });
+  it('purgeExpired 는 셋 다 돌리고 건수를 돌려준다 — 명령어 호출 로그는 90일 (#276)', async () => {
+    const { prisma, agentConversation, auditLog, chatbotCommandLog } = createPrisma();
+    await expect(purgeExpired(prisma, NOW)).resolves.toEqual({ agentConversations: 3, accessLogs: 5, commandLogs: 7 });
     expect(agentConversation.deleteMany).toHaveBeenCalledTimes(1);
     expect(auditLog.deleteMany).toHaveBeenCalledTimes(1);
+    expect(chatbotCommandLog.deleteMany).toHaveBeenCalledWith({ where: { createdAt: { lt: daysAgo(RETENTION_DAYS.commandLog) } } });
   });
 });

@@ -426,6 +426,7 @@ model User {
   agentUsages       AgentUsage[]
   noticeReads       NoticeRead[]
   inquiries         Inquiry[]
+  commandLogs       ChatbotCommandLog[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
@@ -501,6 +502,8 @@ model ChatbotEchoCommand {
   response String   @db.Text
   /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
   enabled  Boolean  @default(true) @db.TinyInt
+  /// 누적 호출 수 (#276) — 호출 로그는 90일만 남기므로 총합은 여기서 센다
+  totalCount Int    @default(0)
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -514,8 +517,45 @@ model ChatbotFunctionCommand {
   option     String?              @db.VarChar(20)
   /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
   enabled    Boolean              @default(true) @db.TinyInt
+  /// 누적 호출 수 (#276)
+  totalCount Int                  @default(0)
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// 명령어 호출 로그 (#276) — 매칭 실패도 `!` 로 시작한 발화면 남긴다. 90일 보존(retention), 총합은 명령어 행의 totalCount
+model ChatbotCommandLog {
+  id              Int               @id @default(autoincrement())
+  userId          Int
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 호출된 이름(정규화 후). 매칭됐으면 명령어 이름, 아니면 첫 어절 — 시청자 입력이라 40자로 자른다
+  command         String            @db.VarChar(40)
+  matchedType     CommandLogMatch
+  matchedId       Int?
+  outcome         CommandLogOutcome
+  senderChannelId String?           @db.VarChar(32)
+  createdAt       DateTime          @default(now()) @db.DateTime(6)
+
+  @@index([userId, createdAt])
+  @@index([userId, command, createdAt])
+  @@index([userId, matchedType, matchedId, createdAt])
+}
+
+enum CommandLogMatch {
+  ECHO
+  FUNCTION
+  NONE
+}
+
+enum CommandLogOutcome {
+  OK
+  /// 없는(또는 꺼진) 명령어
+  NOT_FOUND
+  /// 기능 명령어를 용법을 틀려서 안내로 끝남
+  USAGE_ERROR
+  NO_PERMISSION
+  /// 기능 실행 실패 (치지직 오류 등)
+  ERROR
 }
 
 model ChatbotRepeat {

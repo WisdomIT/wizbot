@@ -64,6 +64,7 @@ export function CommandsView() {
         usageString: display.usageString,
         description: display.descriptionShort,
         permission: item.permission,
+        stats: item.stats,
       };
     }),
     ...data.echo.map((item) => {
@@ -77,6 +78,7 @@ export function CommandsView() {
         usageString: display.usageString,
         description: display.descriptionShort,
         permission: 'VIEWER' as const,
+        stats: item.stats,
       };
     }),
   ];

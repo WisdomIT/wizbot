@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '../chatbot/definitions';
 import { CHAT_MAX_LENGTH } from '../chatbot/lib';
-import { commandService, repeatService, ServiceError } from '../services';
+import { commandLogService, commandService, repeatService, ServiceError } from '../services';
 import { publicProcedure, streamerProcedure, t } from '../trpc';
 
 /**
@@ -59,9 +59,17 @@ export const commandRouter = t.router({
       return commandService.listCommands(ctx.prisma, user.id, true);
     }),
 
-  getCommandList: streamerProcedure.query(({ ctx }) =>
-    commandService.listCommands(ctx.prisma, ctx.user.id),
-  ),
+  /** 콘솔 목록 — 명령어별 호출 수(총·30일·7일)를 같이 싣는다 (#276). 시청자용 목록에는 싣지 않는다 */
+  getCommandList: streamerProcedure.query(async ({ ctx }) => {
+    const [list, recent] = await Promise.all([
+      commandService.listCommands(ctx.prisma, ctx.user.id),
+      commandLogService.recentCountsByCommand(ctx.prisma, ctx.user.id),
+    ]);
+    return {
+      echo: list.echo.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'ECHO', item.id, item.totalCount) })),
+      function: list.function.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'FUNCTION', item.id, item.totalCount) })),
+    };
+  }),
 
   getCommandById: streamerProcedure
     .input(z.object({ id: z.number(), type: commandTypeSchema }))
