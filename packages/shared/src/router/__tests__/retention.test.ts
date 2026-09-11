@@ -7,6 +7,7 @@ function createCaller(overrides: Partial<Context> = {}) {
   const prisma = {
     agentConversation: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
     auditLog: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
+    chatbotCommandLog: { deleteMany: vi.fn().mockResolvedValue({ count: 3 }) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };
@@ -21,7 +22,7 @@ describe('retention.purgeExpired (#255)', () => {
 
   it('워커 호출은 파기 건수를 돌려준다', async () => {
     const { caller, prisma } = createCaller({ internal: true });
-    await expect(caller.retention.purgeExpired()).resolves.toEqual({ agentConversations: 1, accessLogs: 2 });
+    await expect(caller.retention.purgeExpired()).resolves.toEqual({ agentConversations: 1, accessLogs: 2, commandLogs: 3 });
     expect(prisma.agentConversation.deleteMany).toHaveBeenCalledTimes(1);
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledTimes(1);
   });

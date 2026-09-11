@@ -71,6 +71,7 @@ describe('chatbot 디스패처', () => {
     await expect(chatbot(ctx, message('!카페'))).resolves.toEqual({
       ok: true,
       message: 'https://cafe.naver.com/x',
+      call: { command: '카페', matchedType: 'ECHO', matchedId: 1, outcome: 'OK' },
     });
   });
 
@@ -81,26 +82,30 @@ describe('chatbot 디스패처', () => {
     expect(result.message).toBe('https://cafe.naver.com/x');
   });
 
-  it('없는 명령어는 ok:false / Command not found', async () => {
+  it('없는 명령어는 ok:false / Command not found — 호출 로그용으로 첫 어절을 남긴다 (#276)', async () => {
     const { ctx } = createCtx();
-    await expect(chatbot(ctx, message('!없는명령'))).resolves.toEqual({
+    await expect(chatbot(ctx, message('!없는명령 인수 두 개'))).resolves.toEqual({
       ok: false,
       message: 'Command not found',
+      call: { command: '없는명령', matchedType: 'NONE', matchedId: null, outcome: 'NOT_FOUND' },
     });
+    //  이름이 비면(「!」만) 남길 게 없다
+    await expect(chatbot(ctx, message('!'))).resolves.toEqual({ ok: false, message: 'Command not found' });
   });
 
-  it('권한이 부족한 function 명령어는 실행하지 않고 안내한다', async () => {
+  it('권한이 부족한 function 명령어는 실행하지 않고 안내한다 — 로그는 NO_PERMISSION', async () => {
     const { ctx } = createCtx();
     await expect(chatbot(ctx, message('!방제 수정 하이', 'VIEWER'))).resolves.toEqual({
       ok: true,
       message: '권한이 없습니다',
+      call: { command: '방제 수정', matchedType: 'FUNCTION', matchedId: 10, outcome: 'NO_PERMISSION' },
     });
   });
 
   it('echo와 function이 모두 매칭되면 더 긴 명령어(echo)를 우선한다', async () => {
     const { ctx } = createCtx();
     // '방제 수정 도움말'(echo, 길다) vs '방제 수정'(function)
-    await expect(chatbot(ctx, message('!방제 수정 도움말', 'VIEWER'))).resolves.toEqual({
+    await expect(chatbot(ctx, message('!방제 수정 도움말', 'VIEWER'))).resolves.toMatchObject({
       ok: true,
       message: '방제 수정 사용법입니다',
     });
@@ -111,6 +116,7 @@ describe('chatbot 디스패처', () => {
     await expect(chatbot(ctx, message('!고장'))).resolves.toEqual({
       ok: false,
       message: 'Function not found',
+      call: { command: '고장', matchedType: 'FUNCTION', matchedId: 12, outcome: 'ERROR' },
     });
   });
 
@@ -118,7 +124,11 @@ describe('chatbot 디스패처', () => {
     const { ctx, echo } = createCtx();
     const result = await chatbot(ctx, message('!추가 인사 안녕하세요 여러분', 'MANAGER'));
 
-    expect(result).toEqual({ ok: true, message: '인사 명령어가 생성되었습니다.' });
+    expect(result).toEqual({
+      ok: true,
+      message: '인사 명령어가 생성되었습니다.',
+      call: { command: '추가', matchedType: 'FUNCTION', matchedId: 11, outcome: 'OK' },
+    });
     expect(echo.create).toHaveBeenCalledWith({
       data: { userId: USER_ID, command: '인사', response: '안녕하세요 여러분' },
     });
@@ -130,7 +140,7 @@ describe('chatbot 디스패처', () => {
 
     const result = await chatbot(ctx, message('!추가 카페 중복', 'MANAGER'));
 
-    expect(result).toEqual({ ok: true, message: '이미 존재하는 명령어입니다.' });
+    expect(result).toMatchObject({ ok: true, message: '이미 존재하는 명령어입니다.', call: { outcome: 'OK' } });
     expect(echo.create).not.toHaveBeenCalled();
   });
 
@@ -140,6 +150,7 @@ describe('chatbot 디스패처', () => {
 
     expect(result.ok).toBe(true);
     expect(result.message).toContain('!추가 인사 <응답>');
+    expect(result.call).toEqual({ command: '추가', matchedType: 'FUNCTION', matchedId: 11, outcome: 'USAGE_ERROR' });
     expect(echo.create).not.toHaveBeenCalled();
   });
 });
@@ -163,7 +174,7 @@ describe('비활성 명령어 (#82)', () => {
   it('비활성 명령어는 없는 것처럼 동작한다 (무응답)', async () => {
     // 활성 목록에서 빠진 상태 = 조회 결과가 비어 있음
     const ctx = ctxWithEnabled([], []);
-    await expect(chatbot(ctx, message('!카페'))).resolves.toEqual({
+    await expect(chatbot(ctx, message('!카페'))).resolves.toMatchObject({
       ok: false,
       message: 'Command not found',
     });
@@ -228,7 +239,7 @@ describe('getCommandListUrl (#73)', () => {
       ctxWithChannel('d9c571e0ecae37fec31711735f95c8f4'),
       message('!명령어'),
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       message: '명령어 목록: https://bot.wisdomit.co.kr/d9c571e0ecae37fec31711735f95c8f4/command',
     });

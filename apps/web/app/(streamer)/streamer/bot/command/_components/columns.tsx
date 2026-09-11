@@ -28,7 +28,11 @@ export interface Command {
   usageString: string;
   description: string;
   permission: Permission;
+  /** 호출 수 (#276) — 총·최근 30일·최근 7일 */
+  stats: { total: number; d30: number; d7: number };
 }
+
+const formatCount = (value: number) => value.toLocaleString('ko-KR');
 
 const col = createColumnHelper<Command>();
 
@@ -78,6 +82,19 @@ export function createColumns({
     col.accessor('permission', {
       header: ({ column }) => <SortableHeader column={column}>권한</SortableHeader>,
       cell: ({ getValue }) => <span className="text-sm">{permissionLabel(getValue())}</span>,
+    }),
+    col.accessor((row) => row.stats.total, {
+      id: 'calls',
+      header: ({ column }) => <SortableHeader column={column}>호출</SortableHeader>,
+      cell: ({ row }) => {
+        const { total, d30, d7 } = row.original.stats;
+        return (
+          <span className="whitespace-nowrap text-sm tabular-nums" title={`총 ${formatCount(total)}회 · 최근 30일 ${formatCount(d30)}회 · 최근 7일 ${formatCount(d7)}회`}>
+            {formatCount(total)}
+            <span className="text-muted-foreground"> · 30일 {formatCount(d30)} · 7일 {formatCount(d7)}</span>
+          </span>
+        );
+      },
     }),
     col.display({
       id: 'actions',
