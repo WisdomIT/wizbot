@@ -15,7 +15,6 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   CAFE_JOIN: '카페 봇 가입 요청',
   INQUIRY: '문의사항',
   ERROR: '오류 알림',
-  STREAMER_JOINED: '신규 스트리머 등록',
 };
 
 export interface NotifyMessage {

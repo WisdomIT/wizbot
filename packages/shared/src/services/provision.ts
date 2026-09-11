@@ -120,6 +120,7 @@ export async function provisionStreamer(
 
 /**
  * 신규 등록 알림 (#271) — 자동 승인이 켜져 있어 신청 절차가 사실상 꺼진 상태여도 운영자가 알 수 있게.
+ * 종류는 신청 접수와 같은 SIGNUP — 웹훅을 따로 두지 않고 「사용 신청」 채널 하나로 받는다.
  * 알림은 최선 노력이다 — 실패해도 등록은 이미 끝났다.
  */
 function notifyStreamerJoined(
@@ -130,7 +131,7 @@ function notifyStreamerJoined(
   const site = process.env.PUBLIC_SITE_URL ?? '';
   const followers = user.followerCount === null ? '(알 수 없음)' : user.followerCount.toLocaleString('ko-KR');
   const visibility = user.hidden ? '숨김 (팔로워 기준 미만)' : '공개';
-  return notifyAdmins(prisma, 'STREAMER_JOINED', {
+  return notifyAdmins(prisma, 'SIGNUP', {
     title: `신규 스트리머 등록: ${user.channelName}`,
     lines: [
       `${user.channelName} 채널이 위즈봇에 등록됐습니다.`,

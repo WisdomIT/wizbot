@@ -128,7 +128,7 @@ describe('신규 등록 알림 + 팔로워 기준 기본 공개 (#271)', () => {
     );
   }
 
-  it('새 계정: 팔로워가 기준 미만이면 숨김으로 만들고 STREAMER_JOINED 알림을 보낸다', async () => {
+  it('새 계정: 팔로워가 기준 미만이면 숨김으로 만들고 SIGNUP 종류로 등록 알림을 보낸다', async () => {
     const created = createPrisma();
     withThreshold(created, '100');
     await provisionStreamer(created.prisma, { ...IDENTITY, followerCount: 30 }, { ...OPTIONS, joinedVia: 'AUTO_APPROVE' });
@@ -137,7 +137,7 @@ describe('신규 등록 알림 + 팔로워 기준 기본 공개 (#271)', () => {
     expect(created.user.update).not.toHaveBeenCalled();
     expect(notifyAdmins).toHaveBeenCalledWith(
       created.prisma,
-      'STREAMER_JOINED',
+      'SIGNUP',
       expect.objectContaining({
         title: '신규 스트리머 등록: 테스터',
         link: { label: '스트리머 관리', url: '/admin/streamers' },
@@ -171,7 +171,7 @@ describe('신규 등록 알림 + 팔로워 기준 기본 공개 (#271)', () => {
     const { prisma, user } = createPrisma();
     await provisionStreamer(prisma, IDENTITY, OPTIONS);
     expect(user.create).toHaveBeenCalledWith({ data: { ...IDENTITY, hidden: false } });
-    expect(notifyAdmins).toHaveBeenCalledWith(prisma, 'STREAMER_JOINED', expect.objectContaining({
+    expect(notifyAdmins).toHaveBeenCalledWith(prisma, 'SIGNUP', expect.objectContaining({
       fields: expect.arrayContaining([{ name: '팔로워', value: '(알 수 없음)' }, { name: '목록 공개', value: '공개' }]),
     }));
   });

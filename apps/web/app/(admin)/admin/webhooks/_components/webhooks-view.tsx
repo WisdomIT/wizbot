@@ -243,7 +243,7 @@ function SettingRow({ k, v }: { k: string; v: string }) {
 }
 
 interface RowData {
-  kind: 'SESSION_EXPIRED' | 'SIGNUP' | 'CAFE_JOIN' | 'INQUIRY' | 'ERROR' | 'STREAMER_JOINED';
+  kind: 'SESSION_EXPIRED' | 'SIGNUP' | 'CAFE_JOIN' | 'INQUIRY' | 'ERROR';
   label: string;
   configured: boolean;
   enabled: boolean;
