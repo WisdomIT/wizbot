@@ -427,6 +427,7 @@ model User {
   noticeReads       NoticeRead[]
   inquiries         Inquiry[]
   commandLogs       ChatbotCommandLog[]
+  suggestionDismissals UserSuggestionDismissal[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
@@ -504,6 +505,8 @@ model ChatbotEchoCommand {
   enabled  Boolean  @default(true) @db.TinyInt
   /// 누적 호출 수 (#276) — 호출 로그는 90일만 남기므로 총합은 여기서 센다
   totalCount Int    @default(0)
+  /// 「오래 안 쓰인 명령어」 제안(#276)은 만든 지 30일 지난 것만 — 기존 행은 마이그레이션 시각
+  createdAt DateTime @default(now()) @db.DateTime(6)
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -519,8 +522,37 @@ model ChatbotFunctionCommand {
   enabled    Boolean              @default(true) @db.TinyInt
   /// 누적 호출 수 (#276)
   totalCount Int                  @default(0)
+  createdAt  DateTime             @default(now()) @db.DateTime(6)
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// 숨긴 제안 (#276) — 조건이 해제되면 지워지고, 다시 성립하면 새 제안으로 뜬다
+model UserSuggestionDismissal {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        SuggestionKind
+  /// 명령어 `echo:12` / `function:3`, 없는 명령어 이름, 곡 youtubeId 등
+  key         String         @db.VarChar(64)
+  dismissedAt DateTime       @default(now()) @db.DateTime(6)
+
+  @@unique([userId, kind, key])
+}
+
+enum SuggestionKind {
+  /// 30일간 호출 0회인 켜진 명령어 — 삭제 제안
+  UNUSED_COMMAND
+  /// 없는 명령어를 시청자가 반복 호출 — 만들기 제안
+  MISSING_COMMAND
+  /// 꺼진 명령어를 시청자가 반복 호출 — 켜기 제안
+  DISABLED_COMMAND
+  /// 기능 명령어 용법 오류가 잦음
+  USAGE_ERROR_COMMAND
+  /// 자주 들은 곡 → 즐겨찾기 (4단계)
+  FAVORITE_SONG
+  /// 에이전트 첫 사용 안내 (4단계)
+  AGENT_INTRO
 }
 
 /// 명령어 호출 로그 (#276) — 매칭 실패도 `!` 로 시작한 발화면 남긴다. 90일 보존(retention), 총합은 명령어 행의 totalCount

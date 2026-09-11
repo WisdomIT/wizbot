@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTRPC } from '@/src/utils/trpc-react';
 
+import { AGENT_OPEN_EVENT, type AgentOpenDetail } from './agent-bus';
+
 /**
  * 위즈봇 에이전트 패널 (#35). 콘솔 우측 채팅창 — 스트리밍 응답, tool 표시,
  * 파괴적 작업의 승인 카드(pelican tool_confirmation). 대화는 서버(DB)에 저장돼 어디서든 이어진다.
@@ -159,6 +161,18 @@ export function AgentPanel() {
   const trpc = useTRPC();
   const { data: status } = useQuery(trpc.agent.status.queryOptions());
   const [open, setOpen] = useState(false);
+  //  다른 화면의 「에이전트로 만들기」(#276) — 패널을 열고 새 대화로 이 메시지를 보낸다
+  const [seed, setSeed] = useState<string | null>(null);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<AgentOpenDetail>).detail;
+      if (!detail?.message) return;
+      setSeed(detail.message);
+      setOpen(true);
+    };
+    window.addEventListener(AGENT_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(AGENT_OPEN_EVENT, onOpen);
+  }, []);
 
   if (!status?.enabled) return null;
 
@@ -172,7 +186,7 @@ export function AgentPanel() {
         @media (max-width: 1023px) { html.agent-open body { padding-right: 0; } }
       `}</style>
       {open ? (
-        <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} />
+        <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} seed={seed} onSeedConsumed={() => setSeed(null)} />
       ) : (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -192,7 +206,18 @@ export function AgentPanel() {
   );
 }
 
-function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: () => void }) {
+function PanelBody({
+  allowDelete,
+  onClose,
+  seed,
+  onSeedConsumed,
+}: {
+  allowDelete: boolean;
+  onClose: () => void;
+  /** 열리면서 새 대화로 바로 보낼 메시지 (#276) */
+  seed: string | null;
+  onSeedConsumed: () => void;
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: conversations } = useQuery(trpc.agent.conversations.queryOptions());
@@ -346,12 +371,24 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
     setLive([]);
   }
 
-  async function send() {
-    const message = input.trim();
+  //  seed 는 항상 새 대화로 — 열려 있던 대화에 섞이지 않게
+  useEffect(() => {
+    if (!seed || streaming) return;
+    onSeedConsumed();
+    void send(seed, { fresh: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+
+  async function send(text?: string, options: { fresh?: boolean } = {}) {
+    const message = (text ?? input).trim();
     if (!message || streaming) return;
     setInput('');
     setStreaming(true);
-    let id = conversationId;
+    let id = options.fresh ? null : conversationId;
+    if (options.fresh) {
+      setLive([]);
+      touchedRef.current.clear();
+    }
 
     try {
       if (id === null) {

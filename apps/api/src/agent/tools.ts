@@ -15,6 +15,7 @@ import {
   shortcutService,
   songFavoriteService,
   songService,
+  suggestionService,
   userSettingService,
 } from '@wizbot/shared/services';
 import { allowedChatSlowModeSecs, allowedMinFollowerMinutes, ChzzkError, type LiveSettingPatch } from 'chzzk-open-sdk';
@@ -89,6 +90,37 @@ export const CONFIRM_TOOLS = new Set([
 export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
   { name: 'list_commands', description: '이 채널의 챗봇 명령어(단순 응답 echo·기능 function) 전체 목록. 각 항목의 stats 에 총·30일·7일 호출 수.', inputSchema: noInput },
+  {
+    name: 'list_unused_commands',
+    description: '켜져 있는데 최근 30일간 한 번도 호출되지 않은 명령어(만든 지 30일 지난 것만). 삭제나 끄기를 제안할 때 근거로 쓴다 — 실행은 승인 카드로.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'list_unmatched_commands',
+    description: '시청자가 최근 30일간 반복해서 불렀지만 응답하지 못한 이름 — 없는 명령어(만들기 제안), 꺼진 명령어(켜기 제안), 용법 오류(안내 문구 보완 제안)로 구분.',
+    inputSchema: {
+      type: 'object',
+      properties: { min: { type: 'number', description: '최소 호출 수. 기본 5' } },
+      required: [], additionalProperties: false,
+    },
+  },
+  {
+    name: 'list_suggestions',
+    description: '위즈봇이 명령어 페이지에 띄우는 제안 목록(안 쓰는 명령어·없는/꺼진 명령어·용법 오류). 스트리머가 이미 숨긴 제안은 빠진다.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'dismiss_suggestion',
+    description: '제안 하나를 숨긴다 — 스트리머가 "그건 됐어, 다시 묻지 마" 라고 할 때. 조건이 해제되기 전까지 화면에도 다시 뜨지 않는다.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['UNUSED_COMMAND', 'MISSING_COMMAND', 'DISABLED_COMMAND', 'USAGE_ERROR_COMMAND'] },
+        key: { type: 'string', description: 'list_suggestions 의 key' },
+      },
+      required: ['kind', 'key'], additionalProperties: false,
+    },
+  },
   {
     name: 'get_command_stats',
     description: '명령어 사용 통계 — 기간(7일/30일) 내 명령어별 호출 순위, 일별 추이, 없는/꺼진 명령어·용법 오류·권한 없음 호출 목록. 어떤 명령어가 쓰이는지 묻는 질문에는 추측하지 말고 이것으로 조회한다.',
@@ -628,6 +660,35 @@ async function execute(
         echo: list.echo.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'ECHO', item.id, item.totalCount) })),
         function: list.function.map((item) => ({ ...item, stats: commandLogService.statsFor(recent, 'FUNCTION', item.id, item.totalCount) })),
       }));
+    }
+    case 'list_unused_commands': {
+      const suggestions = await suggestionService.computeCommandSuggestions(prisma, userId);
+      return ok(toResult(suggestions.filter((item) => item.kind === 'UNUSED_COMMAND').map((item) => item.payload)));
+    }
+    case 'list_unmatched_commands': {
+      const min = Number.isInteger(input.min) && Number(input.min) > 0 ? Number(input.min) : 5;
+      const stats = await commandLogService.getStats(prisma, userId, 30);
+      const list = await commandService.listCommands(prisma, userId);
+      const disabledNames = new Set([...list.echo, ...list.function].filter((row) => !row.enabled).map((row) => row.command));
+      return ok(toResult(
+        stats.unmatched
+          .filter((row) => row.count >= min)
+          .map((row) => ({
+            command: row.command,
+            count: row.count,
+            kind: row.outcome === 'NOT_FOUND' ? (disabledNames.has(row.command) ? 'DISABLED' : 'MISSING') : row.outcome,
+          })),
+      ));
+    }
+    case 'list_suggestions':
+      return ok(toResult(await suggestionService.listCommandSuggestions(prisma, userId)));
+    case 'dismiss_suggestion': {
+      const kind = String(input.kind);
+      if (!['UNUSED_COMMAND', 'MISSING_COMMAND', 'DISABLED_COMMAND', 'USAGE_ERROR_COMMAND'].includes(kind)) {
+        throw new ServiceError('INVALID_INPUT', 'kind 가 올바르지 않습니다.');
+      }
+      await suggestionService.dismiss(prisma, userId, kind as 'UNUSED_COMMAND', String(input.key ?? ''));
+      return ok('숨겼습니다. 조건이 해제되기 전까지 다시 뜨지 않습니다.');
     }
     case 'get_command_stats': {
       const days = input.days === 7 ? 7 : 30;

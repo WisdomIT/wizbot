@@ -14,6 +14,7 @@ import { shortcutRouter } from './shortcut';
 import { signupRouter } from './signup';
 import { songRouter } from './song';
 import { songFavoriteRouter } from './songFavorite';
+import { suggestionRouter } from './suggestion';
 import { userRouter } from './user';
 
 export const appRouter = t.router({
@@ -32,6 +33,7 @@ export const appRouter = t.router({
   signup: signupRouter,
   song: songRouter,
   songFavorite: songFavoriteRouter,
+  suggestion: suggestionRouter,
   user: userRouter,
 
   ping: publicProcedure.query(() => {
