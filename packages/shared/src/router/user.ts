@@ -40,7 +40,10 @@ export const userRouter = t.router({
     const theme = await themeService.getTheme(ctx.prisma, user.id);
     return { ...user, theme };
   }),
-  getUsersPublic: publicProcedure.query(async ({ ctx }) => {
+  /** 공개 목록 — 팔로워 많은 순 (#271). 랜딩은 limit 로 8명만, /list 는 전체 */
+  getUsersPublic: publicProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const users = await ctx.prisma.user.findMany({
       select: {
         channelId: true,
@@ -61,6 +64,9 @@ export const userRouter = t.router({
       where: {
         hidden: false,
       },
+      //  팔로워 수를 모르는(null) 계정은 뒤로 — MySQL 은 DESC 에서 NULL 을 마지막에 둔다
+      orderBy: [{ followerCount: 'desc' }, { id: 'asc' }],
+      ...(input?.limit ? { take: input.limit } : {}),
     });
 
     return users;
@@ -131,16 +137,18 @@ export const userRouter = t.router({
       if (channels.length === 0) {
         throw new Error('치지직 채널 정보를 가져오지 못했습니다.');
       }
-      const { channelName, channelImageUrl } = channels[0];
+      const { channelName, channelImageUrl, followerCount } = channels[0];
 
       // 화이트리스트에 없으면 에러로 끝내지 않는다 — OAuth 로 본인이 확인된 상태이므로
       // 신청 레코드를 만들고 신청자 세션으로 보낸다 (#96)
       const identity = { channelId, channelName, channelImageUrl: channelImageUrl ?? null };
       const whitelisted = await ctx.prisma.whitelist.findUnique({ where: { channelId } });
+      let joinedVia: provisionService.JoinedVia = 'WHITELIST';
       if (!whitelisted) {
         if (await signupService.getAutoApprove(ctx.prisma)) {
           // 자동 승인 — 등록하고 아래 일반 로그인 경로를 그대로 탄다
           await signupService.autoApprove(ctx.prisma, identity);
+          joinedVia = 'AUTO_APPROVE';
         } else {
           // 토큰도 함께 맡긴다 — 대기 중 갱신해 두면 승인 즉시 봇이 붙는다 (#151)
           const { application, created } = await signupService.upsertOnLogin(
@@ -157,11 +165,13 @@ export const userRouter = t.router({
         }
       }
 
-      // User·UserSetting·토큰·기본 명령어 — 신청 승인 경로와 같은 함수 (#151)
-      const user = await provisionService.provisionStreamer(ctx.prisma, identity, {
-        tokens: tokenSet,
-        initialCommands: getChatbotDatabaseInitial,
-      });
+      // User·UserSetting·토큰·기본 명령어 — 신청 승인 경로와 같은 함수 (#151).
+      // 팔로워 수는 로그인 때마다 갱신한다 (#271) — 랜딩 정렬·기본 공개 판정에 쓴다
+      const user = await provisionService.provisionStreamer(
+        ctx.prisma,
+        { ...identity, followerCount },
+        { tokens: tokenSet, initialCommands: getChatbotDatabaseInitial, joinedVia },
+      );
       // 승인 후 첫 로그인이면 채팅 안내를 멈춘다
       await signupService.acknowledge(ctx.prisma, channelId);
       //  접근 기록 (#254) — 로그인 성공. 신청자(applicant)는 User 가 없어 남기지 않는다

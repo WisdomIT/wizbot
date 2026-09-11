@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const refreshMock = vi.fn();
 const setTokensMock = vi.fn();
+const channelsGetMock = vi.fn().mockResolvedValue([]);
 vi.mock('../chzzkClient', () => ({
   createChzzkClientWithStore: vi.fn(() => ({ auth: { refresh: refreshMock } })),
   getChzzkClientForUser: vi.fn(() => ({ auth: { setTokens: setTokensMock } })),
+  getChzzkAppClient: vi.fn(() => ({ channels: { get: channelsGetMock } })),
 }));
+vi.mock('../notify', () => ({ notifyAdmins: vi.fn().mockResolvedValue({ mailSent: false, discordSent: false }) }));
 
 import {
   approve,
@@ -17,8 +20,10 @@ import {
   getSettings,
   listApplications,
   PENDING_MAX_AGE_MS,
+  PUBLIC_FOLLOWER_THRESHOLD_KEY,
   refreshPendingTokens,
   reject,
+  setSettings,
   submitReason,
   upsertOnLogin,
 } from '../signup';
@@ -47,7 +52,11 @@ function createPrisma() {
     findUnique: vi.fn().mockResolvedValue(null),
     upsert: vi.fn().mockResolvedValue({}),
   };
-  const user = { upsert: vi.fn().mockResolvedValue({ id: 42, ...IDENTITY }) };
+  const user = {
+    findUnique: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ id: 42, followerCount: null, hidden: false, ...data })),
+    update: vi.fn().mockResolvedValue({ id: 42, ...IDENTITY }),
+  };
   const userSetting = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), create: vi.fn() };
   const chatbotFunctionCommand = { findFirst: vi.fn().mockResolvedValue({ id: 1 }), createMany: vi.fn() };
   const chatbotEchoCommand = { createMany: vi.fn() };
@@ -86,9 +95,24 @@ describe('자동 승인 설정', () => {
 
   it('사유 입력칸은 설정이 없으면 보이고, false 일 때만 숨긴다', async () => {
     const { prisma, siteSetting } = createPrisma();
-    await expect(getSettings(prisma)).resolves.toEqual({ autoApprove: false, askReason: true });
+    await expect(getSettings(prisma)).resolves.toEqual({ autoApprove: false, askReason: true, publicFollowerThreshold: 100 });
     siteSetting.findMany.mockResolvedValue([{ key: ASK_REASON_KEY, value: 'false' }]);
     await expect(getSettings(prisma)).resolves.toMatchObject({ askReason: false });
+  });
+
+  it('공개 기준 팔로워 수 (#271) — 기본 100, 잘못된 값은 기본으로, 저장은 정수 문자열', async () => {
+    const { prisma, siteSetting } = createPrisma();
+    siteSetting.findMany.mockResolvedValue([{ key: PUBLIC_FOLLOWER_THRESHOLD_KEY, value: '250' }]);
+    await expect(getSettings(prisma)).resolves.toMatchObject({ publicFollowerThreshold: 250 });
+    siteSetting.findMany.mockResolvedValue([{ key: PUBLIC_FOLLOWER_THRESHOLD_KEY, value: 'abc' }]);
+    await expect(getSettings(prisma)).resolves.toMatchObject({ publicFollowerThreshold: 100 });
+
+    await setSettings(prisma, { publicFollowerThreshold: 0 });
+    expect(siteSetting.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: PUBLIC_FOLLOWER_THRESHOLD_KEY }, create: { key: PUBLIC_FOLLOWER_THRESHOLD_KEY, value: '0' } }),
+    );
+    await expect(setSettings(prisma, { publicFollowerThreshold: -1 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    await expect(setSettings(prisma, { publicFollowerThreshold: 1.5 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   });
 });
 
@@ -186,16 +210,25 @@ describe('approve / reject — 어드민', () => {
     // 토큰은 신청 행에서 지우고 OAuthCredential 로 옮긴다
     expect(data).toMatchObject({ accessToken: null, refreshToken: null });
     expect(whitelist.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { channelId: IDENTITY.channelId } }));
-    expect(user.upsert).toHaveBeenCalled();
+    expect(user.create).toHaveBeenCalled();
     expect(setTokensMock).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'at', refreshToken: 'rt' }));
     expect(result.botConnects).toBe(true);
+  });
+
+  it('승인 시 팔로워 수를 치지직에 한 번 묻고, 기준 미만이면 숨김으로 만든다 (#271)', async () => {
+    const { prisma, signupApplication, user } = createPrisma();
+    signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING' });
+    channelsGetMock.mockResolvedValueOnce([{ channelId: IDENTITY.channelId, followerCount: 3 }]);
+    await approve(prisma, 7, 1, { initialCommands });
+    expect(channelsGetMock).toHaveBeenCalledWith([IDENTITY.channelId]);
+    expect(user.create).toHaveBeenCalledWith({ data: { ...IDENTITY, followerCount: 3, hidden: true } });
   });
 
   it('토큰이 없는 신청을 승인하면 계정만 만들고 botConnects=false (재로그인 후 봇이 붙는다)', async () => {
     const { prisma, signupApplication, user } = createPrisma();
     signupApplication.findUnique.mockResolvedValue({ id: 7, ...IDENTITY, status: 'PENDING' });
     const result = await approve(prisma, 7, 1, { initialCommands });
-    expect(user.upsert).toHaveBeenCalled();
+    expect(user.create).toHaveBeenCalled();
     expect(setTokensMock).not.toHaveBeenCalled();
     expect(result.botConnects).toBe(false);
   });
