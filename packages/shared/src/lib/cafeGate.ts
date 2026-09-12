@@ -17,7 +17,11 @@ export const GATE_IMAGE_MARKER = 'chzzk-automation';
 export type GateBox = { path: number[]; tag: string; x: number; y: number; w: number; h: number; marker?: 'image' | 'youtube' };
 /** 위즈봇 유튜브 iframe 판별 — 업로드 재생목록(UU…) nocookie embed */
 export const YOUTUBE_TAG_SELECTOR = 'iframe[src^="https://www.youtube-nocookie.com/embed/videoseries?list=UU"]';
-export const IMAGE_TAG_SELECTOR = 'img[alt="chzzk-automation"]';
+/**
+ * 위즈봇 이미지 판별 — alt 표식 **또는** 우리 이미지 주소(`/cafe/<채널id>.png`) (#294).
+ * 네이버 편집기가 저장 과정에서 alt 를 지우거나 바꿔도 src 로 알아본다. 갱신 때 태그를 다시 만들면 alt 가 복원된다
+ */
+export const IMAGE_TAG_SELECTOR = 'img[alt="chzzk-automation"], img[src*="/cafe/"][src*=".png"]';
 /** 렌더 폭 = 네이버 대문 폭 */
 export const GATE_RENDER_WIDTH = 836;
 
@@ -51,16 +55,28 @@ export function buildYoutubeTag(channelId: string, width: number, height: number
   return `<iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=${list}" width="${width}" height="${height}" frameborder="0" allowfullscreen=""></iframe>`;
 }
 
-const IMAGE_TAG_RE = /<img\b[^>]*\balt=["']chzzk-automation["'][^>]*>/gi;
+const ANY_IMG_RE = /<img\b[^>]*>/gi;
+const MARKER_ALT_RE = /\balt=["']chzzk-automation["']/i;
+/** 우리 대문 이미지 주소 — cafeImageUrl 의 경로. 도메인은 배포마다 다를 수 있어 경로만 본다 */
+const MARKER_SRC_RE = /\bsrc=["'][^"']*\/cafe\/[0-9a-f]{32}\.png(?:\?[^"']*)?["']/i;
 
-export function findImageTags(html: string): string[] {
-  return html.match(IMAGE_TAG_RE) ?? [];
+/** 위즈봇 방송 상태 이미지인가 — alt 표식이거나 우리 이미지 주소 (#294) */
+export function isImageTag(tag: string): boolean {
+  return MARKER_ALT_RE.test(tag) || MARKER_SRC_RE.test(tag);
 }
 
-/** 표식이 붙은 <img> 를 전부 새 태그로 교체 */
+export function findImageTags(html: string): string[] {
+  return (html.match(ANY_IMG_RE) ?? []).filter(isImageTag);
+}
+
+/** 위즈봇 이미지 <img> 를 전부 새 태그로 교체 (alt 표식이 지워졌어도 이 교체로 복원된다) */
 export function replaceImageTags(html: string, tag: string): { html: string; count: number } {
   let count = 0;
-  const out = html.replace(IMAGE_TAG_RE, () => { count += 1; return tag; });
+  const out = html.replace(ANY_IMG_RE, (match) => {
+    if (!isImageTag(match)) return match;
+    count += 1;
+    return tag;
+  });
   return { html: out, count };
 }
 
@@ -69,9 +85,21 @@ export function imageSrcOf(tag: string): string | null {
   return tag.match(/\bsrc=["']([^"']*)["']/i)?.[1] ?? null;
 }
 
-/** 읽어온 HTML 비교용 — 네이버가 줄 끝 공백·줄바꿈을 붙이므로 공백을 접어서 본다 */
+/**
+ * 읽어온 HTML 비교용 — 「대문이 바뀌었나」 판정에만 쓴다 (#294).
+ * 네이버 편집기가 저장 때 붙이는 사소한 차이(공백·줄바꿈, 태그 사이 공백, 따옴표, `<br/>` 표기, 빈 문단, 우리 이미지의 `?v=` 일련번호)는
+ * 내용이 바뀐 게 아니므로 접는다. 이 비교가 참이면 고른 자리를 버리므로 너무 민감하면 안 된다
+ */
 export function normalizeGateHtml(html: string): string {
-  return html.replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .replace(/'/g, '"')
+    .replace(/<br\s*\/?>/gi, '<br>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/<p>(?:\s|<br>)*<\/p>/gi, '')
+    .replace(/(\/cafe\/[0-9a-f]{32}\.png)\?v=\d+/gi, '$1')
+    .trim();
 }
 
 const YOUTUBE_TAG_RE = /<iframe\b[^>]*\bsrc=["']https:\/\/www\.youtube-nocookie\.com\/embed\/videoseries\?list=UU[^"']*["'][^>]*>/gi;

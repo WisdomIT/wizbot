@@ -64,8 +64,9 @@ async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promi
     console.warn('⚠️ 대문 렌더 실패:', error instanceof Error ? error.message : error);
     return null;
   });
-  await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html, render });
-  return { ok: true, log: `대문 읽음 (${result.html.length}자${render ? `, 렌더 ${render.width}×${render.height}, 요소 ${render.boxes.length}` : ''})` };
+  const done = await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html, render });
+  const notes = [done.reset && '대문이 바뀌어 고른 자리 초기화', done.reactivated && '블록이 들어 있어 동작 재개'].filter(Boolean).join(', ');
+  return { ok: true, log: `대문 읽음 (${result.html.length}자${render ? `, 렌더 ${render.width}×${render.height}, 요소 ${render.boxes.length}` : ''})${notes ? ` — ${notes}` : ''}` };
 }
 
 /**
@@ -149,6 +150,7 @@ async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void
   const rows = await trpc.cafe.activeIntegrations.query();
   for (const row of rows) {
     const label = `[${row.channelName} → ${row.cafeName ?? row.clubId}]`;
+    if (row.revived) console.log('♻️', label, '대문에 블록이 있어 동작을 재개합니다 (중지 상태 복구)');
     const snapshot = await fetchLiveSnapshot(row.channelId);
     if (!snapshot) {
       console.warn('⚠️', label, '치지직 방송 상태 조회 실패');
