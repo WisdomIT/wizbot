@@ -65,7 +65,7 @@ export function MiniPlayer({
    * 즐겨찾기가 하나도 없으면 undefined 를 주고, 버튼은 숨긴다. 결정은 상위(player-view)에서.
    * 미니는 토스트를 띄우지 않으므로(#85) 담긴 뒤에는 하트를 채워 보여준다 — added 가 그 상태
    */
-  favorite?: { name: string; added: boolean; onAdd: () => void };
+  favorite?: { name: string; added: boolean; onAdd: () => void; hint?: { text: string; onSeen: () => void } | null };
   platform: string;
   windowControls?: { minimize: () => void; toggleMaximize: () => void; close: () => void };
   /** 설치할 수 있는 새 버전 (#117) — 미니는 공간이 없어 타이틀바 아이콘으로만 알린다 */

@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AppTitleBar } from '@/components/song/app-title-bar';
-import { FavoriteHeartButton } from '@/components/song/favorite-heart-button';
+import { FavoriteHeartButton, type FavoriteHint, FavoriteHintBadge } from '@/components/song/favorite-heart-button';
 import { FavoritePlayDialog } from '@/components/song/favorite-play-dialog';
 import { MiniPlayer } from '@/components/song/mini-player';
 import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
@@ -108,6 +108,7 @@ export function PlayerView() {
   const enqueueFavorite = useMutation(trpc.songFavorite.enqueue.mutationOptions());
   const playNow = useMutation(trpc.song.playNow.mutationOptions());
   const addCurrentToFavorite = useMutation(trpc.song.addCurrentToFavorite.mutationOptions());
+  const dismissSuggestion = useMutation(trpc.suggestion.dismiss.mutationOptions());
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
   const setShortcuts = useMutation(trpc.song.setShortcuts.mutationOptions());
 
@@ -162,7 +163,15 @@ export function PlayerView() {
     );
   }
 
-  const { playback, queue, source, historyPublic, autoPlay, currentInFavorites } = data;
+  const { playback, queue, source, historyPublic, autoPlay, currentInFavorites, favoriteSuggestion } = data;
+  //  자주 들은 곡 배지 (#276) — 한 번 보면 그 곡에 대해 숨김. 담기면 서버가 조건 해제
+  const favoriteHint: FavoriteHint | null =
+    favoriteSuggestion && playback.youtubeId
+      ? {
+          text: `최근 ${favoriteSuggestion.count}번 재생`,
+          onSeen: () => dismissSuggestion.mutate({ kind: 'FAVORITE_SONG', key: playback.youtubeId! }, { onSettled: invalidate }),
+        }
+      : null;
 
   const playerControls = {
     volume: playback.volume,
@@ -200,6 +209,7 @@ export function PlayerView() {
           defaultFavorite && {
             name: defaultFavorite.name,
             added: currentInFavorites.includes(defaultFavorite.id),
+            hint: favoriteHint,
             onAdd: () =>
               run(
                 addCurrentToFavorite.mutateAsync({ favoriteId: defaultFavorite.id }),
@@ -278,6 +288,7 @@ export function PlayerView() {
               {playback.youtubeId && (
                 <AddToFavoriteButton
                   currentInFavorites={currentInFavorites}
+                  hint={favoriteHint}
                   onAdd={(favorite) =>
                     run(
                       addCurrentToFavorite.mutateAsync({ favoriteId: favorite.id }),
@@ -707,10 +718,13 @@ function AddSongForm({
 /** 지금 재생 중인 곡을 즐겨찾기에 담는다 */
 function AddToFavoriteButton({
   currentInFavorites,
+  hint,
   onAdd,
 }: {
   /** 지금 곡이 이미 담긴 즐겨찾기 id (#264) */
   currentInFavorites: number[];
+  /** 자주 들은 곡 배지 (#276) */
+  hint: FavoriteHint | null;
   onAdd: (favorite: { id: number; name: string }) => void;
 }) {
   const { favorites, defaultFavorite } = useDefaultFavorite();
@@ -724,6 +738,7 @@ function AddToFavoriteButton({
         favorite={{
           name: defaultFavorite.name,
           added: currentInFavorites.includes(defaultFavorite.id),
+          hint,
           onAdd: () => onAdd(defaultFavorite),
         }}
       />
@@ -731,6 +746,7 @@ function AddToFavoriteButton({
   }
 
   return (
+    <FavoriteHintBadge hint={hint}>
     <Select
       onValueChange={(value) => {
         const favorite = favorites.find((candidate) => String(candidate.id) === value);
@@ -754,5 +770,6 @@ function AddToFavoriteButton({
         ))}
       </SelectContent>
     </Select>
+    </FavoriteHintBadge>
   );
 }

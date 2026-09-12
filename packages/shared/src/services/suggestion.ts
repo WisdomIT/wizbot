@@ -120,3 +120,52 @@ export async function dismiss(prisma: PrismaClient, userId: number, kind: Sugges
   });
   return { ok: true as const };
 }
+
+/* ── 4단계: 자주 들은 곡 → 즐겨찾기, 에이전트 첫 사용 안내 ── */
+
+export const FAVORITE_SONG_MIN_PLAYS = 3;
+export const AGENT_INTRO_KEY = 'intro';
+
+/**
+ * 지금 재생 중인 곡을 대표 즐겨찾기에 담으라는 넛지 (#276 6).
+ * 최근 30일 재생 완료 N회 이상이고 대표 즐겨찾기에 없을 때만. 담기면 조건이 풀려 숨김 기록도 지운다.
+ */
+export async function favoriteSongSuggestion(
+  prisma: PrismaClient,
+  userId: number,
+  youtubeId: string,
+  inDefaultFavorite: boolean,
+  now = new Date(),
+): Promise<{ count: number } | null> {
+  const where = { userId_kind_key: { userId, kind: 'FAVORITE_SONG' as const, key: youtubeId } };
+  const release = () => prisma.userSuggestionDismissal.deleteMany({ where: { userId, kind: 'FAVORITE_SONG', key: youtubeId } });
+  if (inDefaultFavorite) {
+    await release();
+    return null;
+  }
+  const count = await prisma.songHistory.count({
+    where: { userId, youtubeId, status: 'PLAYED', requestedAt: { gte: new Date(now.getTime() - SUGGEST_WINDOW_DAYS * DAY_MS) } },
+  });
+  if (count < FAVORITE_SONG_MIN_PLAYS) {
+    await release();
+    return null;
+  }
+  const dismissed = await prisma.userSuggestionDismissal.findUnique({ where });
+  return dismissed ? null : { count };
+}
+
+/**
+ * 에이전트를 한 번도 열어보지 않은 스트리머에게 열기 버튼 옆 안내 (#276 7).
+ * 대화가 하나라도 생기면(soft delete 포함) 조건이 풀려 다시 뜨지 않는다.
+ */
+export async function agentIntroSuggestion(prisma: PrismaClient, userId: number): Promise<boolean> {
+  const conversations = await prisma.agentConversation.count({ where: { userId } });
+  if (conversations > 0) {
+    await prisma.userSuggestionDismissal.deleteMany({ where: { userId, kind: 'AGENT_INTRO', key: AGENT_INTRO_KEY } });
+    return false;
+  }
+  const dismissed = await prisma.userSuggestionDismissal.findUnique({
+    where: { userId_kind_key: { userId, kind: 'AGENT_INTRO', key: AGENT_INTRO_KEY } },
+  });
+  return !dismissed;
+}
