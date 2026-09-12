@@ -14,6 +14,8 @@ export async function listStreamers(prisma: PrismaClient) {
       channelName: true,
       channelImageUrl: true,
       hidden: true,
+      followerCount: true,
+      createdAt: true,
       oauth: { select: { expiresIn: true } },
       _count: {
         select: { echoCommands: true, functionCommands: true, repeatCommands: true },
@@ -29,6 +31,9 @@ export async function listStreamers(prisma: PrismaClient) {
     channelName: user.channelName,
     channelImageUrl: user.channelImageUrl,
     hidden: user.hidden,
+    followerCount: user.followerCount,
+    /** 가입 시각 (#297) */
+    createdAt: user.createdAt,
     /** 화이트리스트에 남아 있는지 (없으면 재로그인 불가 상태) */
     whitelisted: whitelisted.has(user.channelId),
     /** 치지직 연동 여부 (access token 만료 시각 — refresh 로 자동 갱신되므로 참고용) */

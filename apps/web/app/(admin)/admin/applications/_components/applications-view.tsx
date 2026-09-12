@@ -20,7 +20,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -66,19 +65,16 @@ export function ApplicationsView() {
 
   return (
     <div className="flex flex-col gap-4 py-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          치지직 로그인으로 본인이 확인된 채널만 신청할 수 있습니다. 승인하면 화이트리스트로
-          이동합니다.
-          {pendingCount > 0 && (
-            <>
-              {' '}
-              <strong className="text-foreground">대기 {pendingCount}건</strong>
-            </>
-          )}
-        </p>
-        <SignupSettings />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        치지직 로그인으로 본인이 확인된 채널만 신청할 수 있습니다. 승인하면 화이트리스트로
+        이동합니다. 자동 승인·사유 입력칸 같은 규칙은 「설정」 탭에서 바꿉니다.
+        {pendingCount > 0 && (
+          <>
+            {' '}
+            <strong className="text-foreground">대기 {pendingCount}건</strong>
+          </>
+        )}
+      </p>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -147,61 +143,6 @@ export function ApplicationsView() {
           </TableBody>
         </Table>
       </div>
-      <DefaultPlaylistSetting />
-    </div>
-  );
-}
-
-/**
- * 새 스트리머에게 만들어주는 대표 즐겨찾기의 출처 재생목록 (#246).
- * 승인·첫 로그인 프로비저닝에서 쓰인다.
- */
-function DefaultPlaylistSetting() {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const { data } = useQuery(trpc.admin.getDefaultPlaylist.queryOptions());
-  const save = useMutation(trpc.admin.setDefaultPlaylist.mutationOptions());
-  //  null 이면 서버 값을 따른다 — 편집 시작 후에만 draft 를 쓴다 (#200 패턴)
-  const [draft, setDraft] = useState<string | null>(null);
-  const url = draft ?? data?.url ?? '';
-
-  function handleSave() {
-    toast.promise(save.mutateAsync({ url }), {
-      loading: '저장 중...',
-      success: () => {
-        setDraft(null);
-        void queryClient.invalidateQueries(trpc.admin.getDefaultPlaylist.queryFilter());
-        return url ? '기본 플레이리스트를 저장했습니다.' : '기본 플레이리스트를 비웠습니다.';
-      },
-      error: (error) => `저장에 실패했습니다. ${error instanceof Error ? error.message : error}`,
-    });
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border p-4">
-      <Label htmlFor="default-playlist">기본 플레이리스트</Label>
-      <p className="text-xs text-muted-foreground">
-        승인된 새 채널에 만들어주는 「위즈 추천 플레이리스트」 대표 즐겨찾기의 유튜브 재생목록
-        주소입니다. 비우면 인기 곡 1곡으로 대체합니다.
-      </p>
-      <form
-        className="flex gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          handleSave();
-        }}
-      >
-        <Input
-          id="default-playlist"
-          value={url}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="https://www.youtube.com/playlist?list=..."
-          className="max-w-xl"
-        />
-        <Button type="submit" disabled={save.isPending || draft === null}>
-          저장
-        </Button>
-      </form>
     </div>
   );
 }
@@ -220,114 +161,6 @@ function StatusBadge({
     );
   }
   return <Badge variant="secondary">대기</Badge>;
-}
-
-function SignupSettings() {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const { data: settings } = useQuery(trpc.admin.getSignupSettings.queryOptions());
-  const setSettings = useMutation(trpc.admin.setSignupSettings.mutationOptions());
-
-  function update(patch: { autoApprove?: boolean; askReason?: boolean; publicFollowerThreshold?: number }, label: string) {
-    toast.promise(setSettings.mutateAsync(patch), {
-      loading: '저장 중...',
-      success: () => {
-        void queryClient.invalidateQueries(trpc.admin.getSignupSettings.queryFilter());
-        return label;
-      },
-      error: (error) => `저장에 실패했습니다. ${error instanceof Error ? error.message : error}`,
-    });
-  }
-
-  const busy = !settings || setSettings.isPending;
-
-  return (
-    <div className="flex items-center gap-5 shrink-0">
-      <div className="flex items-center gap-2">
-        <Label htmlFor="ask-reason" className="text-sm">
-          사유 입력칸
-        </Label>
-        <Switch
-          id="ask-reason"
-          checked={settings?.askReason ?? true}
-          disabled={busy}
-          onCheckedChange={(next) =>
-            update({ askReason: next }, next ? '신청 화면에 사유 입력칸을 보입니다.' : '사유 입력칸을 숨겼습니다.')
-          }
-          aria-label="신청 화면에 사유 입력칸 표시"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <Label htmlFor="auto-approve" className="text-sm">
-          자동 승인
-        </Label>
-        <Switch
-          id="auto-approve"
-          checked={settings?.autoApprove ?? false}
-          disabled={busy}
-          onCheckedChange={(next) =>
-            update(
-              { autoApprove: next },
-              next ? '자동 승인을 켰습니다. 이제 신청 즉시 화이트리스트에 등록됩니다.' : '자동 승인을 껐습니다.',
-            )
-          }
-          aria-label="신청 즉시 자동 승인"
-        />
-      </div>
-      <FollowerThresholdField
-        value={settings?.publicFollowerThreshold}
-        disabled={busy}
-        onSave={(next) => update({ publicFollowerThreshold: next }, `팔로워 ${next.toLocaleString('ko-KR')}명 미만은 숨김으로 등록됩니다.`)}
-      />
-    </div>
-  );
-}
-
-/**
- * 새 스트리머 기본 공개 기준 팔로워 수 (#271) — 미만이면 목록에서 숨긴 채로 등록된다. 기존 계정에는 소급하지 않는다.
- * 입력 중에는 로컬 값, 포커스를 잃거나 Enter 로 저장
- */
-function FollowerThresholdField({ value, disabled, onSave }: { value: number | undefined; disabled: boolean; onSave: (next: number) => void }) {
-  const [text, setText] = useState(value === undefined ? '' : String(value));
-  //  서버 값이 바뀌면 입력을 맞춘다 — 렌더 중 보정 (#200 패턴)
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setText(value === undefined ? '' : String(value));
-  }
-
-  function commit() {
-    const next = Number(text);
-    if (!Number.isInteger(next) || next < 0) {
-      setText(value === undefined ? '' : String(value));
-      return;
-    }
-    if (next !== value) onSave(next);
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <Label htmlFor="public-follower-threshold" className="text-sm whitespace-nowrap">
-        공개 기준 팔로워
-      </Label>
-      <Input
-        id="public-follower-threshold"
-        type="number"
-        min={0}
-        step={1}
-        inputMode="numeric"
-        value={text}
-        disabled={disabled}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-        }}
-        className="w-24"
-        title="이 수 미만이면 새 스트리머를 목록에서 숨긴 채로 등록합니다"
-      />
-    </div>
-  );
 }
 
 function ApproveButton({ id, name, onDone }: { id: number; name: string; onDone: () => void }) {

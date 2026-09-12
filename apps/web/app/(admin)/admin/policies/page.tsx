@@ -1,6 +1,6 @@
-import { PoliciesView } from './_components/policies-view';
+import { redirect } from 'next/navigation';
 
-/** 약관 관리 (#252) */
+/** 약관은 종류별 탭 (#297) — 첫 화면은 이용약관 */
 export default function Page() {
-  return <PoliciesView />;
+  redirect('/admin/policies/terms');
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -37,6 +38,8 @@ export function StreamersView() {
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(trpc.admin.listStreamers.queryOptions());
   const setHidden = useMutation(trpc.admin.setStreamerHidden.mutationOptions());
+  //  가입 일자 정렬 (#297) — 기본은 최근 가입이 위
+  const [joinedOrder, setJoinedOrder] = useState<'desc' | 'asc'>('desc');
 
   const invalidate = () =>
     void queryClient.invalidateQueries(trpc.admin.listStreamers.queryFilter());
@@ -69,6 +72,12 @@ export function StreamersView() {
     );
   }
 
+  const rows = [...data].sort((a, b) => {
+    const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    return joinedOrder === 'desc' ? -diff || b.id - a.id : diff || a.id - b.id;
+  });
+  const formatJoined = (value: string | Date) => new Date(value).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
   return (
     <div className="flex flex-col gap-4 py-4">
       <p className="text-sm text-muted-foreground">
@@ -82,6 +91,16 @@ export function StreamersView() {
             <TableRow>
               <TableHead>채널</TableHead>
               <TableHead>상태</TableHead>
+              <TableHead>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 hover:text-foreground"
+                  onClick={() => setJoinedOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                  aria-label={`가입 일자 ${joinedOrder === 'desc' ? '오름차순' : '내림차순'}으로 정렬`}
+                >
+                  가입 {joinedOrder === 'desc' ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}
+                </button>
+              </TableHead>
               <TableHead>명령어</TableHead>
               <TableHead>반복</TableHead>
               <TableHead className="w-40 text-right">관리</TableHead>
@@ -90,12 +109,12 @@ export function StreamersView() {
           <TableBody>
             {data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   가입한 스트리머가 없습니다.
                 </TableCell>
               </TableRow>
             ) : (
-              data.map((streamer) => (
+              rows.map((streamer) => (
                 <TableRow key={streamer.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -122,6 +141,9 @@ export function StreamersView() {
                       {!streamer.whitelisted && <Badge variant="destructive">화이트리스트 없음</Badge>}
                       {!streamer.oauthExpiresAt && <Badge variant="outline">연동 없음</Badge>}
                     </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground" title={new Date(streamer.createdAt).toLocaleString('ko-KR')}>
+                    {formatJoined(streamer.createdAt)}
                   </TableCell>
                   <TableCell>{streamer.commandCount}</TableCell>
                   <TableCell>{streamer.repeatCount}</TableCell>
