@@ -20,8 +20,6 @@ type Draft = { id: number | null; type: PolicyType; version: string; publishedAt
 
 const TYPE_LABEL: Record<PolicyType, string> = { TERMS: '서비스 이용약관', PRIVACY: '개인정보처리방침' };
 const TYPE_SLUG: Record<PolicyType, string> = { TERMS: 'terms', PRIVACY: 'privacy' };
-/** 경로 조각 → 종류 (#297). 없는 조각은 undefined */
-export const POLICY_TYPE_BY_SLUG: Record<string, PolicyType | undefined> = { terms: 'TERMS', privacy: 'PRIVACY' };
 
 /** 오늘 날짜를 <input type=date> 값(YYYY-MM-DD)으로 */
 function today() {
