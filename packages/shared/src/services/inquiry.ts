@@ -106,7 +106,3 @@ export async function replyAdmin(prisma: PrismaClient, id: number, body: string)
   });
 }
 
-export async function unreadAdmin(prisma: PrismaClient) {
-  const rows = await listAdmin(prisma);
-  return { count: rows.filter((row) => row.unread).length };
-}

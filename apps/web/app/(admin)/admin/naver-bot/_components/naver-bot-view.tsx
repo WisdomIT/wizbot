@@ -109,6 +109,7 @@ export function NaverBotView() {
                           loading: '처리 중...',
                           success: () => {
                             void queryClient.invalidateQueries(trpc.cafe.joinRequests.queryFilter());
+                            void queryClient.invalidateQueries(trpc.admin.attention.queryFilter());
                             return '가입 완료로 표시했습니다. 스트리머에게 승인·스탭 지정 단계가 안내됩니다.';
                           },
                           error: (err) => (err instanceof Error ? err.message : String(err)),

@@ -29,7 +29,7 @@ export function AdminInquiryThreadView({ id }: { id: number }) {
   const invalidate = () => {
     void queryClient.invalidateQueries(trpc.inquiry.adminGet.queryFilter({ id }));
     void queryClient.invalidateQueries(trpc.inquiry.adminList.queryFilter());
-    void queryClient.invalidateQueries(trpc.inquiry.adminUnread.queryFilter());
+    void queryClient.invalidateQueries(trpc.admin.attention.queryFilter());
   };
 
   return (

@@ -41,6 +41,7 @@ export function ApplicationsView() {
 
   const invalidate = () => {
     void queryClient.invalidateQueries(trpc.admin.listApplications.queryFilter());
+    void queryClient.invalidateQueries(trpc.admin.attention.queryFilter());
     //  승인은 화이트리스트도 바꾼다
     void queryClient.invalidateQueries(trpc.admin.listWhitelist.queryFilter());
   };
