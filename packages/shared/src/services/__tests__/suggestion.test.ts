@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { computeCommandSuggestions, dismiss, listCommandSuggestions } from '../suggestion';
+import { agentIntroSuggestion, computeCommandSuggestions, dismiss, favoriteSongSuggestion, listCommandSuggestions } from '../suggestion';
 
 const NOW = new Date('2026-09-12T00:00:00Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -99,5 +99,46 @@ describe('listCommandSuggestions — 숨김 규칙', () => {
     const { prisma, userSuggestionDismissal } = createPrisma();
     await expect(dismiss(prisma, 1, 'MISSING_COMMAND', 'x'.repeat(80))).resolves.toEqual({ ok: true });
     expect(userSuggestionDismissal.upsert.mock.calls[0][0].where).toEqual({ userId_kind_key: { userId: 1, kind: 'MISSING_COMMAND', key: 'x'.repeat(64) } });
+  });
+});
+
+describe('4단계 — 즐겨찾기 넛지·에이전트 첫 사용 안내', () => {
+  function createNudgePrisma(options: { plays?: number; conversations?: number; dismissed?: boolean } = {}) {
+    const prisma = {
+      songHistory: { count: vi.fn().mockResolvedValue(options.plays ?? 0) },
+      agentConversation: { count: vi.fn().mockResolvedValue(options.conversations ?? 0) },
+      userSuggestionDismissal: {
+        findUnique: vi.fn().mockResolvedValue(options.dismissed ? { id: 1 } : null),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    return { prisma: prisma as unknown as PrismaClient, ...prisma };
+  }
+
+  it('곡: 최근 30일 재생 완료 3회 이상 + 대표 즐겨찾기에 없음 → 건수. 숨겼으면 null', async () => {
+    const a = createNudgePrisma({ plays: 3 });
+    await expect(favoriteSongSuggestion(a.prisma, 1, 'abc', false, NOW)).resolves.toEqual({ count: 3 });
+    expect(a.songHistory.count).toHaveBeenCalledWith({
+      where: { userId: 1, youtubeId: 'abc', status: 'PLAYED', requestedAt: { gte: new Date(NOW.getTime() - 30 * DAY_MS) } },
+    });
+    const b = createNudgePrisma({ plays: 3, dismissed: true });
+    await expect(favoriteSongSuggestion(b.prisma, 1, 'abc', false, NOW)).resolves.toBeNull();
+  });
+
+  it('곡: 담겨 있거나 2회 이하면 null 이고 숨김 기록을 지운다 (조건 해제)', async () => {
+    const a = createNudgePrisma({ plays: 10 });
+    await expect(favoriteSongSuggestion(a.prisma, 1, 'abc', true, NOW)).resolves.toBeNull();
+    expect(a.userSuggestionDismissal.deleteMany).toHaveBeenCalledWith({ where: { userId: 1, kind: 'FAVORITE_SONG', key: 'abc' } });
+    const b = createNudgePrisma({ plays: 2 });
+    await expect(favoriteSongSuggestion(b.prisma, 1, 'abc', false, NOW)).resolves.toBeNull();
+    expect(b.userSuggestionDismissal.deleteMany).toHaveBeenCalled();
+  });
+
+  it('에이전트: 대화가 0건이고 안 닫았을 때만 true, 대화가 생기면 숨김 기록을 지우고 false', async () => {
+    await expect(agentIntroSuggestion(createNudgePrisma().prisma, 1)).resolves.toBe(true);
+    await expect(agentIntroSuggestion(createNudgePrisma({ dismissed: true }).prisma, 1)).resolves.toBe(false);
+    const c = createNudgePrisma({ conversations: 2, dismissed: true });
+    await expect(agentIntroSuggestion(c.prisma, 1)).resolves.toBe(false);
+    expect(c.userSuggestionDismissal.deleteMany).toHaveBeenCalledWith({ where: { userId: 1, kind: 'AGENT_INTRO', key: 'intro' } });
   });
 });

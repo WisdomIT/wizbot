@@ -161,6 +161,14 @@ export function AgentPanel() {
   const trpc = useTRPC();
   const { data: status } = useQuery(trpc.agent.status.queryOptions());
   const [open, setOpen] = useState(false);
+  //  첫 사용 안내 (#276) — 대화가 하나도 없을 때 버튼 옆에 한 번. 닫거나 버튼에 마우스를 올리면 숨김 기록
+  const dismiss = useMutation(trpc.suggestion.dismiss.mutationOptions());
+  const [introHidden, setIntroHidden] = useState(false);
+  const hideIntro = () => {
+    if (introHidden || !status?.intro) return;
+    setIntroHidden(true);
+    dismiss.mutate({ kind: 'AGENT_INTRO', key: 'intro' });
+  };
   //  다른 화면의 「에이전트로 만들기」(#276) — 패널을 열고 새 대화로 이 메시지를 보낸다
   const [seed, setSeed] = useState<string | null>(null);
   useEffect(() => {
@@ -188,19 +196,31 @@ export function AgentPanel() {
       {open ? (
         <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} seed={seed} onSeedConsumed={() => setSeed(null)} />
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              className="fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg"
-              aria-label="에이전트 열기"
-              onClick={() => setOpen(true)}
-            >
-              <Sparkles className="size-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">에이전트</TooltipContent>
-        </Tooltip>
+        <>
+          {status.intro && !introHidden && (
+            <div className="fixed right-4 bottom-20 z-40 flex max-w-64 items-start gap-2 rounded-lg border bg-background px-3 py-2 text-xs shadow-lg" role="status">
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
+              <span className="flex-1">에이전트를 활용해 명령어를 만들거나, 통계를 확인해보세요.</span>
+              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={hideIntro} aria-label="안내 닫기">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                className="fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg"
+                aria-label="에이전트 열기"
+                onClick={() => setOpen(true)}
+                onMouseEnter={hideIntro}
+              >
+                <Sparkles className="size-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">에이전트</TooltipContent>
+          </Tooltip>
+        </>
       )}
     </TooltipProvider>
   );
