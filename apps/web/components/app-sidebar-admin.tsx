@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { BellRing, Bot, ClipboardList, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ScrollText, ShieldCheck, Users } from 'lucide-react';
+import { BellRing, Bot, ClipboardList, History, Inbox, KeyRound, Megaphone, MessageCircleQuestion, ScrollText, ShieldCheck, Users } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
@@ -18,6 +18,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { SiteFooter } from './site-footer';
 
 const title = {
   title: '위즈봇',
@@ -77,6 +78,11 @@ const menu = [
     url: '/admin/agent',
     icon: <Bot />,
   },
+  {
+    name: '감사 기록',
+    url: '/admin/audit',
+    icon: <History />,
+  },
 ];
 
 interface AppSidebarAdminProps extends React.ComponentProps<typeof Sidebar> {
@@ -113,6 +119,7 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
             {children}
           </BodyBreadcrumb>
         )}
+        <SiteFooter />
       </SidebarInset>
     </>
   );

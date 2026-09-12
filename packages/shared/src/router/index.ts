@@ -9,10 +9,12 @@ import { inquiryRouter } from './inquiry';
 import { noticeRouter } from './notice';
 import { notifyRouter } from './notify';
 import { policyRouter } from './policy';
+import { retentionRouter } from './retention';
 import { shortcutRouter } from './shortcut';
 import { signupRouter } from './signup';
 import { songRouter } from './song';
 import { songFavoriteRouter } from './songFavorite';
+import { suggestionRouter } from './suggestion';
 import { userRouter } from './user';
 
 export const appRouter = t.router({
@@ -22,6 +24,7 @@ export const appRouter = t.router({
   inquiry: inquiryRouter,
   notify: notifyRouter,
   policy: policyRouter,
+  retention: retentionRouter,
   admin: adminRouter,
   cafe: cafeRouter,
   chatbot: chatbotRouter,
@@ -30,6 +33,7 @@ export const appRouter = t.router({
   signup: signupRouter,
   song: songRouter,
   songFavorite: songFavoriteRouter,
+  suggestion: suggestionRouter,
   user: userRouter,
 
   ping: publicProcedure.query(() => {

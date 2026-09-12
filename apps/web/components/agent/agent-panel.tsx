@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTRPC } from '@/src/utils/trpc-react';
 
+import { AGENT_OPEN_EVENT, type AgentOpenDetail } from './agent-bus';
+
 /**
  * 위즈봇 에이전트 패널 (#35). 콘솔 우측 채팅창 — 스트리밍 응답, tool 표시,
  * 파괴적 작업의 승인 카드(pelican tool_confirmation). 대화는 서버(DB)에 저장돼 어디서든 이어진다.
@@ -159,39 +161,83 @@ export function AgentPanel() {
   const trpc = useTRPC();
   const { data: status } = useQuery(trpc.agent.status.queryOptions());
   const [open, setOpen] = useState(false);
+  //  첫 사용 안내 (#276) — 대화가 하나도 없을 때 버튼 옆에 한 번. 닫거나 버튼에 마우스를 올리면 숨김 기록
+  const dismiss = useMutation(trpc.suggestion.dismiss.mutationOptions());
+  const [introHidden, setIntroHidden] = useState(false);
+  const hideIntro = () => {
+    if (introHidden || !status?.intro) return;
+    setIntroHidden(true);
+    dismiss.mutate({ kind: 'AGENT_INTRO', key: 'intro' });
+  };
+  //  다른 화면의 「에이전트로 만들기」(#276) — 패널을 열고 새 대화로 이 메시지를 보낸다
+  const [seed, setSeed] = useState<string | null>(null);
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<AgentOpenDetail>).detail;
+      if (!detail?.message) return;
+      setSeed(detail.message);
+      setOpen(true);
+    };
+    window.addEventListener(AGENT_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(AGENT_OPEN_EVENT, onOpen);
+  }, []);
 
   if (!status?.enabled) return null;
 
   return (
     <TooltipProvider>
-      {/* 우측 하단 버튼·dock 과 겹치는 페이지 요소를 위한 여백 — 이 컴포넌트는 스트리머 콘솔에만 마운트된다 */}
+      {/* 우측 하단 버튼·dock 과 겹치는 요소를 위한 여백 — 이 컴포넌트는 스트리머 콘솔에만 마운트된다.
+          본문 하단 여백은 푸터(#257)가 대신하므로, 버튼이 푸터 오른쪽 끝(GitHub)을 가리지 않게만 비운다 */}
       <style>{`
-        main { padding-bottom: 6rem; }
+        footer.site-footer { padding-right: 5.5rem; }
         html.agent-open body { padding-right: var(--agent-w, 24rem); }
         @media (max-width: 1023px) { html.agent-open body { padding-right: 0; } }
       `}</style>
       {open ? (
-        <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} />
+        <PanelBody allowDelete={status.allowDelete} onClose={() => setOpen(false)} seed={seed} onSeedConsumed={() => setSeed(null)} />
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              className="fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg"
-              aria-label="에이전트 열기"
-              onClick={() => setOpen(true)}
-            >
-              <Sparkles className="size-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">에이전트</TooltipContent>
-        </Tooltip>
+        <>
+          {status.intro && !introHidden && (
+            <div className="fixed right-4 bottom-20 z-40 flex max-w-64 items-start gap-2 rounded-lg border bg-background px-3 py-2 text-xs shadow-lg" role="status">
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden />
+              <span className="flex-1">에이전트를 활용해 명령어를 만들거나, 통계를 확인해보세요.</span>
+              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={hideIntro} aria-label="안내 닫기">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                className="fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg"
+                aria-label="에이전트 열기"
+                onClick={() => setOpen(true)}
+                onMouseEnter={hideIntro}
+              >
+                <Sparkles className="size-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">에이전트</TooltipContent>
+          </Tooltip>
+        </>
       )}
     </TooltipProvider>
   );
 }
 
-function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: () => void }) {
+function PanelBody({
+  allowDelete,
+  onClose,
+  seed,
+  onSeedConsumed,
+}: {
+  allowDelete: boolean;
+  onClose: () => void;
+  /** 열리면서 새 대화로 바로 보낼 메시지 (#276) */
+  seed: string | null;
+  onSeedConsumed: () => void;
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const { data: conversations } = useQuery(trpc.agent.conversations.queryOptions());
@@ -345,12 +391,24 @@ function PanelBody({ allowDelete, onClose }: { allowDelete: boolean; onClose: ()
     setLive([]);
   }
 
-  async function send() {
-    const message = input.trim();
+  //  seed 는 항상 새 대화로 — 열려 있던 대화에 섞이지 않게
+  useEffect(() => {
+    if (!seed || streaming) return;
+    onSeedConsumed();
+    void send(seed, { fresh: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+
+  async function send(text?: string, options: { fresh?: boolean } = {}) {
+    const message = (text ?? input).trim();
     if (!message || streaming) return;
     setInput('');
     setStreaming(true);
-    let id = conversationId;
+    let id = options.fresh ? null : conversationId;
+    if (options.fresh) {
+      setLive([]);
+      touchedRef.current.clear();
+    }
 
     try {
       if (id === null) {

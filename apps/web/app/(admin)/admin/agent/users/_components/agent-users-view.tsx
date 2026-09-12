@@ -1,55 +1,50 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
 
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/data-table/search-input';
+import { SortableHead, TablePagination } from '@/components/data-table/table-controls';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { pageOf, useSearchState } from '@/src/hooks/use-search-state';
 import { useTRPC } from '@/src/utils/trpc-react';
-
-import { SortableHead, TablePagination } from '../../_components/table-controls';
 
 /**
  * 사용자별 통계 (#35, pelican UsageStats 이식) — 토큰을 전체/1일/7일/30일 윈도우 컬럼으로,
- * 어느 컬럼으로든 정렬. 이름 검색·페이지네이션. 행 클릭 → 그 사용자로 로그 필터.
+ * 어느 컬럼으로든 정렬. 이름 검색·페이지네이션. 행 클릭 → 그 사용자로 로그 필터. 상태는 전부 URL 쿼리 (#265).
  */
 
 type Sort = 'name' | 'messages' | 'total' | 'd1' | 'd7' | 'd30';
+const SORTS: Sort[] = ['name', 'messages', 'total', 'd1', 'd7', 'd30'];
 const PER_PAGE = 20;
+const DEFAULTS = { page: '1', q: '', sort: 'total', order: 'desc' };
 
 export function AgentUsersView() {
   const trpc = useTRPC();
-  const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<Sort>('total');
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc');
-  const [page, setPage] = useState(1);
+  const [state, setState] = useSearchState(DEFAULTS);
+  const page = pageOf(state.page);
+  const sort: Sort = SORTS.includes(state.sort as Sort) ? (state.sort as Sort) : 'total';
+  const order = state.order === 'asc' ? 'asc' : 'desc';
 
   const { data, isPending } = useQuery(
-    trpc.agent.adminUserStats.queryOptions({ query: query || null, sort, order, page, perPage: PER_PAGE }),
+    trpc.agent.adminUserStats.queryOptions(
+      { query: state.q || null, sort, order, page, perPage: PER_PAGE },
+      { placeholderData: keepPreviousData },
+    ),
   );
 
+  /** 검색·정렬이 바뀌면 1페이지로 */
+  const setFilter = (patch: Partial<typeof DEFAULTS>) => setState({ ...patch, page: '1' });
+
   function handleSort(key: Sort) {
-    if (sort === key) setOrder(order === 'desc' ? 'asc' : 'desc');
-    else {
-      setSort(key);
-      setOrder(key === 'name' ? 'asc' : 'desc');
-    }
-    setPage(1);
+    if (sort === key) setFilter({ order: order === 'desc' ? 'asc' : 'desc' });
+    else setFilter({ sort: key, order: key === 'name' ? 'asc' : 'desc' });
   }
 
   return (
     <div className="flex max-w-4xl flex-col gap-3 py-4">
-      <Input
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setPage(1);
-        }}
-        placeholder="사용자명 검색"
-        className="max-w-60"
-      />
+      <SearchInput value={state.q} onChange={(q) => setFilter({ q })} placeholder="사용자명 검색" className="max-w-60" />
       {isPending || !data ? (
         <Skeleton className="h-64 w-full" />
       ) : (
@@ -90,7 +85,7 @@ export function AgentUsersView() {
               ))}
             </TableBody>
           </Table>
-          <TablePagination page={page} perPage={PER_PAGE} total={data.total} onPage={setPage} />
+          <TablePagination page={page} perPage={PER_PAGE} total={data.total} onPage={(next) => setState({ page: String(next) }, { history: 'push' })} />
         </>
       )}
     </div>

@@ -29,6 +29,8 @@ function createCaller(overrides: Partial<Context> = {}) {
     },
     user: { findMany: vi.fn().mockResolvedValue([]) },
     signupApplication: { findMany: vi.fn().mockResolvedValue([]) },
+    //  접근 기록 (#254)
+    auditLog: { create: vi.fn().mockResolvedValue({}) },
   };
   const ctx = { prisma, user: null, internal: false, ...overrides } as unknown as Context;
   return { caller: appRouter.createCaller(ctx), prisma };
@@ -84,6 +86,10 @@ describe('admin.loginCheck (#20)', () => {
       id: ADMIN.id,
     });
     expect(prisma.adminLogin.deleteMany).toHaveBeenCalled();
+    //  접근 기록 (#254) — 대상 스트리머 없이 관리자 로그인만
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: { userId: null, actorType: 'ADMIN', actorId: ADMIN.id, procedure: 'access.adminLogin' },
+    });
   });
 
   it('잘못된 코드 → 실패하되 패스코드는 소모된다 (코드당 1회 시도)', async () => {
@@ -93,6 +99,7 @@ describe('admin.loginCheck (#20)', () => {
       caller.admin.loginCheck({ email: ADMIN.email, code: 'wrong1' }),
     ).rejects.toBeInstanceOf(TRPCError);
     expect(prisma.adminLogin.deleteMany).toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('TTL(10분) 초과 코드 → 만료 처리', async () => {

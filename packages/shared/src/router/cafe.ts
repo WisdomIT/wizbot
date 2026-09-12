@@ -101,6 +101,8 @@ export const cafeRouter = t.router({
   savePicks: streamerProcedure
     .input(gatePicksSchema)
     .mutation(({ ctx, input }) => cafeService.savePicks(ctx.prisma, ctx.user.id, input)),
+  /** 「지금 반영」 (#294) — 다음 폴링에 방송 상태를 다시 판정해 대문을 갱신한다 */
+  requestGateRefresh: streamerProcedure.mutation(({ ctx }) => cafeService.requestGateRefresh(ctx.prisma, ctx.user.id)),
 
   /* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
   getLayout: streamerProcedure.query(({ ctx }) => cafeService.getLayout(ctx.prisma, ctx.user.id)),

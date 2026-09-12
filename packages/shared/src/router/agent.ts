@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { getAgentChatMode } from '../chatbot/agentBridge';
-import { agentService } from '../services';
+import { agentService, suggestionService } from '../services';
 import { adminProcedure, internalProcedure, streamerProcedure, t } from '../trpc';
 
 const providerFields = {
@@ -19,7 +19,9 @@ export const agentRouter = t.router({
   /* ── 스트리머 ── */
   status: streamerProcedure.query(async ({ ctx }) => {
     const settings = await agentService.getSettings(ctx.prisma);
-    return { enabled: settings.enabled, allowDelete: settings.allowConversationDelete };
+    //  첫 사용 안내 (#276) — 대화가 하나도 없고 아직 안 닫았을 때만
+    const intro = settings.enabled ? await suggestionService.agentIntroSuggestion(ctx.prisma, ctx.user.id) : false;
+    return { enabled: settings.enabled, allowDelete: settings.allowConversationDelete, intro };
   }),
   /** 대화의 승인 카드들 — 카드 내용은 Json 이라 문자열로 (TS2589 회피, #175 와 동일) */
   actions: streamerProcedure
@@ -48,7 +50,15 @@ export const agentRouter = t.router({
 
   /** 파싱 창(#238) — 워커가 스트리머의 일반 채팅을 넘긴다. 창이 없으면 무시된다 */
   chatRelay: internalProcedure
-    .input(z.object({ userId: z.number().int().positive(), content: z.string().max(500) }))
+    .input(
+      z.object({
+        userId: z.number().int().positive(),
+        /** 발화자 (#262) — API 가 그 사람이 연 창에만 넣는다 */
+        senderChannelId: z.string().max(64),
+        senderRole: z.enum(['STREAMER', 'MANAGER', 'VIEWER']),
+        content: z.string().max(500),
+      }),
+    )
     .mutation(async ({ input }) => {
       const mode = getAgentChatMode();
       if (!mode) return { active: false };

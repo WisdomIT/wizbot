@@ -1,4 +1,5 @@
-import { getStreamers } from '../_lib/streamers';
+import { getStreamers } from '@/app/_lib/streamers';
+
 import { DataTable } from './_components/data-table';
 
 export const dynamic = 'force-dynamic';

@@ -149,6 +149,23 @@ export async function addFavoriteItem(
   });
 }
 
+/**
+ * 이 곡이 담긴 즐겨찾기 id 목록 (#264).
+ * 컨트롤러 하트 버튼이 "이미 담긴 곡" 을 채워진 하트로 보여주는 데 쓴다 — 어느 즐겨찾기를
+ * 대표로 볼지는 클라이언트 규칙(pickDefaultFavorite)에 맡기고 여기서는 전부 돌려준다.
+ */
+export async function listFavoritesContaining(
+  prisma: PrismaClient,
+  userId: number,
+  youtubeId: string,
+) {
+  const items = await prisma.songFavoriteItem.findMany({
+    where: { youtubeId, favorite: { userId } },
+    select: { favoriteId: true },
+  });
+  return items.map((item) => item.favoriteId);
+}
+
 /** 담기 전에 무엇이 담기는지 확인시키기 위한 조회 — 저장하지 않는다 (#97) */
 export async function previewItem(input: string) {
   return resolveSong(input);

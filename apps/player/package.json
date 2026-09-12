@@ -15,13 +15,13 @@
   },
   "devDependencies": {
     "@trpc/client": "^11.18.0",
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.4.1",
     "@wizbot/eslint-config": "workspace:^",
     "@wizbot/shared": "workspace:^",
-    "electron": "^43.4.1",
+    "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.6.2",
-    "eslint": "^9",
+    "eslint": "^10",
     "tsup": "^8.5.1",
     "typescript": "^5.8.2"
   },

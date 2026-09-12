@@ -12,7 +12,7 @@ const noticeInput = z.object({
 /** 공지사항 (#206) — 읽기는 공개(랜딩·시청자 페이지), 쓰기는 어드민 */
 export const noticeRouter = t.router({
   list: publicProcedure
-    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).default({}))
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).prefault({}))
     .query(({ ctx, input }) => noticeService.listPublic(ctx.prisma, input.limit)),
   get: publicProcedure
     .input(z.object({ id: z.number().int().positive() }))

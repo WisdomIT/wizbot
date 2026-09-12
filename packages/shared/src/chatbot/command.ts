@@ -61,12 +61,14 @@ export const functionCommand = {
       if (!name) {
         return {
           ok: true,
+          usageError: true,
           message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
         };
       }
       if (!response) {
         return {
           ok: true,
+          usageError: true,
           message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${name} <응답>`,
         };
       }
@@ -104,12 +106,14 @@ export const functionCommand = {
       if (!name) {
         return {
           ok: true,
+          usageError: true,
           message: `수정할 명령어와 응답을 입력해주세요. 예) !${query.command} <명령어 이름> <응답>`,
         };
       }
       if (!response) {
         return {
           ok: true,
+          usageError: true,
           message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} ${name} <응답>`,
         };
       }
@@ -137,6 +141,7 @@ export const functionCommand = {
       if (!response) {
         return {
           ok: true,
+          usageError: true,
           message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
         };
       }
@@ -155,6 +160,7 @@ export const functionCommand = {
       if (!response) {
         return {
           ok: true,
+          usageError: true,
           message: `봇이 응답할 메시지를 함께 입력해주세요. 예) !${query.command} <응답>`,
         };
       }
@@ -181,6 +187,7 @@ export const functionCommand = {
       if (!target) {
         return {
           ok: true,
+          usageError: true,
           message: `삭제할 반복 메시지의 번호를 입력해주세요. 전부 지우려면 all. 예) !${query.command} 3`,
         };
       }

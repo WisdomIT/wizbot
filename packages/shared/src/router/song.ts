@@ -1,7 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
-import { playbackService, ServiceError, songFavoriteService, songHistoryService, songService, userSettingService } from '../services';
+import {
+  playbackService,
+  ServiceError,
+  songFavoriteService,
+  songHistoryService,
+  songService,
+  suggestionService,
+  userSettingService,
+} from '../services';
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
@@ -50,10 +58,27 @@ export const songRouter = t.router({
         },
       }),
     ]);
+    // 지금 곡이 담긴 즐겨찾기 — 하트 채움 표시용 (#264). 재생 중일 때만 한 번 더 조회한다
+    const currentInFavorites = playback.youtubeId
+      ? await songFavoriteService.listFavoritesContaining(ctx.prisma, ctx.user.id, playback.youtubeId)
+      : [];
+    // 자주 들은 곡 → 즐겨찾기 넛지 (#276) — 대표 즐겨찾기에 없고 최근 30일 3회 이상 재생됐을 때만
+    let favoriteSuggestion: { count: number } | null = null;
+    if (playback.youtubeId) {
+      const defaultFavorite = await ctx.prisma.songFavorite.findFirst({ where: { userId: ctx.user.id, isDefault: true }, select: { id: true } });
+      favoriteSuggestion = await suggestionService.favoriteSongSuggestion(
+        ctx.prisma,
+        ctx.user.id,
+        playback.youtubeId,
+        defaultFavorite !== null && currentInFavorites.includes(defaultFavorite.id),
+      );
+    }
     return {
       playback,
       queue,
       source,
+      currentInFavorites,
+      favoriteSuggestion,
       /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
       active: setting?.songActive ?? true,
       historyPublic: setting?.songHistoryPublic ?? false,

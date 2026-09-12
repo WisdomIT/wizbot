@@ -1,10 +1,11 @@
 'use client';
 
-import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings, Youtube } from 'lucide-react';
+import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { Youtube } from '@/components/custom/brand-icons';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

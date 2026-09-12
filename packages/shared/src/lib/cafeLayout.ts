@@ -93,8 +93,8 @@ export type CafeSceneLayout = z.infer<typeof cafeSceneSchema>;
 
 export const cafeLayoutSchema = z.object({
   version: z.literal(1).default(1),
-  live: cafeSceneSchema.default({}),
-  offline: cafeSceneSchema.default({}),
+  live: cafeSceneSchema.prefault({}),
+  offline: cafeSceneSchema.prefault({}),
 });
 export type CafeLayout = z.infer<typeof cafeLayoutSchema>;
 
@@ -108,7 +108,7 @@ export const cafeSnapshotSchema = z.object({
   viewers: z.number().int().min(0).default(0),
   /** ISO 8601 */
   openedAt: z.string().nullable().default(null),
-  thumbnailUrl: z.string().url().nullable().default(null),
+  thumbnailUrl: z.url().nullable().default(null),
 });
 export type CafeSnapshot = z.infer<typeof cafeSnapshotSchema>;
 

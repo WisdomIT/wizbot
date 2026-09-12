@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import chatbot from '../chatbot';
 import { clampChatMessage } from '../chatbot/lib';
-import { chatBufferService, getChzzkClientForUser, repeatService, signupService } from '../services';
+import { chatBufferService, commandLogService, getChzzkClientForUser, repeatService, signupService } from '../services';
 import { internalProcedure, publicProcedure, t } from '../trpc';
 
 export const chatbotRouter = t.router({
@@ -94,6 +94,10 @@ export const chatbotRouter = t.router({
         senderRole,
         content,
       });
+      //  호출 로그 (#276) — 미매칭도 남긴다. fire-and-forget, 실패해도 응답을 막지 않는다
+      if (result.call) {
+        void commandLogService.record(ctx.prisma, { userId, senderChannelId, ...result.call });
+      }
 
       // 응답 전송도 API 가 수행한다 — 워커는 유저 토큰을 만지지 않는다 (#30 토큰 소유 원칙)
       if (result.ok) {

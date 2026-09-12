@@ -1,10 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, BookOpen, BotMessageSquare, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User, Youtube } from 'lucide-react';
+import { ArrowLeft, BookOpen, BotMessageSquare, ChartColumn, Download, FileAudio2, History, Image as ImageIcon, Link, ListPlus, Megaphone, MessageCircleQuestion, Play, Radio, SquareChevronRight, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
+import { Youtube } from '@/components/custom/brand-icons';
 import {
   Sidebar,
   SidebarContent,
@@ -19,6 +20,7 @@ import BodyBreadcrumb from './body-breadcrumb';
 import { NavMenu } from './nav-menu';
 import { NavTitle } from './nav-title';
 import { NavUser } from './nav-user';
+import { SiteFooter } from './site-footer';
 import { StreamerPlayerBar } from './song/streamer-player-bar';
 
 const group = {
@@ -47,6 +49,11 @@ const data = {
       name: '반복',
       url: '/streamer/bot/repeat',
       icon: <BotMessageSquare />,
+    },
+    {
+      name: '통계',
+      url: '/streamer/bot/stats',
+      icon: <ChartColumn />,
     },
   ],
   song: [
@@ -221,6 +228,8 @@ export default function AppSidebarStreamer({ children, user, basePath = '/stream
         <BodyBreadcrumb group={currentGroup ?? ''} page={currentPage ?? ''}>
           {children}
         </BodyBreadcrumb>
+        {/* 어드민 대행(nested)은 바깥 어드민 셸이 이미 붙인다 (#257) */}
+        {!nested && <SiteFooter />}
         <StreamerPlayerBar />
         {/* 설정 도우미 (#35) — 어드민에서 켰을 때만 뜬다 */}
         <AgentPanel />

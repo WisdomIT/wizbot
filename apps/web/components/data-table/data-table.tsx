@@ -1,12 +1,11 @@
 'use client';
 
-import type { ColumnDef, RowData } from '@tanstack/react-table';
+import type { ColumnDef, ColumnFiltersState, PaginationState, RowData } from '@tanstack/react-table';
 import { flexRender } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, Suspense } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -16,8 +15,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { pageOf, useSearchState } from '@/src/hooks/use-search-state';
 
+import { SearchInput } from './search-input';
 import { tableFeatureSet, useAppTable } from './table';
+
+/** URL 쿼리 상태 (#265) — `?q=` 검색어, `?page=` 페이지. 기본값은 주소에서 생략된다 */
+const SEARCH_DEFAULTS = { q: '', page: '1' };
 
 type Features = typeof tableFeatureSet;
 
@@ -44,8 +48,17 @@ interface DataTableProps<TData extends RowData> {
  *
  * 네 화면(스트리머 목록·명령어·반복·시청자용 명령어)이 각자 140줄짜리 사본을 갖고 있었다.
  * 갈리는 건 툴바·빈 문구·단위·행 스타일뿐이라 그것만 props 로 받는다.
+ * 검색어·페이지는 URL 쿼리에 둔다 (#265) — useSearchParams 라 Suspense 경계를 여기서 친다.
  */
-export function DataTable<TData extends RowData>({
+export function DataTable<TData extends RowData>(props: DataTableProps<TData>) {
+  return (
+    <Suspense>
+      <DataTableInner {...props} />
+    </Suspense>
+  );
+}
+
+function DataTableInner<TData extends RowData>({
   columns,
   data,
   filterColumn,
@@ -58,14 +71,28 @@ export function DataTable<TData extends RowData>({
   className,
   children,
 }: DataTableProps<TData>) {
-  //  상태를 밖에서 들고 있을 이유가 없다 — 테이블이 자기 상태를 갖는다
+  const [search, setSearch] = useSearchState(SEARCH_DEFAULTS);
+  const pagination: PaginationState = { pageIndex: pageOf(search.page) - 1, pageSize };
+  const columnFilters: ColumnFiltersState = filterColumn && search.q ? [{ id: filterColumn, value: search.q }] : [];
+
+  //  정렬은 테이블이 갖고, 검색어·페이지는 URL 이 갖는다 (controlled)
   const table = useAppTable({
     columns,
     data,
-    initialState: { pagination: { pageIndex: 0, pageSize } },
+    state: { pagination, columnFilters },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(pagination) : updater;
+      if (next.pageIndex !== pagination.pageIndex) {
+        setSearch({ page: String(next.pageIndex + 1) }, { history: 'push' });
+      }
+    },
+    onColumnFiltersChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(columnFilters) : updater;
+      const value = next.find((item) => item.id === filterColumn)?.value;
+      setSearch({ q: typeof value === 'string' ? value : '', page: '1' });
+    },
   });
 
-  const filter = filterColumn ? table.getColumn(filterColumn) : undefined;
   const rows = table.getRowModel().rows;
   const pageCount = table.getPageCount();
 
@@ -75,14 +102,14 @@ export function DataTable<TData extends RowData>({
         <div
           className={cn(
             'flex items-center gap-2 py-4',
-            filter ? 'justify-between' : 'justify-end',
+            filterColumn ? 'justify-between' : 'justify-end',
           )}
         >
-          {filter && (
-            <Input
+          {filterColumn && (
+            <SearchInput
               placeholder={filterPlaceholder}
-              value={(filter.getFilterValue() as string | undefined) ?? ''}
-              onChange={(event) => filter.setFilterValue(event.target.value)}
+              value={search.q}
+              onChange={(q) => setSearch({ q, page: '1' })}
               className="max-w-sm"
             />
           )}

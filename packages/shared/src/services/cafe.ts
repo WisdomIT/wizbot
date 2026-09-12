@@ -1,4 +1,4 @@
-import type { CafeAction, CafeLinkStatus, PrismaClient } from '@prisma/client';
+import { type CafeAction, type CafeLinkStatus, Prisma, type PrismaClient } from '@prisma/client';
 
 import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
 import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
@@ -301,24 +301,38 @@ export function completeAction(
 
 export type GateRenderInput = { png: string; width: number; height: number; boxes: GateBox[] };
 
-/** 워커가 대문을 읽고 렌더했다. 대문이 바뀌었으면 고른 자리는 옛 경로라 버린다 */
+/** 고른 자리(아직 반영 전 경로)가 남아 있는가 — 비어 있으면 초기화해도 잃는 게 없다 */
+function hasPendingPicks(gatePicks: unknown): boolean {
+  const picks = gatePicksSchema.safeParse(gatePicks ?? {});
+  return picks.success && (!!picks.data.image || !!picks.data.youtube);
+}
+
+/**
+ * 워커가 대문을 읽고 렌더했다. 대문이 바뀌었으면 고른 자리는 옛 경로라 버리되, 왜 버렸는지 남긴다 (#294).
+ * 블록이 이미 들어 있는(반영된) 대문이면 상태를 ACTIVE 로 되돌린다 — 표식 오탐으로 중지됐던 연동의 복구 경로
+ */
 export async function completeGateFetch(prisma: PrismaClient, id: number, input: { html: string; render: GateRenderInput | null }) {
-  const row = await prisma.cafeIntegration.findUnique({ where: { id }, select: { gateHtml: true } });
+  const row = await prisma.cafeIntegration.findUnique({ where: { id }, select: { gateHtml: true, gatePicks: true, status: true } });
   const changed = normalizeGateHtml(row?.gateHtml ?? '') !== normalizeGateHtml(input.html);
-  return prisma.cafeIntegration.update({
+  const reset = changed && hasPendingPicks(row?.gatePicks);
+  const present = findImageTags(input.html).length > 0;
+  const reactivate = present && row?.status === 'PERMISSION_OK';
+  await prisma.cafeIntegration.update({
     where: { id },
     data: {
       pendingAction: null,
-      statusMessage: null,
+      statusMessage: reset ? '대문이 바뀌어 고른 자리를 초기화했습니다. 자리를 다시 골라주세요.' : null,
       gateHtml: input.html,
       gateFetchedAt: new Date(),
       ...(changed ? { gatePicks: EMPTY_PICKS } : {}),
+      ...(reactivate ? { status: 'ACTIVE' as CafeLinkStatus } : {}),
       gateImage: input.render ? Buffer.from(input.render.png, 'base64') : null,
       gateBoxes: input.render ? input.render.boxes : [],
       gateWidth: input.render?.width ?? null,
       gateHeight: input.render?.height ?? null,
     },
   });
+  return { changed, reset, reactivated: reactivate };
 }
 
 /**
@@ -356,15 +370,38 @@ export function completeGateSave(
 
 /* ── 방송 상태 폴링·대문 갱신 (#9 PR3b) ── */
 
-/** 폴링 대상 — 켜져 있고 동작 중이며 대문에 이미지 블록이 들어 있는 연동 */
+/**
+ * 폴링 대상 — 켜져 있고 대문에 이미지 블록이 들어 있는 연동.
+ * PERMISSION_OK 인데 블록이 들어 있으면(표식 오탐 등으로 중지됐던 것, #294) 여기서 ACTIVE 로 되돌려 다시 돈다 —
+ * 예전엔 ACTIVE 만 대상이라 한 번 중지되면 재시도·재지정 어느 쪽으로도 복구되지 않았다
+ */
 export async function listActive(prisma: PrismaClient) {
   const rows = await prisma.cafeIntegration.findMany({
-    where: { enabled: true, status: 'ACTIVE', clubId: { not: null }, pendingAction: null },
-    select: { id: true, clubId: true, cafeName: true, gateHtml: true, user: { select: { channelId: true, channelName: true } } },
+    where: { enabled: true, status: { in: ['ACTIVE', 'PERMISSION_OK'] }, clubId: { not: null }, pendingAction: null },
+    select: { id: true, clubId: true, cafeName: true, gateHtml: true, status: true, user: { select: { channelId: true, channelName: true } } },
   });
-  return rows
-    .filter((r) => r.gateHtml && findImageTags(r.gateHtml).length > 0)
-    .map((r) => ({ id: r.id, clubId: r.clubId!, cafeName: r.cafeName, channelId: r.user.channelId, channelName: r.user.channelName }));
+  const active = rows.filter((r) => r.gateHtml && findImageTags(r.gateHtml).length > 0);
+  const revived = active.filter((r) => r.status !== 'ACTIVE').map((r) => r.id);
+  if (revived.length > 0) {
+    await prisma.cafeIntegration.updateMany({ where: { id: { in: revived } }, data: { status: 'ACTIVE', statusMessage: null } });
+  }
+  return active.map((r) => ({ id: r.id, clubId: r.clubId!, cafeName: r.cafeName, channelId: r.user.channelId, channelName: r.user.channelName, revived: revived.includes(r.id) }));
+}
+
+/**
+ * 「지금 반영」 (#294) — 폴링 주기·정책과 무관하게 다음 폴링(≤30초)에 방송 상태를 다시 판정해 저장하게 한다.
+ * 마지막 판정 스냅샷을 지우면 decideSave 가 'first' 로 저장하고, 밀린 일련번호가 있으면 재시도 대기도 푼다.
+ */
+export async function requestGateRefresh(prisma: PrismaClient, userId: number) {
+  const row = await requirePermitted(prisma, userId);
+  if (!row.gateHtml || findImageTags(row.gateHtml).length === 0) {
+    throw new ServiceError('INVALID_INPUT', '대문에 방송 상태 이미지가 없습니다. 먼저 위치를 지정하고 반영해주세요.');
+  }
+  await prisma.cafeIntegration.update({
+    where: { userId },
+    data: { lastSnapshot: Prisma.DbNull, saveAttemptedAt: null, status: 'ACTIVE', statusMessage: null },
+  });
+  return { ok: true as const };
 }
 
 /**
@@ -397,7 +434,7 @@ export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: C
 }
 type CafeSnapshotInput = ReturnType<typeof cafeSnapshotSchema.parse>;
 
-/** 워커의 대문 갱신 결과. missing = 대문에서 이미지 블록이 사라짐 → 동작 중지, 자리를 다시 고르게 */
+/** 워커의 대문 갱신 결과. missing = 대문에서 이미지 블록이 사라짐(alt·src 어느 쪽으로도 없음) → 동작 중지, 자리를 다시 고르게 */
 export function reportSave(
   prisma: PrismaClient,
   id: number,

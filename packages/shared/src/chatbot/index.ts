@@ -5,7 +5,7 @@ import type { ChzzkOpenClient } from 'chzzk-open-sdk';
 import { commandService, getChzzkClientForUser } from '../services';
 import { Context } from '../trpc';
 import { functionAgent } from './agent';
-export { type AgentChatMode,getAgentChatMode, registerAgentChatMode } from './agentBridge';
+export { type AgentChatMode, type AgentChatSender, getAgentChatMode, registerAgentChatMode } from './agentBridge';
 export { clampChatMessage, splitForChat } from './lib';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
@@ -30,7 +30,20 @@ export interface ChatbotDataFunction extends ChatbotData {
 export interface ChabotReturn {
   ok: boolean;
   message: string;
+  /** 기능 명령어를 용법을 틀려 안내로 끝냈다 (#276) — 호출 로그에 USAGE_ERROR 로 남는다 */
+  usageError?: true;
 }
+
+/** 디스패처가 판정한 호출 1건 (#276) — 라우터가 호출 로그로 남긴다 */
+export interface CommandCall {
+  /** 호출된 이름. 매칭됐으면 명령어 이름, 아니면 첫 어절 */
+  command: string;
+  matchedType: 'ECHO' | 'FUNCTION' | 'NONE';
+  matchedId: number | null;
+  outcome: 'OK' | 'NOT_FOUND' | 'USAGE_ERROR' | 'NO_PERMISSION' | 'ERROR';
+}
+
+export type ChatbotResult = ChabotReturn & { call?: CommandCall };
 
 export type ChatbotFunctionHandler = (
   ctx: Context,
@@ -74,10 +87,12 @@ export function findExactCommandMatch<T extends { command: string }>(
   return null;
 }
 
-export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChabotReturn> {
+export default async function chatbot(ctx: Context, data: ChatbotData): Promise<ChatbotResult> {
   const { userId, senderRole, content } = data;
 
   const contentWithoutPrefix = content.slice(1).trim();
+  //  미매칭은 어디까지가 이름인지 모른다 — 첫 어절을 이름으로 본다 (#276)
+  const unmatchedName = contentWithoutPrefix.split(/\s+/)[0] ?? '';
 
   // 비활성 명령어는 매칭 후보에서 빠진다 — 없는 명령어처럼 동작하고,
   // 최장일치도 자연히 짧은 명령어로 폴백된다 (#82)
@@ -90,25 +105,31 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
   const matchedFunction = findExactCommandMatch(contentWithoutPrefix, functionCommands);
 
   if (!matchedEcho && !matchedFunction) {
-    return { ok: false, message: 'Command not found' };
+    return {
+      ok: false,
+      message: 'Command not found',
+      ...(unmatchedName ? { call: { command: unmatchedName, matchedType: 'NONE', matchedId: null, outcome: 'NOT_FOUND' } } : {}),
+    };
   }
 
   const echoLen = matchedEcho?.matched.command.length ?? 0;
   const funcLen = matchedFunction?.matched.command.length ?? 0;
 
   if (!matchedFunction || echoLen > funcLen) {
+    const echo = matchedEcho!.matched as typeof matchedEcho extends null ? never : { id: number; command: string; response: string };
     return {
       ok: true,
-      message: matchedEcho!.matched.response,
+      message: echo.response,
+      call: { command: echo.command, matchedType: 'ECHO', matchedId: echo.id, outcome: 'OK' },
     };
   }
 
-  if (!matchedFunction) {
-    return {
-      ok: false,
-      message: 'Command not found',
-    };
-  }
+  const call = (outcome: CommandCall['outcome']): CommandCall => ({
+    command: matchedFunction.matched.command,
+    matchedType: 'FUNCTION',
+    matchedId: matchedFunction.matched.id,
+    outcome,
+  });
 
   const ROLE_PRIORITY = {
     VIEWER: 1,
@@ -127,6 +148,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return {
       ok: true,
       message: '권한이 없습니다',
+      call: call('NO_PERMISSION'),
     };
   }
 
@@ -136,6 +158,7 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return {
       ok: false,
       message: 'Function not found',
+      call: call('ERROR'),
     };
   }
 
@@ -152,18 +175,21 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
       return {
         ok: false,
         message: functionAction.message,
+        call: call('ERROR'),
       };
     }
 
     return {
       ok: true,
       message: functionAction.message,
+      call: call(functionAction.usageError ? 'USAGE_ERROR' : 'OK'),
     };
   } catch (error) {
     console.error('Error in function:', error);
     return {
       ok: false,
       message: 'Function execution failed',
+      call: call('ERROR'),
     };
   }
 }

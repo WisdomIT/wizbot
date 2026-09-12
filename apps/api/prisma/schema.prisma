@@ -350,22 +350,24 @@ enum InquiryAuthor {
 
 /// 설정 변경 감사 로그 (#175). 스트리머 스코프의 모든 변경(mutation)을 남긴다 — 본인이든 어드민 대행(#71)이든.
 /// 어드민이 남의 콘솔을 몰래 바꿀 수 없게 하는 투명성 장치라, 스트리머 본인도 자기 기록을 본다.
+/// 접근 기록(#254)도 같은 테이블에 `access.*` procedure 로 남긴다 — 로그인·어드민 대행 시작/종료.
 model AuditLog {
   id        Int        @id @default(autoincrement())
-  /// 대상 스트리머
-  userId    Int
+  /// 대상 스트리머. 어드민 로그인(access.adminLogin)처럼 대상이 없거나 탈퇴한 경우 null (#254).
+  /// 탈퇴 시 변경 기록은 지우고 접근 기록만 남긴다(adminUsers.deleteStreamer) — 접근 기록의 채널 식별자는 input 에 있다
+  userId    Int?
   actorType AuditActor
   /// STREAMER 면 userId, ADMIN 이면 Admin.id. CHATBOT 은 계정 id 가 없어 null
   actorId   Int?
   /// CHATBOT — 채팅으로 호출한 사람 (닉네임 · 치지직 채널 id)
   actorName String?    @db.VarChar(120)
-  /// tRPC 경로 (command.create 등)
+  /// tRPC 경로 (command.create 등). 접근 기록은 access.login / access.adminLogin / access.actingStart / access.actingEnd / access.withdraw
   procedure String     @db.VarChar(100)
   /// 정리된 입력 — 토큰류 키 제거·대용량 값 절단 (lib/audit.ts)
   input     Json?
   createdAt DateTime   @default(now()) @db.DateTime(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId, id])
 }
@@ -401,6 +403,8 @@ model User {
   channelImageUrl   String?  @db.Text
   channelName       String   @db.VarChar(50)
   hidden            Boolean  @db.TinyInt @default(false)
+  /// 치지직 팔로워 수 — 로그인 때마다 갱신되는 스냅샷 (#271). 랜딩 정렬·신규 등록 알림·기본 공개 판정에 쓴다
+  followerCount     Int?
 
   // OAuth credentials relationship (분리된 OAuth 정보)
   oauth             OAuthCredential?
@@ -422,6 +426,8 @@ model User {
   agentUsages       AgentUsage[]
   noticeReads       NoticeRead[]
   inquiries         Inquiry[]
+  commandLogs       ChatbotCommandLog[]
+  suggestionDismissals UserSuggestionDismissal[]
 }
 
 /// 스트리머 테마 (#77). 시청자 페이지·콘솔·앱·OBS 오버레이에 적용된다. 행이 없으면 서비스 기본.
@@ -497,6 +503,10 @@ model ChatbotEchoCommand {
   response String   @db.Text
   /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
   enabled  Boolean  @default(true) @db.TinyInt
+  /// 누적 호출 수 (#276) — 호출 로그는 90일만 남기므로 총합은 여기서 센다
+  totalCount Int    @default(0)
+  /// 「오래 안 쓰인 명령어」 제안(#276)은 만든 지 30일 지난 것만 — 기존 행은 마이그레이션 시각
+  createdAt DateTime @default(now()) @db.DateTime(6)
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -510,8 +520,74 @@ model ChatbotFunctionCommand {
   option     String?              @db.VarChar(20)
   /// 꺼두면 채팅에서 없는 명령어처럼 동작하고 시청자 목록에도 노출되지 않는다 (#82)
   enabled    Boolean              @default(true) @db.TinyInt
+  /// 누적 호출 수 (#276)
+  totalCount Int                  @default(0)
+  createdAt  DateTime             @default(now()) @db.DateTime(6)
 
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// 숨긴 제안 (#276) — 조건이 해제되면 지워지고, 다시 성립하면 새 제안으로 뜬다
+model UserSuggestionDismissal {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        SuggestionKind
+  /// 명령어 `echo:12` / `function:3`, 없는 명령어 이름, 곡 youtubeId 등
+  key         String         @db.VarChar(64)
+  dismissedAt DateTime       @default(now()) @db.DateTime(6)
+
+  @@unique([userId, kind, key])
+}
+
+enum SuggestionKind {
+  /// 30일간 호출 0회인 켜진 명령어 — 삭제 제안
+  UNUSED_COMMAND
+  /// 없는 명령어를 시청자가 반복 호출 — 만들기 제안
+  MISSING_COMMAND
+  /// 꺼진 명령어를 시청자가 반복 호출 — 켜기 제안
+  DISABLED_COMMAND
+  /// 기능 명령어 용법 오류가 잦음
+  USAGE_ERROR_COMMAND
+  /// 자주 들은 곡 → 즐겨찾기 (4단계)
+  FAVORITE_SONG
+  /// 에이전트 첫 사용 안내 (4단계)
+  AGENT_INTRO
+}
+
+/// 명령어 호출 로그 (#276) — 매칭 실패도 `!` 로 시작한 발화면 남긴다. 90일 보존(retention), 총합은 명령어 행의 totalCount
+model ChatbotCommandLog {
+  id              Int               @id @default(autoincrement())
+  userId          Int
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 호출된 이름(정규화 후). 매칭됐으면 명령어 이름, 아니면 첫 어절 — 시청자 입력이라 40자로 자른다
+  command         String            @db.VarChar(40)
+  matchedType     CommandLogMatch
+  matchedId       Int?
+  outcome         CommandLogOutcome
+  senderChannelId String?           @db.VarChar(32)
+  createdAt       DateTime          @default(now()) @db.DateTime(6)
+
+  @@index([userId, createdAt])
+  @@index([userId, command, createdAt])
+  @@index([userId, matchedType, matchedId, createdAt])
+}
+
+enum CommandLogMatch {
+  ECHO
+  FUNCTION
+  NONE
+}
+
+enum CommandLogOutcome {
+  OK
+  /// 없는(또는 꺼진) 명령어
+  NOT_FOUND
+  /// 기능 명령어를 용법을 틀려서 안내로 끝남
+  USAGE_ERROR
+  NO_PERMISSION
+  /// 기능 실행 실패 (치지직 오류 등)
+  ERROR
 }
 
 model ChatbotRepeat {

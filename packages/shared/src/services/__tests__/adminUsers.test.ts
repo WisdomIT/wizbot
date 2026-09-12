@@ -17,7 +17,9 @@ function createPrisma() {
     delete: vi.fn().mockResolvedValue({}),
   };
   const whitelist = { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) };
-  return { prisma: { admin, user, whitelist } as unknown as PrismaClient, admin, user, whitelist };
+  //  탈퇴 시 감사 기록 정리 + 접근 기록 (#254)
+  const auditLog = { deleteMany: vi.fn().mockResolvedValue({ count: 0 }), create: vi.fn().mockResolvedValue({}) };
+  return { prisma: { admin, user, whitelist, auditLog } as unknown as PrismaClient, admin, user, whitelist, auditLog };
 }
 
 describe('removeAdmin 보호 장치', () => {
@@ -80,6 +82,28 @@ describe('스트리머 관리', () => {
     await deleteStreamer(prisma, 1);
     expect(user.delete).toHaveBeenCalledWith({ where: { id: 1 } });
     expect(whitelist.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('탈퇴 시 변경 기록은 user 삭제 전에 지우고, 접근 기록은 남기며 탈퇴 자체를 access.withdraw 로 남긴다 (#254)', async () => {
+    const { prisma, user, auditLog } = createPrisma();
+    const order: string[] = [];
+    auditLog.deleteMany.mockImplementation(async () => { order.push('purge'); return { count: 3 }; });
+    user.delete.mockImplementation(async () => { order.push('delete'); return {}; });
+    auditLog.create.mockImplementation(async () => { order.push('withdraw'); return {}; });
+    user.findUnique.mockResolvedValue({ id: 1, channelId: 'abc', channelName: '테스트' });
+    await deleteStreamer(prisma, 1, { actor: { type: 'ADMIN', id: 5 } });
+    expect(order).toEqual(['purge', 'delete', 'withdraw']);
+    expect(auditLog.deleteMany).toHaveBeenCalledWith({ where: { userId: 1, NOT: { procedure: { startsWith: 'access.' } } } });
+    expect(auditLog.create).toHaveBeenCalledWith({
+      data: { userId: null, actorType: 'ADMIN', actorId: 5, procedure: 'access.withdraw', input: { channelId: 'abc', channelName: '테스트' } },
+    });
+  });
+
+  it('본인 탈퇴(actor 미지정)는 STREAMER 본인이 행위자', async () => {
+    const { prisma, user, auditLog } = createPrisma();
+    user.findUnique.mockResolvedValue({ id: 1, channelId: 'abc', channelName: '테스트' });
+    await deleteStreamer(prisma, 1);
+    expect(auditLog.create.mock.calls[0][0].data).toMatchObject({ actorType: 'STREAMER', actorId: 1, procedure: 'access.withdraw' });
   });
 
   it('removeWhitelist 면 화이트리스트도 채널 ID 로 지운다', async () => {
