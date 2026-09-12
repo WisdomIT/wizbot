@@ -18,8 +18,37 @@ export async function getPublic(prisma: PrismaClient, id: number) {
   return notice;
 }
 
-export function listAdmin(prisma: PrismaClient) {
-  return prisma.notice.findMany({ orderBy: { id: 'desc' } });
+/** 어드민 목록 (#298) — 공지마다 읽은 스트리머 수, 분모로 전체 스트리머 수 */
+export async function listAdmin(prisma: PrismaClient) {
+  const [notices, streamerCount] = await Promise.all([
+    prisma.notice.findMany({ orderBy: { id: 'desc' }, include: { _count: { select: { reads: true } } } }),
+    prisma.user.count(),
+  ]);
+  return {
+    notices: notices.map(({ _count, ...notice }) => ({ ...notice, readCount: _count.reads })),
+    streamerCount,
+  };
+}
+
+/**
+ * 공지를 읽은 스트리머와 아직 안 읽은 스트리머 (#298) — 팝업을 내릴 시점 판단용.
+ * 둘 다 팔로워 많은 순 (주요 스트리머가 봤는지가 목적). 읽음은 읽은 시각도 함께
+ */
+export async function adminReads(prisma: PrismaClient, noticeId: number) {
+  const notice = await prisma.notice.findUnique({ where: { id: noticeId }, select: { id: true } });
+  if (!notice) throw new ServiceError('NOT_FOUND', '공지사항을 찾을 수 없습니다.');
+  const select = { id: true, channelId: true, channelName: true, channelImageUrl: true, followerCount: true };
+  const [reads, users] = await Promise.all([
+    prisma.noticeRead.findMany({ where: { noticeId }, select: { readAt: true, user: { select } } }),
+    prisma.user.findMany({ select }),
+  ]);
+  const byFollowers = <T extends { followerCount: number | null; id: number }>(a: T, b: T) =>
+    (b.followerCount ?? -1) - (a.followerCount ?? -1) || a.id - b.id;
+  const readIds = new Set(reads.map((row) => row.user.id));
+  return {
+    read: reads.map((row) => ({ ...row.user, readAt: row.readAt })).sort(byFollowers),
+    unread: users.filter((user) => !readIds.has(user.id)).sort(byFollowers),
+  };
 }
 
 export function create(prisma: PrismaClient, input: { title: string; body: string; popup: boolean }) {
