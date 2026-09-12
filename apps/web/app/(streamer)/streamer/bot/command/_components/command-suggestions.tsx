@@ -56,12 +56,22 @@ export function CommandSuggestions() {
       {unused.length > 0 && (
         <SuggestionBanner>
           <span>
-            {unused.map((item) => `!${item.payload.command}`).join(', ')} 명령어가 최근 한 달간 한 번도 쓰이지 않았습니다. 삭제하시겠어요?
+            {unused.map((item) => `!${item.payload.command}`).join(', ')} 명령어가 최근 한 달간 한 번도 쓰이지 않았습니다. 끄거나 삭제하시겠어요?
           </span>
           <ul className="flex flex-wrap gap-x-4 gap-y-1">
             {unused.map((item) => (
               <li key={item.key} className="flex items-center gap-1">
                 <span className="font-mono text-xs">!{item.payload.command}</span>
+                {/* 끄면 켜진 명령어가 아니므로 제안 조건이 풀린다 — 나중에 다시 켜서 쓸 수 있다 */}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  onClick={() => run(setEnabled.mutateAsync({ id: item.payload.id, type: item.payload.type, enabled: false }), `!${item.payload.command} 명령어를 껐습니다.`)}
+                >
+                  끄기
+                </Button>
                 <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-red-500" onClick={() => setDeleteTarget(item.payload)}>
                   삭제
                 </Button>
