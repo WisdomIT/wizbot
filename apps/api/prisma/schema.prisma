@@ -405,6 +405,8 @@ model User {
   hidden            Boolean  @db.TinyInt @default(false)
   /// 치지직 팔로워 수 — 로그인 때마다 갱신되는 스냅샷 (#271). 랜딩 정렬·신규 등록 알림·기본 공개 판정에 쓴다
   followerCount     Int?
+  /// 가입(계정 생성) 시각 (#297). 기존 행은 마이그레이션에서 승인 시각·첫 로그인 기록으로 백필
+  createdAt         DateTime @default(now()) @db.DateTime(6)
 
   // OAuth credentials relationship (분리된 OAuth 정보)
   oauth             OAuthCredential?

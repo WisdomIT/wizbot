@@ -27,61 +27,41 @@ const title = {
   href: '/admin',
 };
 
-const menu = [
+/** 기능별 그룹 (#297) — 브레드크럼의 그룹명도 여기서 나온다 */
+const groups = [
   {
-    name: '사용 신청',
-    url: '/admin/applications',
-    icon: <Inbox />,
+    title: '스트리머',
+    items: [
+      { name: '스트리머', url: '/admin/streamers', icon: <Users /> },
+      { name: '사용 신청', url: '/admin/applications', icon: <Inbox /> },
+      { name: '화이트리스트', url: '/admin/whitelist', icon: <ClipboardList /> },
+    ],
   },
   {
-    name: '화이트리스트',
-    url: '/admin/whitelist',
-    icon: <ClipboardList />,
+    title: '계정',
+    items: [
+      { name: '관리자 계정', url: '/admin/admins', icon: <ShieldCheck /> },
+      { name: '네이버 봇 계정', url: '/admin/naver-bot', icon: <KeyRound /> },
+    ],
   },
   {
-    name: '스트리머',
-    url: '/admin/streamers',
-    icon: <Users />,
+    title: '게시판',
+    items: [
+      { name: '공지사항', url: '/admin/notices', icon: <Megaphone /> },
+      { name: '문의사항', url: '/admin/inquiries', icon: <MessageCircleQuestion /> },
+      { name: '약관', url: '/admin/policies', icon: <ScrollText /> },
+    ],
   },
   {
-    name: '관리자 계정',
-    url: '/admin/admins',
-    icon: <ShieldCheck />,
+    title: '에이전트',
+    items: [{ name: '에이전트', url: '/admin/agent', icon: <Bot /> }],
   },
   {
-    name: '네이버 봇 계정',
-    url: '/admin/naver-bot',
-    icon: <KeyRound />,
-  },
-  {
-    name: '공지사항',
-    url: '/admin/notices',
-    icon: <Megaphone />,
-  },
-  {
-    name: '문의사항',
-    url: '/admin/inquiries',
-    icon: <MessageCircleQuestion />,
-  },
-  {
-    name: '알림 설정',
-    url: '/admin/webhooks',
-    icon: <BellRing />,
-  },
-  {
-    name: '약관',
-    url: '/admin/policies',
-    icon: <ScrollText />,
-  },
-  {
-    name: '에이전트',
-    url: '/admin/agent',
-    icon: <Bot />,
-  },
-  {
-    name: '감사 기록',
-    url: '/admin/audit',
-    icon: <History />,
+    title: '운영',
+    items: [
+      { name: '알림 설정', url: '/admin/webhooks', icon: <BellRing /> },
+      { name: '감사 기록', url: '/admin/audit', icon: <History /> },
+    ],
   },
 ];
 
@@ -95,8 +75,10 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
   //  새 문의 점 표시 (#206 3/3) — 스레드를 열면 읽음 처리돼 꺼진다
   const trpc = useTRPC();
   const { data: inquiryUnread } = useQuery(trpc.inquiry.adminUnread.queryOptions());
-  const items = menu.map((item) => (item.url === '/admin/inquiries' ? { ...item, dot: (inquiryUnread?.count ?? 0) > 0 } : item));
-  const currentPage = menu.find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`))?.name;
+  const withDot = <T extends { url: string }>(item: T) => (item.url === '/admin/inquiries' ? { ...item, dot: (inquiryUnread?.count ?? 0) > 0 } : item);
+  const isCurrent = (item: { url: string }) => pathname === item.url || pathname.startsWith(`${item.url}/`);
+  const currentGroup = groups.find((group) => group.items.some(isCurrent));
+  const currentPage = currentGroup?.items.find(isCurrent)?.name;
   //  어드민 대행 콘솔(#71) 안에서는 스트리머 사이드바가 자기 헤더를 그리므로 바깥 헤더를 생략한다
   const acting = /^\/admin\/streamers\/\d+(\/|$)/.test(pathname);
 
@@ -107,7 +89,9 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
           <NavTitle data={title} />
         </SidebarHeader>
         <SidebarContent>
-          <NavMenu title="운영" items={items} pathname={pathname} />
+          {groups.map((group) => (
+            <NavMenu key={group.title} title={group.title} items={group.items.map(withDot)} pathname={pathname} />
+          ))}
         </SidebarContent>
         <SidebarFooter>
           <NavUser user={{ nickname: '관리자', id: email, avatar: '' }} />
@@ -115,7 +99,7 @@ export default function AppSidebarAdmin({ children, email, ...props }: AppSideba
       </Sidebar>
       <SidebarInset>
         {acting ? children : (
-          <BodyBreadcrumb group="운영" page={currentPage ?? ''}>
+          <BodyBreadcrumb group={currentGroup?.title ?? '운영'} page={currentPage ?? ''}>
             {children}
           </BodyBreadcrumb>
         )}

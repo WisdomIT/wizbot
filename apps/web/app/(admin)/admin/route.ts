@@ -1,5 +1,5 @@
 import { redirectTo } from '@/lib/request-url';
 
 export function GET() {
-  return redirectTo('/admin/whitelist');
+  return redirectTo('/admin/streamers');
 }
