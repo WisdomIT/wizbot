@@ -72,10 +72,15 @@ interface AppSidebarAdminProps extends React.ComponentProps<typeof Sidebar> {
 
 export default function AppSidebarAdmin({ children, email, ...props }: AppSidebarAdminProps) {
   const pathname = usePathname();
-  //  새 문의 점 표시 (#206 3/3) — 스레드를 열면 읽음 처리돼 꺼진다
+  //  처리 대기 배지 (#302) — 대기 중 사용 신청·카페 가입 요청·답변 대기 문의. 1분마다 갱신, 처리 화면이 invalidate 한다
   const trpc = useTRPC();
-  const { data: inquiryUnread } = useQuery(trpc.inquiry.adminUnread.queryOptions());
-  const withDot = <T extends { url: string }>(item: T) => (item.url === '/admin/inquiries' ? { ...item, dot: (inquiryUnread?.count ?? 0) > 0 } : item);
+  const { data: attention } = useQuery({ ...trpc.admin.attention.queryOptions(), refetchInterval: 60_000 });
+  const BADGE: Record<string, number | undefined> = {
+    '/admin/applications': attention?.applications,
+    '/admin/naver-bot': attention?.joinRequests,
+    '/admin/inquiries': attention?.inquiries,
+  };
+  const withDot = <T extends { url: string }>(item: T) => ({ ...item, badge: BADGE[item.url] });
   const isCurrent = (item: { url: string }) => pathname === item.url || pathname.startsWith(`${item.url}/`);
   const currentGroup = groups.find((group) => group.items.some(isCurrent));
   const currentPage = currentGroup?.items.find(isCurrent)?.name;

@@ -53,7 +53,6 @@ export const inquiryRouter = t.router({
   adminGet: adminProcedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ ctx, input }) => inquiryService.getAdmin(ctx.prisma, input.id)),
-  adminUnread: adminProcedure.query(({ ctx }) => inquiryService.unreadAdmin(ctx.prisma)),
   adminReply: adminProcedure
     .input(z.object({ id: z.number().int().positive(), body: bodyInput }))
     .mutation(({ ctx, input }) => inquiryService.replyAdmin(ctx.prisma, input.id, input.body)),

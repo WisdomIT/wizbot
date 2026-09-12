@@ -26,6 +26,8 @@ export function NavMenu({
     popup?: boolean;
     /** 새 글 표시 — 안 읽은 것이 있을 때 점을 띄운다 (#206) */
     dot?: boolean;
+    /** 처리 대기 건수 — 0 이면 안 보인다 (#302) */
+    badge?: number;
   }[];
   pathname: string;
   popup?: boolean;
@@ -45,6 +47,11 @@ export function NavMenu({
                 {item.icon}
                 <span>{item.name}</span>
                 {item.dot && <span aria-label="새 글" className="ml-auto size-2 shrink-0 rounded-full bg-red-500" />}
+                {!!item.badge && (
+                  <span aria-label={`처리 대기 ${item.badge}건`} className="ml-auto min-w-5 rounded-full bg-red-500 px-1.5 text-center text-[11px] leading-5 font-medium text-white tabular-nums">
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </span>
+                )}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

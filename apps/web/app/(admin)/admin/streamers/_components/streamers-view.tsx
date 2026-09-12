@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -80,6 +81,7 @@ export function StreamersView() {
 
   return (
     <div className="flex flex-col gap-4 py-4">
+      <AttentionSummary />
       <p className="text-sm text-muted-foreground">
         가입(로그인)한 스트리머 목록입니다. 숨김 처리하면 메인/스트리머 목록에 노출되지 않습니다
         (직접 링크로 여는 시청자 페이지는 계속 열립니다). 탈퇴 처리는 명령어·설정·연동 토큰을 모두
@@ -169,6 +171,29 @@ export function StreamersView() {
           </TableBody>
         </Table>
       </div>
+    </div>
+  );
+}
+
+/** 처리 대기 요약 (#302) — 기본 페이지 상단. 사이드바 배지와 같은 집계, 전부 0이면 안 보인다 */
+function AttentionSummary() {
+  const trpc = useTRPC();
+  const { data } = useQuery(trpc.admin.attention.queryOptions());
+  if (!data) return null;
+  const items = [
+    { label: '사용 신청', count: data.applications, href: '/admin/applications' },
+    { label: '카페 가입 요청', count: data.joinRequests, href: '/admin/naver-bot' },
+    { label: '답변 대기 문의', count: data.inquiries, href: '/admin/inquiries' },
+  ].filter((item) => item.count > 0);
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-4 py-2 text-sm">
+      <span className="font-medium">처리 대기</span>
+      {items.map((item) => (
+        <Link key={item.href} href={item.href} className="underline-offset-4 hover:underline">
+          {item.label} <span className="font-semibold tabular-nums">{item.count.toLocaleString('ko-KR')}</span>
+        </Link>
+      ))}
     </div>
   );
 }
