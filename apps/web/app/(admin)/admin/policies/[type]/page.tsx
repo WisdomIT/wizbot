@@ -2,7 +2,13 @@ import { notFound } from 'next/navigation';
 
 import { AdminTabs } from '@/components/admin-tabs';
 
-import { PoliciesView,POLICY_TYPE_BY_SLUG } from '../_components/policies-view';
+import { PoliciesView } from '../_components/policies-view';
+
+/**
+ * 경로 조각 → 종류. 서버 컴포넌트에서 쓰므로 여기 둔다 — 'use client' 모듈에서 가져온 객체는
+ * 서버에서 클라이언트 참조로 바뀌어 값을 읽을 수 없다 (실측: 항상 notFound → 404)
+ */
+const POLICY_TYPE_BY_SLUG: Record<string, 'TERMS' | 'PRIVACY' | undefined> = { terms: 'TERMS', privacy: 'PRIVACY' };
 
 const TABS = [
   { name: '서비스 이용약관', href: '/admin/policies/terms' },
