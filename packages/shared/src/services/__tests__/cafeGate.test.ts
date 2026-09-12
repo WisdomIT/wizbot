@@ -34,8 +34,26 @@ describe('카페 대문 블록 (#9 PR3)', () => {
     expect(findImageTags('<img src="a.png" alt="other">')).toEqual([]);
     expect(replaceImageTags('<img src="a.png">', 'X').count).toBe(0);
   });
+  it('alt 표식이 지워져도 우리 이미지 주소(/cafe/<채널id>.png)면 표식으로 본다 — 교체하면 alt 가 복원된다 (#294)', () => {
+    const channel = 'd9c571e0ecae37fec31711735f95c8f4';
+    const stripped = `<p><a href="https://chzzk.naver.com/live/${channel}"><img src="https://bot.test/cafe/${channel}.png?v=233" width="836" height="300" style="width:836px"></a></p>`;
+    expect(findImageTags(stripped)).toHaveLength(1);
+    const r = replaceImageTags(stripped, buildImageTag({ src: `https://bot.test/cafe/${channel}.png?v=234`, width: 836, height: 300 }));
+    expect(r.count).toBe(1);
+    expect(r.html).toContain('alt="chzzk-automation"');
+    //  다른 도메인의 같은 경로도(배포 주소 변경) 표식. 다른 png 는 아니다
+    expect(findImageTags(`<img src="https://other.example/cafe/${channel}.png">`)).toHaveLength(1);
+    expect(findImageTags('<img src="https://bot.test/cafe/logo.png">')).toEqual([]);
+  });
   it('공백 정규화 — 네이버 읽기 결과의 줄 끝 공백을 무시한다', () => {
     expect(normalizeGateHtml('<p>a</p> \n<p>b</p>\n')).toBe(normalizeGateHtml('<p>a</p><p>b</p>'.replace('><', '> <')));
+  });
+  it('「대문이 바뀌었나」 비교는 편집기의 사소한 차이를 접는다 (#294)', () => {
+    const a = '<p>a</p>\n<p><br></p>\n<p><img src="https://bot.test/cafe/d9c571e0ecae37fec31711735f95c8f4.png?v=233" alt="chzzk-automation"></p>';
+    const b = "<p>a</p><p><br/></p><p><img src='https://bot.test/cafe/d9c571e0ecae37fec31711735f95c8f4.png?v=240' alt='chzzk-automation'></p>";
+    expect(normalizeGateHtml(a)).toBe(normalizeGateHtml(b));
+    //  내용이 실제로 바뀌면 다르다
+    expect(normalizeGateHtml(a)).not.toBe(normalizeGateHtml(a.replace('<p>a</p>', '<p>b</p>')));
   });
 });
 

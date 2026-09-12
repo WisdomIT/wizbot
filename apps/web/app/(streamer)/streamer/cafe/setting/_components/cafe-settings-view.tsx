@@ -48,6 +48,7 @@ export function CafeSettingsView() {
   const requestVerify = useMutation(trpc.cafe.requestVerify.mutationOptions());
   const requestGateFetch = useMutation(trpc.cafe.requestGateFetch.mutationOptions());
   const savePicks = useMutation(trpc.cafe.savePicks.mutationOptions());
+  const requestGateRefresh = useMutation(trpc.cafe.requestGateRefresh.mutationOptions());
 
   //  서버의 카페 주소를 입력칸에 반영 — effect 대신 렌더 중 보정 (#200)
   const serverCafeUrl = data?.cafeUrl ?? '';
@@ -250,7 +251,24 @@ export function CafeSettingsView() {
               <CardDescription>대문이 마지막으로 변경된 시각과 현재 대문에 반영된 방송 상태입니다. 방송 상태는 30초마다 확인하며, 변화가 있을 때 대문을 갱신합니다.</CardDescription>
             </CardHeader>
             <CardContent>
-              <ActivityPanel activity={gate?.activity ?? null} active={data.status === 'ACTIVE'} sessionExpired={sessionExpired} />
+              <ActivityPanel
+                activity={gate?.activity ?? null}
+                active={data.status === 'ACTIVE'}
+                sessionExpired={sessionExpired}
+                message={data.status !== 'ACTIVE' ? data.statusMessage : null}
+                refresh={
+                  gate?.present.image
+                    ? {
+                        pending: requestGateRefresh.isPending || busy,
+                        onClick: () =>
+                          run(requestGateRefresh.mutateAsync(), {
+                            loading: '요청 중...',
+                            success: '다음 확인(30초 안)에 방송 상태를 다시 판정해 대문에 반영합니다.',
+                          }),
+                      }
+                    : null
+                }
+              />
             </CardContent>
           </Card>
         </div>
@@ -264,12 +282,30 @@ type Activity = {
   snapshot: { live: boolean; title: string; category: string; viewers: number; openedAt: string | null } | null; imageUrl: string | null;
 };
 
-function ActivityPanel({ activity, active, sessionExpired }: { activity: Activity | null; active: boolean; sessionExpired: boolean }) {
+function ActivityPanel({
+  activity,
+  active,
+  sessionExpired,
+  message,
+  refresh,
+}: {
+  activity: Activity | null;
+  active: boolean;
+  sessionExpired: boolean;
+  /** 중지된 이유 — 자리 초기화·블록 사라짐 등 (#294) */
+  message?: string | null;
+  /** 「지금 반영」 (#294) — 대문에 블록이 있을 때만 */
+  refresh?: { pending: boolean; onClick: () => void } | null;
+}) {
   if (!activity) return <p className="text-sm text-muted-foreground">불러오는 중…</p>;
   const fmt = (d: string | Date | null) => (d ? new Date(d).toLocaleString('ko-KR') : '없음');
   const s = activity.snapshot;
   const pending = activity.gateSerial < activity.serial;
   return (
+    <div className="flex flex-col gap-3">
+    {message && !sessionExpired && (
+      <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">{message}</p>
+    )}
     <div className="grid gap-4 md:grid-cols-[1fr_auto]">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted-foreground">동작 상태</dt>
@@ -293,6 +329,15 @@ function ActivityPanel({ activity, active, sessionExpired }: { activity: Activit
           <figcaption className="text-xs text-muted-foreground">현재 대문 이미지</figcaption>
         </figure>
       )}
+    </div>
+    {refresh && !sessionExpired && (
+      <div>
+        <Button size="sm" variant="outline" disabled={refresh.pending} onClick={refresh.onClick}>
+          지금 반영
+        </Button>
+        <span className="ml-2 text-xs text-muted-foreground">방송 상태를 다시 판정해 대문을 바로 갱신합니다. 갱신이 멈춘 것 같을 때 눌러주세요.</span>
+      </div>
+    )}
     </div>
   );
 }
