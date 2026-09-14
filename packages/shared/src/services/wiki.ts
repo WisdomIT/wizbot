@@ -247,7 +247,9 @@ export async function crawlDue(prisma: PrismaClient, fetchImpl: FetchTextLike = 
 export const WIKI_ENTRY_NAME = 'wiki';
 /** 검색 청크 길이·개수 */
 export const CHUNK_CHARS = 900;
-export const SEARCH_TOP = 5;
+export const SEARCH_TOP = 8;
+/** 질문에 흔히 붙지만 내용을 고르는 데 도움이 안 되는 말 — 점수에서 뺀다 (#309 실측: 「탈옥 힌트」의 「힌트」) */
+const STOP_WORDS = new Set(['힌트', '방법', '방법은', '어떻게', '어디', '어디서', '어디에', '뭐', '뭐야', '무엇', '무엇인가요', '알려줘', '알려', '있어', '있나', '있나요', '하는', '하나요', '인가요', '좀', '설명', '가르쳐줘', '해줘', '뭔가요', '언제', '왜', '누가', '얼마', '얼마나', '몇', '어느', '것', '거', '건', '요', '는', '은', '이', '가', '을', '를', '에', '의', '와', '과', '로', '으로']);
 /** 같은 질문 캐시 */
 export const ANSWER_CACHE_MS = 10 * 60_000;
 export const MAX_CONCURRENT_PER_CHANNEL = 1;
@@ -268,6 +270,8 @@ export interface WikiChunk {
   /** 페이지 제목 + 마지막 소제목 — 모델에 위치를 알려준다 */
   heading: string;
   text: string;
+  /** 페이지 안 순서 — 같은 페이지 청크를 원래 순서로 돌려주기 위해 */
+  index: number;
 }
 
 /** 페이지 텍스트를 소제목 경계로 자르고, 긴 절은 CHUNK_CHARS 단위로 더 자른다 */
@@ -280,7 +284,7 @@ export function chunkPage(page: { id: number; url: string; title: string; conten
     buffer = [];
     if (!text) return;
     for (let i = 0; i < text.length; i += CHUNK_CHARS) {
-      chunks.push({ pageId: page.id, url: page.url, title: page.title, heading, text: text.slice(i, i + CHUNK_CHARS) });
+      chunks.push({ pageId: page.id, url: page.url, title: page.title, heading, text: text.slice(i, i + CHUNK_CHARS), index: chunks.length });
     }
   };
   for (const line of page.content.split('\n')) {
@@ -309,9 +313,13 @@ export function tokenize(text: string): string[] {
   return [...tokens];
 }
 
-/** 질문에 맞는 청크 상위 N — 단순 tf·idf 근사. 제목·소제목에 맞으면 가중 */
+/**
+ * 질문에 맞는 청크 상위 N — 단순 tf·idf 근사, 제목·소제목 일치 가중.
+ * 가장 잘 맞는 페이지는 **페이지 전체(청크 6개까지)** 를 원래 순서로 넣는다 — 답이 제목과 다른 문단에
+ * 흩어져 있어도(교도소 수감 페이지의 노역 설명 속 탈옥 힌트) 문맥이 이어지게. 나머지 자리는 다른 페이지의 상위 청크
+ */
 export function searchChunks(chunks: WikiChunk[], question: string, top = SEARCH_TOP): WikiChunk[] {
-  const terms = tokenize(question).filter((t) => t.length >= 2);
+  const terms = tokenize(question).filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
   if (terms.length === 0 || chunks.length === 0) return [];
   const docFreq = new Map<string, number>();
   const lowered = chunks.map((chunk) => ({ chunk, body: chunk.text.toLowerCase(), head: chunk.heading.toLowerCase() }));
@@ -329,11 +337,36 @@ export function searchChunks(chunks: WikiChunk[], question: string, top = SEARCH
     }
     return { chunk: entry.chunk, score };
   });
-  return scored
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, top)
-    .map((entry) => entry.chunk);
+  const ranked = scored.filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score);
+  if (ranked.length === 0) return [];
+
+  const pageScore = new Map<number, number>();
+  for (const entry of ranked) pageScore.set(entry.chunk.pageId, (pageScore.get(entry.chunk.pageId) ?? 0) + entry.score);
+  const bestPage = [...pageScore.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const bestPageChunks = chunks.filter((chunk) => chunk.pageId === bestPage);
+  const picked = new Map<WikiChunk, number>();
+  for (const chunk of bestPageChunks.length <= 6 ? bestPageChunks : ranked.filter((e) => e.chunk.pageId === bestPage).slice(0, 6).map((e) => e.chunk)) {
+    picked.set(chunk, 1);
+  }
+  for (const entry of ranked) {
+    if (picked.size >= top) break;
+    if (!picked.has(entry.chunk)) picked.set(entry.chunk, 1);
+  }
+  //  같은 페이지끼리 원래 순서로 — 가장 잘 맞는 페이지가 앞
+  return [...picked.keys()].sort((a, b) => (a.pageId === b.pageId ? a.index - b.index : a.pageId === bestPage ? -1 : b.pageId === bestPage ? 1 : 0));
+}
+
+/** 모델이 「없다」고 답한 문장 — 이때는 쿨타임·캐시를 걸지 않고 관련 페이지를 안내한다 */
+export const NOT_FOUND_ANSWER = '위키에서 찾지 못했습니다.';
+
+export function isNotFoundAnswer(text: string): boolean {
+  const plain = text.replace(/[\s.!?…]/g, '');
+  return plain.length === 0 || plain.includes('찾지못했') || plain.includes('찾을수없') || plain.includes('나와있지않') || plain.includes('정보가없');
+}
+
+/** 못 찾았을 때의 답변 — 검색이 고른 페이지가 있으면 그 페이지를 권한다 */
+export function notFoundReply(topTitle: string | null): string {
+  return topTitle ? `위키에서 바로 찾지 못했어요. 「${topTitle}」 페이지를 참고해 보세요.` : '위키에서 찾지 못했어요. 질문을 조금 다르게 해보세요.';
 }
 
 /** 소스별 청크 캐시 — 마지막 수집 시각이 바뀌면 다시 만든다 */
