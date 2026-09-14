@@ -7,10 +7,12 @@ import { Context } from '../trpc';
 import { functionAgent } from './agent';
 export { type AgentChatMode, type AgentChatSender, getAgentChatMode, registerAgentChatMode } from './agentBridge';
 export { clampChatMessage, splitForChat } from './lib';
+export { getWikiAnswerMode, registerWikiAnswerMode, type WikiAnswerInput, type WikiAnswerMode, type WikiAnswerResult } from './wikiBridge';
 import { functionChzzk } from './chzzk';
 import { functionCommand } from './command';
 import { ChatbotFunctionKey } from './definitions';
 import { functionSong } from './song';
+import { functionWiki } from './wiki';
 
 export interface ChatbotData {
   userId: number;
@@ -32,6 +34,8 @@ export interface ChabotReturn {
   message: string;
   /** 기능 명령어를 용법을 틀려 안내로 끝냈다 (#276) — 호출 로그에 USAGE_ERROR 로 남는다 */
   usageError?: true;
+  /** message 뒤에 이어서 보낼 추가 채팅 (#309 — 답변 + 출처 링크). 각각 100자로 잘린다 */
+  messages?: string[];
 }
 
 /** 디스패처가 판정한 호출 1건 (#276) — 라우터가 호출 로그로 남긴다 */
@@ -60,6 +64,7 @@ export const functions = {
   ...functionSong,
   ...functionChzzk,
   ...functionAgent,
+  ...functionWiki,
 } satisfies Record<ChatbotFunctionKey, ChatbotFunctionHandler>;
 
 export function getChatbotFunction(name: string): ChatbotFunctionHandler | undefined {

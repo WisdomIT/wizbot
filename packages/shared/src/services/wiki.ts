@@ -240,3 +240,196 @@ export async function crawlDue(prisma: PrismaClient, fetchImpl: FetchTextLike = 
   }
   return results;
 }
+
+/* ── 2단계: 검색·한도 (#309) ── */
+
+/** AgentUsage.entryName — 위키 답변 사용량 구분. 에이전트 한도 계산에서는 뺀다 */
+export const WIKI_ENTRY_NAME = 'wiki';
+/** 검색 청크 길이·개수 */
+export const CHUNK_CHARS = 900;
+export const SEARCH_TOP = 5;
+/** 같은 질문 캐시 */
+export const ANSWER_CACHE_MS = 10 * 60_000;
+export const MAX_CONCURRENT_PER_CHANNEL = 1;
+export const MAX_CONCURRENT_GLOBAL = 4;
+
+/** 스트리머가 명령어에 연결할 수 있는 소스 */
+export async function listActiveSources(prisma: PrismaClient, now = new Date()) {
+  const rows = await prisma.wikiSource.findMany({ where: { enabled: true }, select: { id: true, name: true, endsAt: true, enabled: true }, orderBy: { id: 'asc' } });
+  return rows.filter((row) => isSourceActive(row, now)).map((row) => ({ id: row.id, name: row.name }));
+}
+
+/* 청크 */
+
+export interface WikiChunk {
+  pageId: number;
+  url: string;
+  title: string;
+  /** 페이지 제목 + 마지막 소제목 — 모델에 위치를 알려준다 */
+  heading: string;
+  text: string;
+}
+
+/** 페이지 텍스트를 소제목 경계로 자르고, 긴 절은 CHUNK_CHARS 단위로 더 자른다 */
+export function chunkPage(page: { id: number; url: string; title: string; content: string }): WikiChunk[] {
+  const chunks: WikiChunk[] = [];
+  let heading = page.title;
+  let buffer: string[] = [];
+  const flush = () => {
+    const text = buffer.join('\n').trim();
+    buffer = [];
+    if (!text) return;
+    for (let i = 0; i < text.length; i += CHUNK_CHARS) {
+      chunks.push({ pageId: page.id, url: page.url, title: page.title, heading, text: text.slice(i, i + CHUNK_CHARS) });
+    }
+  };
+  for (const line of page.content.split('\n')) {
+    const h = line.match(/^#{1,3}\s+(.+)$/);
+    if (h) {
+      flush();
+      heading = h[1].trim() === page.title ? page.title : `${page.title} › ${h[1].trim()}`;
+      continue;
+    }
+    buffer.push(line);
+  }
+  flush();
+  return chunks;
+}
+
+/** 검색어 토큰 — 공백·구두점으로 나눈 어절 + 한글 2글자 조각(조사·어미가 붙어도 맞도록) */
+export function tokenize(text: string): string[] {
+  const words = text.toLowerCase().split(/[\s,.!?()[\]{}"'“”‘’·…:;/\\|<>~`^*+=_-]+/).filter((w) => w.length > 0);
+  const tokens = new Set<string>();
+  for (const word of words) {
+    tokens.add(word);
+    if (/[가-힣]/.test(word) && word.length >= 3) {
+      for (let i = 0; i + 2 <= word.length; i++) tokens.add(word.slice(i, i + 2));
+    }
+  }
+  return [...tokens];
+}
+
+/** 질문에 맞는 청크 상위 N — 단순 tf·idf 근사. 제목·소제목에 맞으면 가중 */
+export function searchChunks(chunks: WikiChunk[], question: string, top = SEARCH_TOP): WikiChunk[] {
+  const terms = tokenize(question).filter((t) => t.length >= 2);
+  if (terms.length === 0 || chunks.length === 0) return [];
+  const docFreq = new Map<string, number>();
+  const lowered = chunks.map((chunk) => ({ chunk, body: chunk.text.toLowerCase(), head: chunk.heading.toLowerCase() }));
+  for (const term of terms) {
+    docFreq.set(term, lowered.filter((entry) => entry.body.includes(term) || entry.head.includes(term)).length);
+  }
+  const scored = lowered.map((entry) => {
+    let score = 0;
+    for (const term of terms) {
+      const df = docFreq.get(term) ?? 0;
+      if (df === 0) continue;
+      const idf = Math.log(1 + chunks.length / df);
+      const tf = entry.body.split(term).length - 1;
+      score += idf * (Math.min(tf, 5) + (entry.head.includes(term) ? 3 : 0));
+    }
+    return { chunk: entry.chunk, score };
+  });
+  return scored
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, top)
+    .map((entry) => entry.chunk);
+}
+
+/** 소스별 청크 캐시 — 마지막 수집 시각이 바뀌면 다시 만든다 */
+const chunkCache = new Map<number, { crawledAt: number; chunks: WikiChunk[]; titles: { title: string; url: string }[] }>();
+
+export async function loadChunks(prisma: PrismaClient, sourceId: number, lastCrawledAt: Date | null) {
+  const stamp = lastCrawledAt?.getTime() ?? 0;
+  const cached = chunkCache.get(sourceId);
+  if (cached && cached.crawledAt === stamp) return cached;
+  const pages = await prisma.wikiPage.findMany({ where: { sourceId }, select: { id: true, url: true, title: true, content: true }, orderBy: { url: 'asc' } });
+  const entry = { crawledAt: stamp, chunks: pages.flatMap(chunkPage), titles: pages.map((page) => ({ title: page.title, url: page.url })) };
+  chunkCache.set(sourceId, entry);
+  return entry;
+}
+
+/* 한도·쿨타임·캐시 — API 메모리. 재시작하면 초기화돼도 무방(길어야 30분) */
+
+const cooldowns = new Map<string, number>();
+const answerCache = new Map<string, { expiresAt: number; message: string; messages?: string[] }>();
+const inFlight = new Map<number, number>();
+let inFlightGlobal = 0;
+
+export function normalizeQuestion(question: string): string {
+  return question.toLowerCase().replace(/[\s?.!~]+/g, ' ').trim();
+}
+
+const KST = 'Asia/Seoul';
+function kstStartOfToday(now: Date): Date {
+  const key = now.toLocaleDateString('sv-SE', { timeZone: KST });
+  return new Date(`${key}T00:00:00+09:00`);
+}
+
+export type GuardResult = { ok: true } | { ok: false; message: string; notify?: 'global-limit' };
+
+/**
+ * 답변 전 판정 순서: 캐시(호출부가 먼저 본다) → 쿨타임 → 일일 상한 → 동시 처리.
+ * 캐시 응답은 아무것도 소모하지 않는다. 쿨타임은 성공한 뒤(markAnswered)에만 건다
+ */
+export async function guardAnswer(
+  prisma: PrismaClient,
+  source: Pick<WikiSource, 'id' | 'viewerCooldownMinutes' | 'perChannelDaily' | 'globalDaily'>,
+  input: { userId: number; senderChannelId: string },
+  now = new Date(),
+): Promise<GuardResult> {
+  const key = `${input.userId}:${input.senderChannelId}`;
+  const until = cooldowns.get(key);
+  if (until !== undefined && until > now.getTime()) {
+    const minutes = Math.max(1, Math.ceil((until - now.getTime()) / 60_000));
+    return { ok: false, message: `${minutes}분 뒤에 다시 물어봐 주세요.` };
+  }
+  const since = kstStartOfToday(now);
+  if (source.perChannelDaily > 0) {
+    const used = await prisma.agentUsage.count({ where: { userId: input.userId, entryName: WIKI_ENTRY_NAME, createdAt: { gte: since } } });
+    if (used >= source.perChannelDaily) return { ok: false, message: '오늘 이 채널의 질문 한도에 도달했습니다. 내일 다시 물어봐 주세요.' };
+  }
+  if (source.globalDaily > 0) {
+    const used = await prisma.agentUsage.count({ where: { entryName: WIKI_ENTRY_NAME, createdAt: { gte: since } } });
+    if (used >= source.globalDaily) return { ok: false, message: '오늘 위키 답변 한도에 도달했습니다. 내일 다시 물어봐 주세요.', notify: used === source.globalDaily ? 'global-limit' : undefined };
+  }
+  if ((inFlight.get(input.userId) ?? 0) >= MAX_CONCURRENT_PER_CHANNEL || inFlightGlobal >= MAX_CONCURRENT_GLOBAL) {
+    return { ok: false, message: '지금 다른 질문을 처리하고 있습니다. 잠시 후 다시 물어봐 주세요.' };
+  }
+  return { ok: true };
+}
+
+export function beginAnswer(userId: number) {
+  inFlight.set(userId, (inFlight.get(userId) ?? 0) + 1);
+  inFlightGlobal++;
+}
+
+export function endAnswer(userId: number) {
+  inFlight.set(userId, Math.max(0, (inFlight.get(userId) ?? 1) - 1));
+  inFlightGlobal = Math.max(0, inFlightGlobal - 1);
+}
+
+/** 성공한 답변 뒤 — 시청자 쿨타임 시작, 캐시 저장 */
+export function markAnswered(source: Pick<WikiSource, 'id' | 'viewerCooldownMinutes'>, input: { userId: number; senderChannelId: string; question: string }, answer: { message: string; messages?: string[] }, now = new Date()) {
+  if (source.viewerCooldownMinutes > 0) cooldowns.set(`${input.userId}:${input.senderChannelId}`, now.getTime() + source.viewerCooldownMinutes * 60_000);
+  answerCache.set(`${source.id}:${input.userId}:${normalizeQuestion(input.question)}`, { expiresAt: now.getTime() + ANSWER_CACHE_MS, ...answer });
+}
+
+export function cachedAnswer(sourceId: number, userId: number, question: string, now = new Date()) {
+  const hit = answerCache.get(`${sourceId}:${userId}:${normalizeQuestion(question)}`);
+  if (!hit) return null;
+  if (hit.expiresAt <= now.getTime()) {
+    answerCache.delete(`${sourceId}:${userId}:${normalizeQuestion(question)}`);
+    return null;
+  }
+  return { message: hit.message, messages: hit.messages };
+}
+
+/** 테스트용 — 메모리 상태 초기화 */
+export function resetAnswerState() {
+  cooldowns.clear();
+  answerCache.clear();
+  inFlight.clear();
+  inFlightGlobal = 0;
+  chunkCache.clear();
+}

@@ -18,8 +18,9 @@ export interface ChatbotFunctionOptionSpec {
    * 옵션 입력 UI 종류
    * - text: 자유 입력
    * - echoCommandSelect: 스트리머의 echo 명령어 중 선택 (저장 값은 echo 명령어 id)
+   * - wikiSourceSelect: 어드민이 등록한 위키 소스 중 선택 (저장 값은 소스 id, #309)
    */
-  input: 'text' | 'echoCommandSelect';
+  input: 'text' | 'echoCommandSelect' | 'wikiSourceSelect';
 }
 
 export interface ChatbotFunctionDefinition {
@@ -154,6 +155,15 @@ export const chatbotFunctionDefinitions = {
     description:
       '콘솔의 위즈봇 에이전트를 채팅에서 그대로 씁니다.\n\n호출 후 60초 동안 부른 사람의 채팅을 요청으로 알아듣고, 요청과 함께 한 번에 부를 수도 있습니다. 예) !에이전트 대기열 비워줘\n\n권한을 매니저로 낮추면 매니저도 각자 부를 수 있습니다. 에이전트는 방송 제목·카테고리 변경, 시청자 채팅 제한 같은 채널 설정 기능도 실행하니 주의하세요.',
     usageTokens: (c) => [cmd(c), arg('요청(선택)')],
+  },
+  wikiAnswer: {
+    name: '위키 답변',
+    type: 'WIZBOT_CONFIG',
+    descriptionShort: '등록된 위키 내용을 근거로 질문에 답합니다.',
+    description:
+      '어드민이 등록한 위키(예: 봉누도 2 공식 위키)를 근거로 시청자 질문에 짧게 답하고 출처 페이지를 붙입니다. 위키에 없는 내용은 모른다고 답합니다.\n\n한 번에 끝나는 명령어입니다 — 질문을 반드시 뒤에 붙여야 하며, 같은 시청자는 일정 시간(기본 30분)이 지나야 다시 물을 수 있습니다. 예) !봉누도 낚싯대는 어디서 사?',
+    usageTokens: (c) => [cmd(c), arg('질문')],
+    option: { label: '위키', input: 'wikiSourceSelect' },
   },
   getCommandListUrl: {
     name: '명령어 목록 링크',

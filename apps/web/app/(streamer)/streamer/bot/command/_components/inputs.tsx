@@ -187,6 +187,11 @@ const InputsFunctionOption = ({
     }),
   );
 
+  // wikiSourceSelect (#309): 어드민이 등록한 위키 중 지금 답변 가능한 것
+  const { data: wikiSources } = useQuery(
+    trpc.wiki.listActive.queryOptions(undefined, { enabled: spec?.input === 'wikiSourceSelect' }),
+  );
+
   const optionInput =
     spec?.input === 'text'
       ? ({ type: 'text' } as const)
@@ -198,7 +203,12 @@ const InputsFunctionOption = ({
               value: command.id.toString(),
             })),
           } as const)
-        : null;
+        : spec?.input === 'wikiSourceSelect'
+          ? ({
+              type: 'select',
+              options: (wikiSources ?? []).map((source) => ({ label: source.name, value: String(source.id) })),
+            } as const)
+          : null;
 
   if (optionInput?.type === 'text') {
     return (

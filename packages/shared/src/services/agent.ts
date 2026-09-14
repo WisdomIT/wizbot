@@ -1,6 +1,7 @@
 import type { AgentLimitMetric, AgentLimitPeriod, AgentLimitScope, AgentProviderKind, Prisma, PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
+import { WIKI_ENTRY_NAME } from './wiki';
 
 /**
  * 설정 도우미 에이전트 (#35). pelican-concierge 구조를 따른다 —
@@ -263,7 +264,8 @@ export async function checkLimits(prisma: PrismaClient, userId: number): Promise
   const limits = await listLimits(prisma);
   for (const limit of limits) {
     const since = new Date(Date.now() - PERIOD_MS[limit.period]);
-    const where = { createdAt: { gte: since }, ...(limit.scope === 'STREAMER' ? { userId } : {}) };
+    //  위키 답변(entryName 'wiki', #309)은 시청자가 부르는 것이라 에이전트 한도에서 뺀다 — 자기 상한이 따로 있다
+    const where = { createdAt: { gte: since }, OR: [{ entryName: null }, { entryName: { not: WIKI_ENTRY_NAME } }], ...(limit.scope === 'STREAMER' ? { userId } : {}) };
     const used =
       limit.metric === 'MESSAGES'
         ? await prisma.agentUsage.count({ where })
@@ -288,7 +290,8 @@ export async function usageRatio(prisma: PrismaClient, userId: number): Promise<
   let max = 0;
   for (const limit of limits) {
     const since = new Date(Date.now() - PERIOD_MS[limit.period]);
-    const where = { createdAt: { gte: since }, ...(limit.scope === 'STREAMER' ? { userId } : {}) };
+    //  위키 답변(entryName 'wiki', #309)은 시청자가 부르는 것이라 에이전트 한도에서 뺀다 — 자기 상한이 따로 있다
+    const where = { createdAt: { gte: since }, OR: [{ entryName: null }, { entryName: { not: WIKI_ENTRY_NAME } }], ...(limit.scope === 'STREAMER' ? { userId } : {}) };
     const used =
       limit.metric === 'MESSAGES'
         ? await prisma.agentUsage.count({ where })

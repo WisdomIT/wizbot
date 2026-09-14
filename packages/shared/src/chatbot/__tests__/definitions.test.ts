@@ -33,11 +33,11 @@ describe('usage 표기', () => {
     );
   });
 
-  it('option 이 있는 정의는 updateSpecificCommandEcho 뿐이다 (현재)', () => {
+  it('option 이 있는 정의는 updateSpecificCommandEcho(echo 선택)·wikiAnswer(위키 선택) 둘', () => {
     const withOption = Object.entries(chatbotFunctionDefinitionMap)
       .filter(([, def]) => def.option)
-      .map(([key]) => key);
-    expect(withOption).toEqual(['updateSpecificCommandEcho']);
+      .map(([key, def]) => [key, def.option?.input]);
+    expect(withOption).toEqual([['updateSpecificCommandEcho', 'echoCommandSelect'], ['wikiAnswer', 'wikiSourceSelect']]);
   });
 
   it('isChatbotFunctionKey', () => {
