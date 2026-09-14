@@ -59,14 +59,14 @@ describe('crawlSource (#309)', () => {
       { url: 'https://bongnudo.super.site/옛날페이지', hash: 'x' },
     ]);
     const result = await crawlSource(prisma, 1, fetchImpl, NOW);
-    expect(result).toEqual({ sourceId: 1, total: 3, fetched: 3, changed: 2, removed: 0, failed: 0 });
+    expect(result).toEqual({ sourceId: 1, total: 3, fetched: 3, changed: 2, removed: 0, gone: 0, failed: 0 });
     expect(wikiPage.upsert).toHaveBeenCalledTimes(2);
     expect(wikiPage.upsert.mock.calls[0][0].create).toMatchObject({ url: 'https://bongnudo.super.site/', title: '봉누도', content: '# 봉누도\n메인' });
     expect(wikiPage.updateMany).toHaveBeenCalledWith({ where: { sourceId: 1, url: 'https://bongnudo.super.site/낚시' }, data: { fetchedAt: NOW } });
     expect(wikiPage.deleteMany).toHaveBeenCalledWith({ where: { sourceId: 1, url: { in: ['https://bongnudo.super.site/옛날페이지'] } } });
     expect(wikiSource.update).toHaveBeenLastCalledWith({ where: { id: 1 }, data: { lastCrawledAt: NOW, lastError: null, consecutiveFailures: 0 } });
     //  요청 주소는 인코딩된다
-    expect(fetchImpl.mock.calls.map((call) => call[0])).toContain('https://bongnudo.super.site/%EB%82%9A%EC%8B%9C');
+    expect(fetchImpl.mock.calls.map((call) => call[0])).toContain('https://bongnudo.super.site/%eb%82%9a%ec%8b%9c');
   }, 15_000);
 
   it('개별 페이지 실패는 기존 내용을 남기고 세기만 한다', async () => {
@@ -75,6 +75,15 @@ describe('crawlSource (#309)', () => {
     const result = await crawlSource(prisma, 1, fetchImpl, NOW);
     expect(result).toMatchObject({ fetched: 1, failed: 1, removed: 0 });
     expect(wikiPage.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('404 페이지는 실패가 아니라 「없음」 — 저장돼 있었다면 지우고 오류 문구도 남기지 않는다 (실측: 사이트맵의 「안내 사항」 7개)', async () => {
+    const fetchImpl = fetchOf({ '/sitemap.xml': sitemap('/', '/ems-안내-사항'), '/': page('봉누도', '메인'), '/ems-안내-사항': 404 });
+    const { prisma, wikiPage, wikiSource } = createPrisma([{ url: 'https://bongnudo.super.site/ems-안내-사항', hash: 'old' }]);
+    const result = await crawlSource(prisma, 1, fetchImpl, NOW);
+    expect(result).toMatchObject({ fetched: 1, gone: 1, failed: 0, removed: 0 });
+    expect(wikiPage.deleteMany).toHaveBeenCalledWith({ where: { sourceId: 1, url: { in: ['https://bongnudo.super.site/ems-안내-사항'] } } });
+    expect(wikiSource.update).toHaveBeenLastCalledWith({ where: { id: 1 }, data: { lastCrawledAt: NOW, lastError: null, consecutiveFailures: 0 } });
   });
 
   it('사이트맵이 없으면 메인 페이지 링크로 찾는다', async () => {

@@ -50,10 +50,13 @@ export function normalizeUrl(href: string, origin: string): string | null {
   return `${origin}${path}`;
 }
 
-/** 요청용 — 한글 슬러그를 퍼센트 인코딩 */
+/**
+ * 요청용 — 한글 슬러그를 퍼센트 인코딩. 16진수는 **소문자**로: Super 는 대문자(`%EC`)로 오면
+ * 소문자 주소로 307 을 돌려줘 페이지마다 요청이 두 번 나간다 (실측)
+ */
 export function encodePageUrl(url: string): string {
   const parsed = new URL(url);
-  return `${parsed.origin}${parsed.pathname.split('/').map((seg) => encodeURIComponent(decodeURIComponentSafe(seg))).join('/')}`;
+  return `${parsed.origin}${parsed.pathname.split('/').map((seg) => encodeURIComponent(decodeURIComponentSafe(seg)).toLowerCase()).join('/')}`;
 }
 
 function decodeURIComponentSafe(value: string): string {

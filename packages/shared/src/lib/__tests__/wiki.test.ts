@@ -24,8 +24,9 @@ describe('위키 수집 순수 함수 (#309)', () => {
   });
 
   it('요청 주소는 한글 슬러그를 인코딩한다', () => {
-    expect(encodePageUrl('https://bongnudo.super.site/낚시')).toBe('https://bongnudo.super.site/%EB%82%9A%EC%8B%9C');
-    expect(encodePageUrl('https://bongnudo.super.site/rp-정보/서버-참여')).toBe('https://bongnudo.super.site/rp-%EC%A0%95%EB%B3%B4/%EC%84%9C%EB%B2%84-%EC%B0%B8%EC%97%AC');
+    //  소문자 16진수 — 대문자로 보내면 Super 가 소문자 주소로 307 을 돌려준다 (실측)
+    expect(encodePageUrl('https://bongnudo.super.site/낚시')).toBe('https://bongnudo.super.site/%eb%82%9a%ec%8b%9c');
+    expect(encodePageUrl('https://bongnudo.super.site/rp-정보/서버-참여')).toBe('https://bongnudo.super.site/rp-%ec%a0%95%eb%b3%b4/%ec%84%9c%eb%b2%84-%ec%b0%b8%ec%97%ac');
   });
 
   it('HTML → 텍스트 — main 안만, 제목 계층·목록·표를 살리고 목차·스크립트·태그는 버린다', () => {

@@ -169,7 +169,7 @@ async function crawlWiki(): Promise<void> {
   try {
     const results = await trpc.wiki.crawlDue.mutate();
     for (const r of results) {
-      console.log(`📚 위키 수집 #${r.sourceId}: ${r.fetched}/${r.total} 읽음, 변경 ${r.changed}, 삭제 ${r.removed}${r.failed ? `, 실패 ${r.failed}` : ''}`);
+      console.log(`📚 위키 수집 #${r.sourceId}: ${r.fetched}/${r.total} 읽음, 변경 ${r.changed}, 삭제 ${r.removed}${r.gone ? `, 없는 페이지 ${r.gone}` : ''}${r.failed ? `, 실패 ${r.failed}` : ''}`);
     }
   } catch (error) {
     console.error('❌ 위키 수집 실패:', error);
