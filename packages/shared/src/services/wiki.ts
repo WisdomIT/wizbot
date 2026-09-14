@@ -408,12 +408,13 @@ export type GuardResult = { ok: true } | { ok: false; message: string; notify?: 
 export async function guardAnswer(
   prisma: PrismaClient,
   source: Pick<WikiSource, 'id' | 'viewerCooldownMinutes' | 'perChannelDaily' | 'globalDaily'>,
-  input: { userId: number; senderChannelId: string },
+  input: { userId: number; senderChannelId: string; cooldownExempt?: boolean },
   now = new Date(),
 ): Promise<GuardResult> {
   const key = `${input.userId}:${input.senderChannelId}`;
   const until = cooldowns.get(key);
-  if (until !== undefined && until > now.getTime()) {
+  //  쿨타임은 일반 시청자에게만 — 스트리머·매니저는 면제 (일일 상한·동시 처리는 그대로)
+  if (!input.cooldownExempt && until !== undefined && until > now.getTime()) {
     const minutes = Math.max(1, Math.ceil((until - now.getTime()) / 60_000));
     return { ok: false, message: `${minutes}분 뒤에 다시 물어봐 주세요.` };
   }
@@ -443,8 +444,8 @@ export function endAnswer(userId: number) {
 }
 
 /** 성공한 답변 뒤 — 시청자 쿨타임 시작, 캐시 저장 */
-export function markAnswered(source: Pick<WikiSource, 'id' | 'viewerCooldownMinutes'>, input: { userId: number; senderChannelId: string; question: string }, answer: { message: string; messages?: string[] }, now = new Date()) {
-  if (source.viewerCooldownMinutes > 0) cooldowns.set(`${input.userId}:${input.senderChannelId}`, now.getTime() + source.viewerCooldownMinutes * 60_000);
+export function markAnswered(source: Pick<WikiSource, 'id' | 'viewerCooldownMinutes'>, input: { userId: number; senderChannelId: string; question: string; cooldownExempt?: boolean }, answer: { message: string; messages?: string[] }, now = new Date()) {
+  if (source.viewerCooldownMinutes > 0 && !input.cooldownExempt) cooldowns.set(`${input.userId}:${input.senderChannelId}`, now.getTime() + source.viewerCooldownMinutes * 60_000);
   answerCache.set(`${source.id}:${input.userId}:${normalizeQuestion(input.question)}`, { expiresAt: now.getTime() + ANSWER_CACHE_MS, ...answer });
 }
 

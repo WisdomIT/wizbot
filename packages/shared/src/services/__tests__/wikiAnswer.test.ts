@@ -83,6 +83,18 @@ describe('한도·쿨타임·캐시', () => {
     await expect(guardAnswer(prisma, SOURCE, { userId: 7, senderChannelId: 'v1' }, new Date(NOW.getTime() + 31 * 60_000))).resolves.toEqual({ ok: true });
   });
 
+  it('스트리머·매니저는 쿨타임 면제 — 판정도 안 걸리고, 답변 뒤 쿨타임도 안 건다', async () => {
+    const { prisma } = db(0, 0);
+    markAnswered(SOURCE, { userId: 7, senderChannelId: 'mgr', question: 'q', cooldownExempt: true }, { message: 'a' }, NOW);
+    const later = new Date(NOW.getTime() + 60_000);
+    await expect(guardAnswer(prisma, SOURCE, { userId: 7, senderChannelId: 'mgr', cooldownExempt: true }, later)).resolves.toEqual({ ok: true });
+    //  면제 없이 확인해도 쿨타임이 안 걸려 있다
+    await expect(guardAnswer(prisma, SOURCE, { userId: 7, senderChannelId: 'mgr' }, later)).resolves.toEqual({ ok: true });
+    //  시청자 쿨타임 중이어도 같은 사람이 매니저로 승격되면 통과
+    markAnswered(SOURCE, { userId: 7, senderChannelId: 'v9', question: 'q' }, { message: 'a' }, NOW);
+    await expect(guardAnswer(prisma, SOURCE, { userId: 7, senderChannelId: 'v9', cooldownExempt: true }, later)).resolves.toEqual({ ok: true });
+  });
+
   it('일일 상한 — 한국 시간 오늘 자정 기준으로 세고, 0 이면 무제한. 전체 상한 도달 순간에만 알림 표시', async () => {
     const { prisma, count } = db(200, 0);
     await expect(guardAnswer(prisma, SOURCE, { userId: 7, senderChannelId: 'v' }, NOW)).resolves.toMatchObject({ ok: false, message: expect.stringContaining('이 채널의 질문 한도') });
