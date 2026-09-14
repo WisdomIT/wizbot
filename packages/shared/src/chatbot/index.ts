@@ -187,6 +187,8 @@ export default async function chatbot(ctx: Context, data: ChatbotData): Promise<
     return {
       ok: true,
       message: functionAction.message,
+      //  이어지는 채팅(#309 위키 답변 분할·출처)을 여기서 떨어뜨리면 첫 100자만 나간다 (실측)
+      ...(functionAction.messages?.length ? { messages: functionAction.messages } : {}),
       call: call(functionAction.usageError ? 'USAGE_ERROR' : 'OK'),
     };
   } catch (error) {

@@ -134,6 +134,27 @@ describe('chatbot 디스패처', () => {
     });
   });
 
+  it('핸들러가 이어지는 채팅(messages)을 돌려주면 그대로 넘긴다 (#309 — 떨어뜨리면 첫 100자만 나간다)', async () => {
+    const { registerWikiAnswerMode } = await import('../wikiBridge');
+    registerWikiAnswerMode({ answer: async () => ({ ok: true, message: '1부', messages: ['2부', '출처: x'] }) });
+    try {
+      const ctx = {
+        prisma: {
+          chatbotEchoCommand: { findMany: vi.fn().mockResolvedValue([]) },
+          chatbotFunctionCommand: { findMany: vi.fn().mockResolvedValue([{ id: 20, userId: USER_ID, command: '봉누도', function: 'wikiAnswer', permission: 'VIEWER', option: '1' }]) },
+        },
+      } as unknown as Context;
+      await expect(chatbot(ctx, message('!봉누도 낚싯대?'))).resolves.toEqual({
+        ok: true,
+        message: '1부',
+        messages: ['2부', '출처: x'],
+        call: { command: '봉누도', matchedType: 'FUNCTION', matchedId: 20, outcome: 'OK' },
+      });
+    } finally {
+      registerWikiAnswerMode(null);
+    }
+  });
+
   it('createCommandEcho: 이미 존재하는 명령어면 생성하지 않는다', async () => {
     const { ctx, echo } = createCtx();
     echo.findFirst.mockResolvedValueOnce(echoCommands[0]);
