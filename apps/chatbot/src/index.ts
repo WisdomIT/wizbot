@@ -159,6 +159,23 @@ async function purgeExpired(): Promise<void> {
   }
 }
 
+/** 위키 수집 (#309) — 1시간마다. 어느 소스를 읽을지는 API 가 정한다(켜짐·종료 전·마지막 수집 경과) */
+const WIKI_INTERVAL_MS = 60 * 60 * 1000;
+let lastWikiAt = 0;
+
+async function crawlWiki(): Promise<void> {
+  if (Date.now() - lastWikiAt < WIKI_INTERVAL_MS) return;
+  lastWikiAt = Date.now();
+  try {
+    const results = await trpc.wiki.crawlDue.mutate();
+    for (const r of results) {
+      console.log(`📚 위키 수집 #${r.sourceId}: ${r.fetched}/${r.total} 읽음, 변경 ${r.changed}, 삭제 ${r.removed}${r.failed ? `, 실패 ${r.failed}` : ''}`);
+    }
+  } catch (error) {
+    console.error('❌ 위키 수집 실패:', error);
+  }
+}
+
 // 재진입 가드 — 채널 연결(connectedTimeoutMs 최대 10s×채널 수)로 한 번의 폴링이 주기(60s)를
 // 넘길 수 있다. 겹쳐 실행되면 같은 반복 id 의 타이머가 이중 생성·누수된다 (PR #61 리뷰).
 let polling = false;
@@ -172,6 +189,7 @@ async function poll(): Promise<void> {
     await syncApprovalNotices();
     await refreshPendingTokens();
     await purgeExpired();
+    await crawlWiki();
     await refreshChannelProfiles();
     lastPollAt = new Date();
   } catch (error) {
