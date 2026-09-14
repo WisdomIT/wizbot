@@ -8,8 +8,8 @@ export interface WikiAnswerInput {
   userId: number;
   sourceId: number;
   question: string;
-  /** 시청자 — 쿨타임 키 */
-  sender: { channelId: string; nickname: string };
+  /** 발화자 — 쿨타임 키. 스트리머·매니저는 쿨타임을 받지 않는다 */
+  sender: { channelId: string; nickname: string; role: 'STREAMER' | 'MANAGER' | 'VIEWER' };
 }
 
 export interface WikiAnswerResult {

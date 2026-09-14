@@ -27,7 +27,7 @@ export const functionWiki = {
       userId: data.userId,
       sourceId,
       question,
-      sender: { channelId: data.senderChannelId ?? data.senderNickname, nickname: data.senderNickname },
+      sender: { channelId: data.senderChannelId ?? data.senderNickname, nickname: data.senderNickname, role: data.senderRole },
     });
     return { ok: result.ok, message: result.message, ...(result.messages ? { messages: result.messages } : {}) };
   }) satisfies ChatbotFunctionHandler,

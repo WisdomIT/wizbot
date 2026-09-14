@@ -25,7 +25,7 @@ describe('!위키 핸들러 (#309)', () => {
       message: '전당포에서 삽니다.',
       messages: ['출처: 낚시 https://x/낚시'],
     });
-    expect(mode.answer).toHaveBeenCalledWith({ userId: 7, sourceId: 1, question: '낚싯대는 어디서 사?', sender: { channelId: 'v'.repeat(32), nickname: '시청자A' } });
+    expect(mode.answer).toHaveBeenCalledWith({ userId: 7, sourceId: 1, question: '낚싯대는 어디서 사?', sender: { channelId: 'v'.repeat(32), nickname: '시청자A', role: 'VIEWER' } });
   });
 
   it('질문이 없으면 용법 안내(USAGE_ERROR), 200자 넘으면 거절 — 브리지를 부르지 않는다', async () => {

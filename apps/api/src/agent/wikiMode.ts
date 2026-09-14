@@ -39,7 +39,9 @@ export const wikiAnswerMode: WikiAnswerMode = {
     const cached = wikiService.cachedAnswer(source.id, userId, question);
     if (cached) return { ok: true, message: cached.message, messages: cached.messages };
 
-    const guard = await wikiService.guardAnswer(prisma, source, { userId, senderChannelId: sender.channelId });
+    //  쿨타임은 일반 시청자만 — 스트리머·매니저는 면제 (실측 피드백)
+    const cooldownExempt = sender.role !== 'VIEWER';
+    const guard = await wikiService.guardAnswer(prisma, source, { userId, senderChannelId: sender.channelId, cooldownExempt });
     if (!guard.ok) {
       if (guard.notify === 'global-limit') notifyGlobalLimit(source.name, source.globalDaily);
       return { ok: true, message: guard.message };
@@ -91,7 +93,7 @@ export const wikiAnswerMode: WikiAnswerMode = {
       //  출처 — 가장 잘 맞은 페이지. 한글 슬러그 주소는 길어질 수 있어 제목 + 주소를 별도 채팅으로, 넘치면 사이트 루트로
       const sourceLine = top ? fitSource(source.name, top.title, top.url, source.baseUrl) : `출처: ${source.name} ${source.baseUrl}`;
       const result = { message: answer, messages: [sourceLine] };
-      wikiService.markAnswered(source, { userId, senderChannelId: sender.channelId, question }, result);
+      wikiService.markAnswered(source, { userId, senderChannelId: sender.channelId, question, cooldownExempt }, result);
       return { ok: true, ...result };
     } catch (error) {
       if (abort.signal.aborted) return { ok: true, message: '답변이 늦어지고 있어요. 잠시 후 다시 물어봐 주세요.' };
