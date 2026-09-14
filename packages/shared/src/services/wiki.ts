@@ -80,11 +80,15 @@ export function isSourceActive(source: Pick<WikiSource, 'enabled' | 'endsAt'>, n
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** 사이트맵에는 있는데 실제로는 없는 페이지(노션 DB 성격의 「안내 사항」 등, 실측 404) — 실패가 아니라 「없음」 */
+class PageGoneError extends Error {}
+
 async function fetchPage(fetchImpl: FetchTextLike, url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetchImpl(url, { headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xml;q=0.9,*/*;q=0.5' }, signal: controller.signal });
+    if (response.status === 404 || response.status === 410) throw new PageGoneError(`HTTP ${response.status}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.text();
   } finally {
@@ -98,6 +102,8 @@ export interface CrawlResult {
   fetched: number;
   changed: number;
   removed: number;
+  /** 사이트맵엔 있지만 404 — 실패로 세지 않는다 */
+  gone: number;
   failed: number;
 }
 
@@ -149,7 +155,7 @@ async function crawlSourceInner(prisma: PrismaClient, source: WikiSource, fetchI
   urls = urls.slice(0, source.maxPages);
 
   const existing = new Map((await prisma.wikiPage.findMany({ where: { sourceId }, select: { url: true, hash: true } })).map((row) => [row.url, row.hash]));
-  const result: CrawlResult = { sourceId, total: urls.length, fetched: 0, changed: 0, removed: 0, failed: 0 };
+  const result: CrawlResult = { sourceId, total: urls.length, fetched: 0, changed: 0, removed: 0, gone: 0, failed: 0 };
   const seen = new Set<string>();
 
   for (const [index, url] of urls.entries()) {
@@ -171,7 +177,12 @@ async function crawlSourceInner(prisma: PrismaClient, source: WikiSource, fetchI
         update: { title: title.slice(0, 200) || url, content, hash, fetchedAt: now, changedAt: now },
         create: { sourceId, url, title: title.slice(0, 200) || url, content, hash, fetchedAt: now, changedAt: now },
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof PageGoneError) {
+        //  없는 페이지 — 저장돼 있었다면 아래 정리에서 지워진다
+        result.gone++;
+        continue;
+      }
       //  개별 실패는 기존 내용을 남긴다 — 다음 수집에서 다시 시도
       result.failed++;
       if (existing.has(url)) seen.add(url);
