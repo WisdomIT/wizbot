@@ -824,3 +824,43 @@ model CafeAsset {
 
   @@unique([integrationId, scene])
 }
+/// 위키 기반 질의응답의 출처 (#309) — 어드민이 등록. 이번엔 Super(노션) 사이트 하나만 쓰지만 스키마는 다중 소스
+model WikiSource {
+  id                   Int        @id @default(autoincrement())
+  /// 답변 출처 표기에 쓰는 이름 (봉누도 2 위키)
+  name                 String     @db.VarChar(60)
+  baseUrl              String     @db.VarChar(200)
+  enabled              Boolean    @default(true)
+  /// 컨텐츠 종료일 — 지나면 답변·수집 모두 멈춘다
+  endsAt               DateTime?  @db.DateTime(6)
+  maxPages             Int        @default(150)
+  /// 같은 채널의 같은 시청자 쿨타임 (분)
+  viewerCooldownMinutes Int       @default(30)
+  /// 일일 상한 — 0 이면 무제한
+  perChannelDaily      Int        @default(200)
+  globalDaily          Int        @default(2000)
+  lastCrawledAt        DateTime?  @db.DateTime(6)
+  lastError            String?    @db.VarChar(500)
+  /// 연속 실패 수 — 3회에 운영자 알림
+  consecutiveFailures  Int        @default(0)
+  createdAt            DateTime   @default(now()) @db.DateTime(6)
+  updatedAt            DateTime   @updatedAt @db.DateTime(6)
+  pages                WikiPage[]
+}
+
+model WikiPage {
+  id        Int        @id @default(autoincrement())
+  sourceId  Int
+  source    WikiSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  /// 디코드된 주소 — 요청할 때 인코딩한다
+  url       String     @db.VarChar(500)
+  title     String     @db.VarChar(200)
+  /// 제목 계층·목록·표를 살린 텍스트
+  content   String     @db.MediumText
+  hash      String     @db.VarChar(64)
+  fetchedAt DateTime   @db.DateTime(6)
+  /// 내용(해시)이 바뀐 마지막 시각
+  changedAt DateTime   @db.DateTime(6)
+
+  @@unique([sourceId, url])
+}
