@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { wikiService } from '../services';
-import { adminProcedure, internalProcedure, t } from '../trpc';
+import { adminProcedure, internalProcedure, streamerProcedure, t } from '../trpc';
 
 const sourceInput = z.object({
   name: z.string().trim().min(1).max(60),
@@ -16,6 +16,8 @@ const sourceInput = z.object({
 
 /** 위키 기반 질의응답 (#309) — 소스·수집은 어드민, 주기 수집은 워커 */
 export const wikiRouter = t.router({
+  /** 스트리머가 명령어에 연결할 수 있는 소스 — 켜져 있고 종료 전인 것만 */
+  listActive: streamerProcedure.query(({ ctx }) => wikiService.listActiveSources(ctx.prisma)),
   sources: adminProcedure.query(async ({ ctx }) => {
     const rows = await wikiService.listSources(ctx.prisma);
     return rows.map((row) => ({ ...row, crawling: wikiService.isCrawling(row.id) }));
