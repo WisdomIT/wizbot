@@ -3,6 +3,22 @@ import type { AuditActor, PrismaClient } from '@prisma/client';
 import { recordAccess } from './accessLog';
 import { ServiceError } from './errors';
 
+/* ── 처리 대기 집계 (#302) ── */
+
+/**
+ * 어드민이 손대야 할 것의 건수 — 사이드바 배지·기본 페이지 요약이 같이 쓴다.
+ * 메일·디스코드 알림은 각각 나가지만, 놓쳤거나 나중에 콘솔을 열었을 때 무엇이 남았는지 보여주는 용도
+ */
+export async function attention(prisma: PrismaClient) {
+  const [applications, joinRequests, inquiries] = await Promise.all([
+    prisma.signupApplication.count({ where: { status: 'PENDING' } }),
+    prisma.cafeIntegration.count({ where: { status: 'JOIN_REQUESTED' } }),
+    //  OPEN = 스트리머가 마지막으로 쓴 스레드(답변 대기). 열어봤는지와 무관
+    prisma.inquiry.count({ where: { status: 'OPEN' } }),
+  ]);
+  return { applications, joinRequests, inquiries };
+}
+
 /* ── 스트리머 관리 (#10 PR B) ── */
 
 export async function listStreamers(prisma: PrismaClient) {
@@ -14,6 +30,8 @@ export async function listStreamers(prisma: PrismaClient) {
       channelName: true,
       channelImageUrl: true,
       hidden: true,
+      followerCount: true,
+      createdAt: true,
       oauth: { select: { expiresIn: true } },
       _count: {
         select: { echoCommands: true, functionCommands: true, repeatCommands: true },
@@ -29,6 +47,9 @@ export async function listStreamers(prisma: PrismaClient) {
     channelName: user.channelName,
     channelImageUrl: user.channelImageUrl,
     hidden: user.hidden,
+    followerCount: user.followerCount,
+    /** 가입 시각 (#297) */
+    createdAt: user.createdAt,
     /** 화이트리스트에 남아 있는지 (없으면 재로그인 불가 상태) */
     whitelisted: whitelisted.has(user.channelId),
     /** 치지직 연동 여부 (access token 만료 시각 — refresh 로 자동 갱신되므로 참고용) */

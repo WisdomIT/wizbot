@@ -26,6 +26,10 @@ export const noticeRouter = t.router({
   markAllRead: streamerProcedure.mutation(({ ctx }) => noticeService.markAllRead(ctx.prisma, ctx.user.id)),
 
   adminList: adminProcedure.query(({ ctx }) => noticeService.listAdmin(ctx.prisma)),
+  /** 누가 읽었고 누가 안 읽었나 (#298) */
+  adminReads: adminProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .query(({ ctx, input }) => noticeService.adminReads(ctx.prisma, input.id)),
   create: adminProcedure.input(noticeInput).mutation(({ ctx, input }) => noticeService.create(ctx.prisma, input)),
   update: adminProcedure
     .input(noticeInput.extend({ id: z.number().int().positive() }))

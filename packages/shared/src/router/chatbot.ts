@@ -104,9 +104,12 @@ export const chatbotRouter = t.router({
         try {
           // 어떤 경로로 만들어진 메시지든 여기서 한 번 더 자른다 —
           // 한도를 넘기면 전송이 실패해 시청자에게 아무 응답도 가지 않는다 (#115)
-          await getChzzkClientForUser(ctx.prisma, userId).chats.send(
-            clampChatMessage(result.message),
-          );
+          const chats = getChzzkClientForUser(ctx.prisma, userId).chats;
+          await chats.send(clampChatMessage(result.message));
+          //  이어지는 채팅 (#309 답변 + 출처) — 순서가 중요하므로 순차로
+          for (const extra of result.messages ?? []) {
+            await chats.send(clampChatMessage(extra));
+          }
         } catch (error) {
           if (error instanceof ChzzkError) {
             return { ok: false, message: `채팅 전송 실패: ${error.message}` };

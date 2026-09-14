@@ -134,3 +134,18 @@ describe('admin 화이트리스트 API 권한', () => {
     await expect(caller.admin.listWhitelist()).resolves.toEqual([]);
   });
 });
+
+describe('admin.attention (#302)', () => {
+  it('대기 신청·가입 요청·답변 대기 문의 건수 — 관리자만', async () => {
+    const { caller, prisma } = createCaller({ user: { id: 1, role: 'admin' } });
+    const p = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+    p.signupApplication.count = vi.fn().mockResolvedValue(3);
+    p.cafeIntegration = { count: vi.fn().mockResolvedValue(1) };
+    p.inquiry = { count: vi.fn().mockResolvedValue(2) };
+    await expect(caller.admin.attention()).resolves.toEqual({ applications: 3, joinRequests: 1, inquiries: 2 });
+    expect(p.signupApplication.count).toHaveBeenCalledWith({ where: { status: 'PENDING' } });
+    expect(p.cafeIntegration.count).toHaveBeenCalledWith({ where: { status: 'JOIN_REQUESTED' } });
+    expect(p.inquiry.count).toHaveBeenCalledWith({ where: { status: 'OPEN' } });
+    await expect(createCaller({ user: { id: 7, role: 'streamer' } }).caller.admin.attention()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+});

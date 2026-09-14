@@ -102,6 +102,9 @@ export const adminRouter = t.router({
       return { id: adminFind.id };
     }),
 
+  /** 처리 대기 건수 (#302) — 사이드바 배지 */
+  attention: adminProcedure.query(({ ctx }) => adminUsersService.attention(ctx.prisma)),
+
   /* ── 화이트리스트 관리 (#10) ── */
   listWhitelist: adminProcedure.query(({ ctx }) => whitelistService.listWhitelist(ctx.prisma)),
   addToWhitelist: adminProcedure

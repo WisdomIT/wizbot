@@ -35,13 +35,19 @@ async function assertValidOption(
 ) {
   if (!isChatbotFunctionKey(func)) return;
   const spec = chatbotFunctionDefinitionMap[func].option;
-  if (!spec || spec.input !== 'echoCommandSelect') return;
+  if (!spec || spec.input === 'text') return;
 
   const id = Number(option);
   if (!option || !Number.isInteger(id)) {
     throw new ServiceError('INVALID_INPUT', `${spec.label}을(를) 선택해주세요.`);
   }
-  await commandService.getEchoCommand(prisma, userId, id); // 없으면 NOT_FOUND
+  if (spec.input === 'echoCommandSelect') {
+    await commandService.getEchoCommand(prisma, userId, id); // 없으면 NOT_FOUND
+    return;
+  }
+  //  wikiSourceSelect (#309) — 어드민이 등록한 소스면 누구나 연결할 수 있다
+  const source = await prisma.wikiSource.findUnique({ where: { id }, select: { id: true } });
+  if (!source) throw new ServiceError('NOT_FOUND', '존재하지 않는 위키입니다.');
 }
 
 export const commandRouter = t.router({

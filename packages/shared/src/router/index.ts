@@ -16,6 +16,7 @@ import { songRouter } from './song';
 import { songFavoriteRouter } from './songFavorite';
 import { suggestionRouter } from './suggestion';
 import { userRouter } from './user';
+import { wikiRouter } from './wiki';
 
 export const appRouter = t.router({
   audit: auditRouter,
@@ -35,6 +36,7 @@ export const appRouter = t.router({
   songFavorite: songFavoriteRouter,
   suggestion: suggestionRouter,
   user: userRouter,
+  wiki: wikiRouter,
 
   ping: publicProcedure.query(() => {
     return 'pong';

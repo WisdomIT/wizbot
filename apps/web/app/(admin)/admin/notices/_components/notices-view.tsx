@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { MarkdownEditor } from '@/components/custom/markdown-editor';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,6 +29,8 @@ export function NoticesView() {
   const update = useMutation(trpc.notice.update.mutationOptions());
   const remove = useMutation(trpc.notice.remove.mutationOptions());
   const [draft, setDraft] = useState<Draft | null>(null);
+  //  읽은 사람 다이얼로그 (#298)
+  const [readsOf, setReadsOf] = useState<{ id: number; title: string; body: string; popup: boolean } | null>(null);
 
   const invalidate = () => {
     void queryClient.invalidateQueries(trpc.notice.adminList.queryFilter());
@@ -44,7 +47,8 @@ export function NoticesView() {
       error: (err) => (err instanceof Error ? err.message : String(err)),
     });
 
-  if (isPending) return <Skeleton className="my-4 h-96 w-full" />;
+  if (isPending || !data) return <Skeleton className="my-4 h-96 w-full" />;
+  const { notices, streamerCount } = data;
 
   return (
     <div className="flex flex-col gap-4 py-4">
@@ -57,15 +61,16 @@ export function NoticesView() {
           <TableRow>
             <TableHead>제목</TableHead>
             <TableHead className="w-24">팝업</TableHead>
+            <TableHead className="w-28">읽음</TableHead>
             <TableHead className="w-44">작성일</TableHead>
             <TableHead className="w-24" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(data ?? []).length === 0 ? (
-            <TableRow><TableCell colSpan={4} className="py-10 text-center text-muted-foreground">공지사항이 없습니다.</TableCell></TableRow>
+          {notices.length === 0 ? (
+            <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">공지사항이 없습니다.</TableCell></TableRow>
           ) : (
-            data!.map((notice) => (
+            notices.map((notice) => (
               <TableRow key={notice.id}>
                 <TableCell>
                   {/* 작성된 공지를 실제 표시 그대로 확인 (#206) */}
@@ -74,6 +79,17 @@ export function NoticesView() {
                   </a>
                 </TableCell>
                 <TableCell>{notice.popup && <Badge variant="secondary">팝업</Badge>}</TableCell>
+                <TableCell>
+                  {/* 누르면 누가 읽었는지 (#298) — 팝업을 내릴 시점 판단 */}
+                  <button
+                    type="button"
+                    className="tabular-nums underline-offset-4 hover:underline"
+                    onClick={() => setReadsOf({ id: notice.id, title: notice.title, body: notice.body, popup: notice.popup })}
+                    title="읽은 스트리머 보기"
+                  >
+                    {notice.readCount} / {streamerCount}
+                  </button>
+                </TableCell>
                 <TableCell className="text-muted-foreground">{new Date(notice.createdAt).toLocaleString('ko-KR')}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
@@ -97,6 +113,14 @@ export function NoticesView() {
           )}
         </TableBody>
       </Table>
+
+      <NoticeReadsDialog
+        notice={readsOf}
+        onClose={() => setReadsOf(null)}
+        onDropPopup={(notice) =>
+          run(update.mutateAsync({ id: notice.id, title: notice.title, body: notice.body, popup: false }), '팝업을 내렸습니다.')
+        }
+      />
 
       <Dialog open={draft !== null} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -136,5 +160,96 @@ export function NoticesView() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+const fmtFollowers = (value: number | null) => (value === null ? '—' : value.toLocaleString('ko-KR'));
+
+/**
+ * 읽은 스트리머 / 아직 안 읽은 스트리머 (#298) — 팔로워 많은 순. 주요 스트리머가 봤는지 보고 팝업을 내린다.
+ * 어드민이 대행 콘솔에서 확인한 것도 그 스트리머의 읽음으로 남는다
+ */
+function NoticeReadsDialog({
+  notice,
+  onClose,
+  onDropPopup,
+}: {
+  notice: { id: number; title: string; body: string; popup: boolean } | null;
+  onClose: () => void;
+  onDropPopup: (notice: { id: number; title: string; body: string }) => void;
+}) {
+  const trpc = useTRPC();
+  const { data, isPending } = useQuery({ ...trpc.notice.adminReads.queryOptions({ id: notice?.id ?? 0 }), enabled: notice !== null });
+
+  return (
+    <Dialog open={notice !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>읽은 스트리머</DialogTitle>
+          <DialogDescription>{notice?.title}</DialogDescription>
+        </DialogHeader>
+        {isPending || !data ? (
+          <Skeleton className="h-48 w-full" />
+        ) : (
+          <div className="flex flex-col gap-6">
+            <ReadersTable title={`읽음 ${data.read.length}`} rows={data.read} empty="아직 읽은 스트리머가 없습니다." />
+            <ReadersTable title={`안 읽음 ${data.unread.length}`} rows={data.unread} empty="모든 스트리머가 읽었습니다." />
+          </div>
+        )}
+        {notice?.popup && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { onDropPopup(notice); onClose(); }}>
+              팝업 내리기
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReadersTable({
+  title,
+  rows,
+  empty,
+}: {
+  title: string;
+  rows: { id: number; channelId: string; channelName: string; channelImageUrl: string | null; followerCount: number | null; readAt?: string | Date }[];
+  empty: string;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">{title}</h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>채널</TableHead>
+              <TableHead className="w-24 text-right">팔로워</TableHead>
+              <TableHead className="w-44">읽은 시각</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Avatar className="size-6">
+                      <AvatarImage src={row.channelImageUrl ?? undefined} />
+                      <AvatarFallback>{row.channelName.slice(0, 2)}</AvatarFallback>
+                    </Avatar>
+                    <a href={`/admin/streamers/${row.id}/enter`} className="font-medium hover:underline">{row.channelName}</a>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{fmtFollowers(row.followerCount)}</TableCell>
+                <TableCell className="text-muted-foreground">{row.readAt ? new Date(row.readAt).toLocaleString('ko-KR') : '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   );
 }
