@@ -51,6 +51,8 @@ export interface SourcePresence {
   /** 앱은 컴퓨터 이름, OBS 는 「OBS 브라우저 소스」 */
   label: string;
   lastSeenAt: number;
+  /** 이번에 붙은 시각 — 목록 순서를 고정하는 기준(먼저 연결된 것이 위). 타임아웃 뒤 다시 붙으면 새로 찍힌다 */
+  firstSeenAt: number;
 }
 
 /**
@@ -77,7 +79,7 @@ function prune(sessions: Map<string, SourcePresence>, now: number) {
  * 하트비트 수신. changed = 세션이 새로 붙었거나(타임아웃 뒤 복귀 포함) 이름·종류가 바뀌었거나 다른 세션이 떨어져 목록이 달라진 경우 —
  * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽으므로 그때만 true
  */
-export function touchSource(userId: number, presence: Omit<SourcePresence, 'lastSeenAt'>, now = Date.now()): { changed: boolean } {
+export function touchSource(userId: number, presence: Omit<SourcePresence, 'lastSeenAt' | 'firstSeenAt'>, now = Date.now()): { changed: boolean } {
   let sessions = rooms.get(userId);
   if (!sessions) {
     sessions = new Map();
@@ -85,18 +87,18 @@ export function touchSource(userId: number, presence: Omit<SourcePresence, 'last
   }
   const before = sessions.size;
   const prev = sessions.get(presence.sessionId);
-  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now });
+  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now, firstSeenAt: prev?.firstSeenAt ?? now });
   prune(sessions, now);
   const changed = !prev || prev.source !== presence.source || prev.label !== presence.label || before !== sessions.size;
   return { changed };
 }
 
-/** 붙어 있는 세션 전부 — 최근 순 */
+/** 붙어 있는 세션 전부 — 먼저 연결된 순(같으면 ID 순). 하트비트마다 순서가 바뀌면 사용자가 헷갈린다 (#322 후속) */
 export function listSourceSessions(userId: number, now = Date.now()): SourcePresence[] {
   const sessions = rooms.get(userId);
   if (!sessions) return [];
   prune(sessions, now);
-  return [...sessions.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  return [...sessions.values()].sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.sessionId.localeCompare(b.sessionId));
 }
 
 /** 특정 세션 — 없거나 타임아웃이면 null */
