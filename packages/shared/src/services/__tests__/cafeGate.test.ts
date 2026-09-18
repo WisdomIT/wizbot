@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildGatePlan, buildImageBlock, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSizeOf, imageSrcOf, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
+import { buildGatePlan, buildImageBlock, buildImageTag, buildYoutubeTag, cafeImageUrl, findImageTags, findYoutubeTags, imageSizeOf, imageSrcOf, isSuspiciousGateRead, normalizeGateHtml, replaceImageTags } from '../../lib/cafeGate';
 import { parseYoutubeChannelPage, youtubeChannelUrl } from '../../lib/youtube';
 
 describe('카페 대문 블록 (#9 PR3)', () => {
@@ -103,5 +103,30 @@ describe('유튜브 채널 주소 해석', () => {
     expect(parseYoutubeChannelPage(html)).toEqual({ channelId: 'UCXuqSBlHAE6Xw-yeJA0Tunw', title: 'Linus & Tech Tips' });
     expect(parseYoutubeChannelPage('<meta itemprop="identifier" content="UCXuqSBlHAE6Xw-yeJA0Tunw">')).toEqual({ channelId: 'UCXuqSBlHAE6Xw-yeJA0Tunw', title: null });
     expect(parseYoutubeChannelPage('"channelId":"UCt-oJR5teQIjOAxCmIQvcgA"')).toBeNull(); // 본문 JSON 은 안 믿는다
+  });
+});
+
+describe('isSuspiciousGateRead — 잘린 읽기 판정 (#318)', () => {
+  const marker = '<p><img src="https://bot.test/cafe/d9c571e0ecae37fec31711735f95c8f4.png?v=3" alt="chzzk-automation" width="836" height="300"></p>';
+  const filler = '<p>글</p>'.repeat(100);
+  const known = filler + marker;
+
+  it('알고 있던 대문이 없으면 판정할 수 없다', () => {
+    expect(isSuspiciousGateRead('', null)).toBe(false);
+    expect(isSuspiciousGateRead('', '   ')).toBe(false);
+  });
+  it('표식이 있던 대문에서 표식이 사라지고 길이가 60% 미만이면 의심', () => {
+    expect(isSuspiciousGateRead('', known)).toBe(true);
+    expect(isSuspiciousGateRead(filler.slice(0, Math.floor(filler.length / 2)), known)).toBe(true);
+  });
+  it('길이가 60% 이상이면 표식이 없어도 진짜 삭제로 본다 (연속 판정에 맡긴다)', () => {
+    expect(isSuspiciousGateRead(filler, known)).toBe(false);
+  });
+  it('짧아졌어도 표식이 남아 있으면 의심하지 않는다 — 스트리머가 대문을 줄인 것', () => {
+    expect(isSuspiciousGateRead('<p>x</p>' + marker, known)).toBe(false);
+  });
+  it('표식이 없던 대문(첫 삽입 전)은 길이 급감만으로 의심', () => {
+    expect(isSuspiciousGateRead('<p>x</p>', filler)).toBe(true);
+    expect(isSuspiciousGateRead(filler.slice(0, filler.length - 10), filler)).toBe(false);
   });
 });

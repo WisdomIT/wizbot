@@ -66,6 +66,26 @@ async function notifyAdminsOfSessionExpiry(prisma: PrismaClient, message: string
   }
 }
 
+/** 자동 복구 포기 알림 (#318) — 10회 다시 불러와도 표식이 없다. 스트리머가 위치를 다시 지정해야 하므로 운영자가 안내한다 */
+function notifyAdminsOfGaveUp(prisma: PrismaClient, info: { channelName: string; cafeName: string | null; attempts: number }) {
+  const site = process.env.PUBLIC_SITE_URL ?? '';
+  return notifyService
+    .notifyAdmins(prisma, 'ERROR', {
+      title: `카페 대문 자동 복구 실패: ${info.channelName} → ${info.cafeName ?? '카페'}`,
+      lines: [
+        `${info.channelName} 채널의 카페 대문에서 방송 상태 이미지가 사라진 뒤 ${info.attempts}회 다시 불러왔지만 표식을 찾지 못해 자동 복구를 멈췄습니다.`,
+        '스트리머가 연동 설정에서 위치를 다시 지정해야 합니다. 최근 이벤트는 연동 설정(대행 콘솔)에서 볼 수 있습니다.',
+      ],
+      link: { label: '확인', url: `${site}/admin/streamers` },
+      fields: [
+        { name: '채널', value: info.channelName },
+        { name: '카페', value: info.cafeName ?? '' },
+        { name: '시도', value: `${info.attempts}회` },
+      ],
+    })
+    .catch(() => null);
+}
+
 /** 네이버 카페 연동 (#9) */
 export const cafeRouter = t.router({
   /* ── 스트리머 ── */
@@ -103,6 +123,8 @@ export const cafeRouter = t.router({
     .mutation(({ ctx, input }) => cafeService.savePicks(ctx.prisma, ctx.user.id, input)),
   /** 「지금 반영」 (#294) — 다음 폴링에 방송 상태를 다시 판정해 대문을 갱신한다 */
   requestGateRefresh: streamerProcedure.mutation(({ ctx }) => cafeService.requestGateRefresh(ctx.prisma, ctx.user.id)),
+  /** 최근 판정 이벤트 (#318) — 사라짐·의심 읽기·자동 복구 등. 대행 콘솔에서 어드민도 본다 */
+  events: streamerProcedure.query(({ ctx }) => cafeService.listEvents(ctx.prisma, ctx.user.id)),
 
   /* ── 대문 이미지 레이아웃·배경 (#9 PR2) ── */
   getLayout: streamerProcedure.query(({ ctx }) => cafeService.getLayout(ctx.prisma, ctx.user.id)),
@@ -159,17 +181,25 @@ export const cafeRouter = t.router({
           .nullable(),
       }),
     )
-    .mutation(({ ctx, input }) => cafeService.completeGateFetch(ctx.prisma, input.id, { html: input.html, render: input.render })),
+    .mutation(async ({ ctx, input }) => {
+      const result = await cafeService.completeGateFetch(ctx.prisma, input.id, { html: input.html, render: input.render });
+      if (result.gaveUp) void notifyAdminsOfGaveUp(ctx.prisma, result.gaveUp);
+      return result;
+    }),
   completeGateSave: internalProcedure
     .input(
       z.object({ id: z.number() }).and(
         z.discriminatedUnion('ok', [
           z.object({ ok: z.literal(true), html: z.string().max(2 * 1024 * 1024), picks: gatePicksSchema, render: gateRenderSchema.nullable() }),
-          z.object({ ok: z.literal(false), message: z.string().max(500), stale: z.boolean().optional() }),
+          z.object({ ok: z.literal(false), message: z.string().max(500), stale: z.boolean().optional(), suspicious: z.boolean().optional(), htmlLength: z.number().int().optional() }),
         ]),
       ),
     )
-    .mutation(({ ctx, input }) => cafeService.completeGateSave(ctx.prisma, input.id, input)),
+    .mutation(async ({ ctx, input }) => {
+      const result = await cafeService.completeGateSave(ctx.prisma, input.id, input);
+      if (result.gaveUp) void notifyAdminsOfGaveUp(ctx.prisma, result.gaveUp);
+      return result;
+    }),
   /* ── 워커: 방송 상태 폴링·대문 갱신 (#9 PR3b) ── */
   activeIntegrations: internalProcedure.query(({ ctx }) => cafeService.listActive(ctx.prisma)),
   evaluateLive: internalProcedure
@@ -180,7 +210,14 @@ export const cafeRouter = t.router({
       z.object({ id: z.number() }).and(
         z.discriminatedUnion('ok', [
           z.object({ ok: z.literal(true), serial: z.number().int(), html: z.string().max(2 * 1024 * 1024) }),
-          z.object({ ok: z.literal(false), message: z.string().max(500), missing: z.boolean().optional(), html: z.string().max(2 * 1024 * 1024).optional() }),
+          z.object({
+            ok: z.literal(false),
+            message: z.string().max(500),
+            missing: z.boolean().optional(),
+            suspicious: z.boolean().optional(),
+            html: z.string().max(2 * 1024 * 1024).optional(),
+            htmlLength: z.number().int().optional(),
+          }),
         ]),
       ),
     )

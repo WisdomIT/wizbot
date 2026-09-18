@@ -737,6 +737,26 @@ enum CafeLinkStatus {
 }
 
 /// 워커에게 시키는 일. 처리하면 null 로 돌아온다
+/// 카페 연동 이벤트 종류 (#318)
+enum CafeEventKind {
+  /// 폴링 갱신에서 표식을 못 찾음 (streak 진행 중)
+  MISSING
+  /// 3주기 연속 사라짐 → 중지·위치 초기화
+  STOPPED
+  /// 읽은 대문이 의심스러움(표식 없음·길이 급감) → 이번 주기 건너뜀
+  SUSPICIOUS_READ
+  /// 반영 중 대문이 바뀌어 위치 초기화
+  STALE
+  /// 자동 재불러오기 시도
+  AUTO_REFETCH
+  /// 표식을 다시 찾아 동작 재개
+  RECOVERED
+  /// 자동 복구 10회 실패 → 포기
+  GAVE_UP
+  /// 대문 저장 실패
+  SAVE_FAILED
+}
+
 enum CafeAction {
   VERIFY
   /// 대문 HTML 읽어오기 — 스트리머가 삽입 위치를 고르기 위해
@@ -801,10 +821,32 @@ model CafeIntegration {
   gateHeight       Int?
   /// 스트리머가 고른 자리 — lib/cafeGate.ts 의 GatePicks. 설정이 미완이면 경로만 들고 있다가 완료되면 반영
   gatePicks        Json?
+  /// 폴링 갱신에서 표식(<img>)을 연속으로 못 찾은 주기 수 (#318) — 3주기 연속일 때만 중지한다. 찾으면 0
+  missingStreak    Int            @default(0)
+  /// 위치가 자동으로(사라짐·stale) 풀렸을 때의 자동 재불러오기 (#318) — 시도 횟수와 다음 시도 시각. 사용자가 직접 지정하면 0/null
+  autoRefetchCount Int            @default(0)
+  nextRefetchAt    DateTime?      @db.DateTime(6)
   updatedAt        DateTime       @updatedAt @db.DateTime(6)
 
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   assets           CafeAsset[]
+  events           CafeIntegrationEvent[]
+}
+
+/// 카페 연동의 판정 이벤트 (#318) — 워커 컨테이너가 재생성돼 로그가 사라져도 원인을 볼 수 있게.
+/// 사라짐·의심 읽기·stale·자동 재불러오기·복구·저장 실패. 연동당 최근 100건만 남긴다
+model CafeIntegrationEvent {
+  id            Int             @id @default(autoincrement())
+  integrationId Int
+  kind          CafeEventKind
+  message       String          @db.VarChar(500)
+  /// 그 시점에 읽은 대문 HTML 길이 — 잘린 읽기 판별용
+  htmlLength    Int?
+  createdAt     DateTime        @default(now()) @db.DateTime(6)
+
+  integration   CafeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
 }
 
 /// 대문 이미지 배경 (#9 PR2). 파일이 아니라 DB — web(렌더)·api(업로드)가 공유 볼륨 없이 접근한다.
