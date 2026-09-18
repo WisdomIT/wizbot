@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
-import { getSourceSession, listSourceSessions, publishSongEvent, SOURCE_TIMEOUT_MS, touchSource } from './songEvents';
+import { getSourceSession, isConnected, listSourceSessions, publishSongEvent, SOURCE_TIMEOUT_MS, touchSource } from './songEvents';
 import * as songFavoriteService from './songFavorite';
 
 /** 재생 제어·송출 소스 중재 (#5 2단계) */
@@ -492,10 +492,10 @@ export async function touchSourceSession(prisma: PrismaClient, userId: number, i
   return { active: activeId === input.sessionId, adopted };
 }
 
-/** 스트리머가 이 세션을 송출 소스로 고른다 — 지금 붙어 있는 세션이어야 한다 */
+/** 스트리머가 이 세션을 송출 소스로 고른다 — 목록에 있는(끊긴 지 1시간 안) 세션이면 된다. 꺼진 앱을 미리 골라두면 켜질 때 바로 소리가 난다 */
 export async function selectSource(prisma: PrismaClient, userId: number, sessionId: string) {
   const session = getSourceSession(userId, sessionId);
-  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않습니다. 켜져 있는지 확인해주세요.');
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 목록에 없습니다. 켜서 다시 연결해주세요.');
   const setting = await prisma.userSetting.findUnique({ where: { userId }, select: { id: true } });
   if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
   await prisma.userSetting.update({
@@ -518,8 +518,8 @@ export async function clearSourceSelection(prisma: PrismaClient, userId: number)
 
 /** 「찾기」 — 그 창이 스스로를 드러낸다(빨간 테두리·띵동·작업 표시줄 깜빡임) */
 export function locateSource(userId: number, sessionId: string) {
-  const session = getSourceSession(userId, sessionId);
-  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않습니다.');
+  const session = getSourceSession(userId, sessionId, { connectedOnly: true });
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않아 신호를 받을 수 없습니다.');
   publishSongEvent(userId, { type: 'locate', sessionId });
   return { ok: true as const };
 }
@@ -568,19 +568,20 @@ export async function getSourceStatus(prisma: PrismaClient, userId: number, now 
     selectedSessionId: setting.songSourceSessionId,
     sourceType: setting.songSourceType,
     sourceLabel: setting.songSourceLabel,
-    /** 고른 세션이 지금 붙어 있는가 */
-    online: selected !== null,
+    /** 고른 세션이 지금 붙어 있는가 (목록엔 1시간 남아 있어도 15초 안에 신호가 없으면 끊김) */
+    online: selected !== null && isConnected(selected, now),
     /**
      * 「몇 ms 전에 봤는지」 (#319) — 컨트롤러가 자기 시계로 lastSeenAt 을 빼면 PC 시계 오차만큼 틀려서
      * 「연결됨 ↔ 연결 안 됨」이 깜빡였다. 응답을 받은 시각에 이 값을 더해 세면 시계가 달라도 맞다
      */
     lastSeenAgoMs: selected ? now - selected.lastSeenAt : null,
-    /** 붙어 있는 세션 전부 — 컨트롤러가 목록으로 보여주고 하나를 고른다 (#322) */
+    /** 보존 중인 세션 전부(끊긴 것도 1시간) — 컨트롤러가 목록으로 보여주고 하나를 고른다 (#322) */
     sessions: sessions.map((s) => ({
       sessionId: s.sessionId,
       source: s.source as 'OBS' | 'ELECTRON',
       label: s.label,
       active: s.sessionId === setting.songSourceSessionId,
+      connected: isConnected(s, now),
       lastSeenAgoMs: now - s.lastSeenAt,
     })),
     timeoutMs: SOURCE_TIMEOUT_MS,
