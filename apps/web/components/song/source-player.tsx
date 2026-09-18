@@ -369,6 +369,8 @@ export function SourcePlayer({
             boxShadow: notice === 'locate' ? '0 0 40px 10px rgba(239,68,68,0.8), inset 0 0 40px 10px rgba(239,68,68,0.5)' : '0 0 40px 10px rgba(34,197,94,0.7), inset 0 0 40px 10px rgba(34,197,94,0.4)',
             animation: 'wizbot-locate-pulse 0.8s ease-in-out infinite alternate',
             pointerEvents: 'none',
+            //  흐르는 제목 자막(뒤 형제)보다 위에 — 아니면 제목이 안내를 가린다
+            zIndex: 10,
           }}
         >
           <style
@@ -394,7 +396,10 @@ export function SourcePlayer({
         </div>
       )}
 
-      <SongOverlay now={now} setting={overlay} fontFamily={fontFamily} />
+      {/* 안내가 떠 있는 동안 자막은 숨긴다 — 같은 자리에 겹치면 둘 다 안 읽힌다 */}
+      <div style={{ position: 'absolute', inset: 0, visibility: notice ? 'hidden' : 'visible' }}>
+        <SongOverlay now={now} setting={overlay} fontFamily={fontFamily} />
+      </div>
     </div>
   );
 }

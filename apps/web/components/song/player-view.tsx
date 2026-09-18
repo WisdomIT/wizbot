@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eraser, GripVertical, Heart, Minimize2, Play, PlayCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -77,15 +78,9 @@ export function PlayerView() {
   );
 
   const shell = useAppShell();
-  /** 앱 안 안내 (#322) — 「찾기」·「송출 소스로 설정됨」. 미니는 화면을 덮는 오버레이, 큰 창은 toast */
+  /** 앱 안 안내 (#322) — 「찾기」·「송출 소스로 설정됨」. 미니·큰 창 모두 창 전체를 덮는 오버레이(toast 는 눈에 안 띄었다) */
   const [appNotice, setAppNotice] = useState<string | null>(null);
-  const notifyApp = useCallback(
-    (text: string) => {
-      if (shell.mode === 'mini') setAppNotice(text);
-      else toast(text, { duration: 5000 });
-    },
-    [shell.mode],
-  );
+  const notifyApp = useCallback((text: string) => setAppNotice(text), []);
 
   useSongEvents((event) => {
     // 「찾기」 (#322) — 이 앱이면 작업 표시줄·독을 깜빡이고 띵동 3회 + 안내
@@ -284,6 +279,7 @@ export function PlayerView() {
           : 'flex flex-col gap-4 py-4'
       }
     >
+      {appNotice && <AppNoticeOverlay text={appNotice} />}
       {shell.isApp && (
         <AppTitleBar
           platform={shell.platform}
@@ -465,12 +461,27 @@ const FAIL_STREAK_LIMIT = 3;
 /** 컨트롤러 상태 재조회 주기 — SSE 가 새는 경우의 백스톱 */
 const STATE_REFETCH_MS = 10_000;
 
-/** 미니 플레이어 위를 덮는 안내 (#322) — 「찾기」·「송출 소스로 설정됨」. 창이 작아 toast 대신 전체를 덮는다 */
+/**
+ * 앱 창 전체를 덮는 안내 (#322) — 「찾기」·「송출 소스로 설정됨」.
+ * body 에 포털로 붙인다(레이아웃의 overflow-hidden·transform 에 잘리지 않게). 미니를 1920×120 처럼 아주 넓고 낮게 쓰는 경우가 많아
+ * 글자 크기는 창 높이·폭 양쪽에 맞추고(clamp) 테두리는 안쪽 그림자로 두꺼운 빨간 띠를 그린다 — 얇은 링은 잘려 보였다
+ */
 function AppNoticeOverlay({ text }: { text: string }) {
-  return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-4 text-center text-base font-semibold ring-4 ring-inset ring-red-500">
-      {text}
-    </div>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div
+      className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-background/90 text-center font-bold"
+      style={{
+        boxShadow: 'inset 0 0 0 max(6px, min(1.2vh, 1.2vw)) #ef4444, inset 0 0 40px 8px rgba(239,68,68,0.55)',
+        fontSize: 'clamp(18px, min(45vh, 4.5vw), 64px)',
+        padding: 'min(4vh, 4vw)',
+        animation: 'wizbot-app-notice-pulse 0.8s ease-in-out infinite alternate',
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: '@keyframes wizbot-app-notice-pulse { from { opacity: 0.7; } to { opacity: 1; } }' }} />
+      <span className="leading-tight">{text}</span>
+    </div>,
+    document.body,
   );
 }
 

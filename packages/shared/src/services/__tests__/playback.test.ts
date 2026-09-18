@@ -21,7 +21,7 @@ import {
   togglePlay,
   touchSourceSession,
 } from '../playback';
-import { clearSource, listSourceSessions, SOURCE_TIMEOUT_MS, subscribeSongEvents, touchSource } from '../songEvents';
+import { clearSource, listSourceSessions, SESSION_RETENTION_MS, SOURCE_TIMEOUT_MS, subscribeSongEvents, touchSource } from '../songEvents';
 
 /** 프레즌스만 건드리는 하트비트 (DB 없이) */
 function touchSourceSessionSync(sessionId: string, now: number) {
@@ -405,6 +405,20 @@ describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () =>
     unsubscribe();
   });
 
+  it('끊긴 세션은 골라둘 수 있지만(켜지면 바로 소리) 찾기 신호는 보낼 수 없다', async () => {
+    vi.useFakeTimers();
+    try {
+      const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
+      await expect(selectSource(prisma, USER_ID, 'app-1')).resolves.toMatchObject({ sessionId: 'app-1' });
+      expect(() => locateSource(USER_ID, 'app-1')).toThrowError(/연결돼 있지 않아/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', async () => {
     vi.useFakeTimers();
     try {
@@ -415,7 +429,11 @@ describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () =>
       const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
 
       vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
-      expect((await getSourceStatus(prisma, USER_ID)).online).toBe(false);
+      const offline = await getSourceStatus(prisma, USER_ID);
+      expect(offline.online).toBe(false);
+      //  끊겨도 1시간은 목록에 남아 「신호 없음」으로 보인다 (#322 후속)
+      expect(offline.sessions.map((x) => [x.sessionId, x.connected])).toEqual([['s1', false]]);
+      vi.advanceTimersByTime(SESSION_RETENTION_MS);
       expect(listSourceSessions(USER_ID)).toEqual([]);
 
       // 끊겼다가 같은 세션으로 돌아와도 새 연결이므로 알린다
@@ -451,7 +469,7 @@ describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () =>
     const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
     expect(locateSource(USER_ID, 's1')).toEqual({ ok: true });
     expect(events).toEqual([{ type: 'locate', sessionId: 's1' }]);
-    expect(() => locateSource(USER_ID, 'nope')).toThrowError(/연결돼 있지 않습니다/);
+    expect(() => locateSource(USER_ID, 'nope')).toThrowError(/연결돼 있지 않아/);
     unsubscribe();
   });
 

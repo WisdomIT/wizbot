@@ -61,6 +61,16 @@ export interface SourcePresence {
  * (한 번쯤 늦는다고 「연결 안 됨」이 깜빡이지 않게).
  */
 export const SOURCE_TIMEOUT_MS = 15_000;
+/**
+ * 신호가 끊긴 세션도 이만큼은 목록에 남긴다 (#322 후속) — 꺼진 앱·닫힌 OBS 를 사용자가 목록에서 알아보고(「신호 없음 · N분 전」)
+ * 다시 켜질 것을 기대해 미리 송출 소스로 골라둘 수 있게. 그 뒤엔 지운다 (API 재시작이면 어차피 비운다)
+ */
+export const SESSION_RETENTION_MS = 60 * 60 * 1000;
+
+/** 지금 붙어 있는가 — 마지막 하트비트가 타임아웃 안 */
+export function isConnected(p: { lastSeenAt: number }, now = Date.now()): boolean {
+  return now - p.lastSeenAt <= SOURCE_TIMEOUT_MS;
+}
 
 /**
  * 스트리머당 붙어 있는 송출 세션 전부. 어느 세션이 소리를 내는지는 여기서 정하지 않는다 —
@@ -71,12 +81,12 @@ const rooms = new Map<number, Map<string, SourcePresence>>();
 
 function prune(sessions: Map<string, SourcePresence>, now: number) {
   for (const [id, p] of sessions) {
-    if (now - p.lastSeenAt > SOURCE_TIMEOUT_MS) sessions.delete(id);
+    if (now - p.lastSeenAt > SESSION_RETENTION_MS) sessions.delete(id);
   }
 }
 
 /**
- * 하트비트 수신. changed = 세션이 새로 붙었거나(타임아웃 뒤 복귀 포함) 이름·종류가 바뀌었거나 다른 세션이 떨어져 목록이 달라진 경우 —
+ * 하트비트 수신. changed = 세션이 새로 붙었거나(끊겼다 복귀 포함) 이름·종류가 바뀌었거나 목록이 달라진 경우 —
  * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽으므로 그때만 true
  */
 export function touchSource(userId: number, presence: Omit<SourcePresence, 'lastSeenAt' | 'firstSeenAt'>, now = Date.now()): { changed: boolean } {
@@ -87,13 +97,15 @@ export function touchSource(userId: number, presence: Omit<SourcePresence, 'last
   }
   const before = sessions.size;
   const prev = sessions.get(presence.sessionId);
-  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now, firstSeenAt: prev?.firstSeenAt ?? now });
+  //  끊겨 있다 돌아온 세션은 새로 붙은 것처럼 맨 아래로(firstSeenAt 갱신) + 알림
+  const returned = !!prev && !isConnected(prev, now);
+  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now, firstSeenAt: prev && !returned ? prev.firstSeenAt : now });
   prune(sessions, now);
-  const changed = !prev || prev.source !== presence.source || prev.label !== presence.label || before !== sessions.size;
+  const changed = !prev || returned || prev.source !== presence.source || prev.label !== presence.label || before !== sessions.size;
   return { changed };
 }
 
-/** 붙어 있는 세션 전부 — 먼저 연결된 순(같으면 ID 순). 하트비트마다 순서가 바뀌면 사용자가 헷갈린다 (#322 후속) */
+/** 보존 중인 세션 전부(끊긴 것 포함) — 먼저 연결된 순(같으면 ID 순). 하트비트마다 순서가 바뀌면 사용자가 헷갈린다 (#322 후속) */
 export function listSourceSessions(userId: number, now = Date.now()): SourcePresence[] {
   const sessions = rooms.get(userId);
   if (!sessions) return [];
@@ -101,12 +113,14 @@ export function listSourceSessions(userId: number, now = Date.now()): SourcePres
   return [...sessions.values()].sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.sessionId.localeCompare(b.sessionId));
 }
 
-/** 특정 세션 — 없거나 타임아웃이면 null */
-export function getSourceSession(userId: number, sessionId: string, now = Date.now()): SourcePresence | null {
+/** 특정 세션 — 보존 목록에 없으면 null. connectedOnly 면 지금 붙어 있는 것만 */
+export function getSourceSession(userId: number, sessionId: string, opts: { connectedOnly?: boolean } = {}, now = Date.now()): SourcePresence | null {
   const sessions = rooms.get(userId);
   if (!sessions) return null;
   prune(sessions, now);
-  return sessions.get(sessionId) ?? null;
+  const found = sessions.get(sessionId) ?? null;
+  if (found && opts.connectedOnly && !isConnected(found, now)) return null;
+  return found;
 }
 
 export function clearSource(userId: number) {
