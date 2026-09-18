@@ -21,7 +21,12 @@ import {
   togglePlay,
   touchSourceSession,
 } from '../playback';
-import { clearSource, listSourceSessions, SOURCE_TIMEOUT_MS, subscribeSongEvents } from '../songEvents';
+import { clearSource, listSourceSessions, SOURCE_TIMEOUT_MS, subscribeSongEvents, touchSource } from '../songEvents';
+
+/** 프레즌스만 건드리는 하트비트 (DB 없이) */
+function touchSourceSessionSync(sessionId: string, now: number) {
+  touchSource(USER_ID, { sessionId, source: 'OBS', label: sessionId }, now);
+}
 
 const USER_ID = 1;
 
@@ -448,6 +453,20 @@ describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () =>
     expect(events).toEqual([{ type: 'locate', sessionId: 's1' }]);
     expect(() => locateSource(USER_ID, 'nope')).toThrowError(/연결돼 있지 않습니다/);
     unsubscribe();
+  });
+
+  it('세션 목록 순서는 먼저 연결된 순으로 고정 — 하트비트가 와도 바뀌지 않는다', () => {
+    vi.useFakeTimers();
+    try {
+      const t = Date.now();
+      touchSourceSessionSync('b', t);
+      touchSourceSessionSync('a', t + 1000);
+      touchSourceSessionSync('c', t + 2000);
+      touchSourceSessionSync('b', t + 3000); // 늦은 하트비트가 와도 b 는 여전히 맨 위
+      expect(listSourceSessions(USER_ID, t + 3000).map((s) => s.sessionId)).toEqual(['b', 'a', 'c']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reportPlaying — 현재 곡이면 응답 시각을 찍고 playback 이벤트, 지난 곡이면 무시', async () => {

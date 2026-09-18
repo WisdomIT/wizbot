@@ -344,6 +344,16 @@ export function SourcePlayer({
         overflow: 'hidden',
       }}
     >
+      {/*
+        영상은 보이지 않게 두고 소리만 내보낸다 (크기는 음질 때문에 유지).
+        ⚠ YouTube IFrame API 는 #obs-player div 를 <iframe> 으로 **교체**한다 — React 가 아는 노드가 DOM 에서 사라진다.
+        그 div 의 형제로 무언가를 나중에 끼우면 insertBefore 가 NotFoundError 로 죽어 페이지 전체가 내려간다(실측 #322 — 찾기·설정됨 안내가 뜨는 순간
+        하트비트까지 멈춰 목록에서 사라졌다). React 만 아는 래퍼로 감싸 교체가 래퍼 안에서만 일어나게 한다
+      */}
+      <div style={{ position: 'absolute', top: 0, left: 0, width: PLAYER_WIDTH, height: PLAYER_HEIGHT, opacity: 0, pointerEvents: 'none' }}>
+        <div id="obs-player" style={{ width: PLAYER_WIDTH, height: PLAYER_HEIGHT }} />
+      </div>
+
       {/* 찾기·설정됨 안내 (#322) — OBS 미리보기에서 어느 소스인지 바로 알아볼 수 있게 화면 전체 테두리를 빨갛게 빛낸다 */}
       {notice && (
         <div
@@ -383,20 +393,6 @@ export function SourcePlayer({
           </div>
         </div>
       )}
-
-      {/* 영상은 보이지 않게 두고 소리만 내보낸다 (크기는 음질 때문에 유지) */}
-      <div
-        id="obs-player"
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: PLAYER_WIDTH,
-          height: PLAYER_HEIGHT,
-          opacity: 0,
-          pointerEvents: 'none',
-        }}
-      />
 
       <SongOverlay now={now} setting={overlay} fontFamily={fontFamily} />
     </div>

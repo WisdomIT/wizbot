@@ -28,6 +28,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
 import { ShortcutInput } from './shortcut-input';
+import { SourceSection, type SourceSession, type SourceStatus } from './source-section';
 
 export interface SongSettings {
   /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
@@ -50,6 +51,7 @@ const SHORTCUT_ACTIONS = [
 
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
+  source,
   settings,
   onChangeActive,
   onChangeRequestPolicy,
@@ -62,6 +64,16 @@ export function SettingsDialog({
   youtube,
   isApp = false,
 }: {
+  /** 송출 소스 (#322) — 모달 우측. 링크·연결된 세션 목록(찾기·설정) */
+  source: {
+    status: SourceStatus;
+    receivedAt: number;
+    mySessionId: string | null;
+    onSelect: (session: SourceSession) => void;
+    onLocate: (session: SourceSession) => void;
+    onClearSelection: () => void;
+    onRegenerate: () => void;
+  };
   settings: SongSettings;
   onChangeActive: (active: boolean) => void;
   onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
@@ -86,15 +98,17 @@ export function SettingsDialog({
           <Settings />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>노래 설정</DialogTitle>
           <DialogDescription>
-            자막, 신청 제한, 자동 재생, 시청자 공개를 여기에서 관리합니다. 송출 소스(앱·OBS)는 플레이어 상단의 「송출」에서 고릅니다.
+            왼쪽은 노래 기능 설정, 오른쪽은 소리를 내는 송출 소스(앱·OBS 브라우저 소스)입니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-6">
+        {/* 가로 2분할 — 좁은 화면에서는 세로로 쌓인다 */}
+        <div className="grid gap-6 md:grid-cols-2 md:divide-x">
+        <div className="flex flex-col gap-6 md:pr-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col">
               <Label htmlFor="setting-active">노래 신청 기능</Label>
@@ -253,6 +267,20 @@ export function SettingsDialog({
 
             </>
           )}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <Label>송출 소스</Label>
+          <SourceSection
+            source={source.status}
+            receivedAt={source.receivedAt}
+            mySessionId={source.mySessionId}
+            onSelect={source.onSelect}
+            onLocate={source.onLocate}
+            onClearSelection={source.onClearSelection}
+            onRegenerate={source.onRegenerate}
+          />
+        </div>
         </div>
       </DialogContent>
     </Dialog>

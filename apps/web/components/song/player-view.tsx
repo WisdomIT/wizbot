@@ -19,7 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AppWindow, Copy, Download, Eraser, Eye, EyeOff, GripVertical, Heart, Minimize2, MonitorSpeaker, Play, PlayCircle, RadioTower, RefreshCw, Trash2 } from 'lucide-react';
+import { Eraser, GripVertical, Heart, Minimize2, Play, PlayCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -32,14 +32,6 @@ import { formatTime, SongPlayer, usePlayerPosition } from '@/components/song/son
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -57,7 +49,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { playDing } from '@/lib/ding';
 import { useAppShell } from '@/src/hooks/use-app-shell';
 import { useDefaultFavorite } from '@/src/hooks/use-default-favorite';
@@ -65,6 +56,7 @@ import { useSongEvents } from '@/src/hooks/use-song-events';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { SettingsDialog } from './settings-dialog';
+import { SourceStatusLine } from './source-section';
 
 /**
  * 뮤직플레이어 = 컨트롤러 (#5 #97).
@@ -95,7 +87,7 @@ export function PlayerView() {
     [shell.mode],
   );
 
-  const { connected } = useSongEvents((event) => {
+  useSongEvents((event) => {
     // 「찾기」 (#322) — 이 앱이면 작업 표시줄·독을 깜빡이고 띵동 3회 + 안내
     if (event.type === 'locate') {
       if (shell.sessionId && event.sessionId === shell.sessionId) {
@@ -320,27 +312,7 @@ export function PlayerView() {
       )}
 
       <div className={shell.isApp ? 'flex flex-col gap-2 px-4 pt-3' : 'flex flex-col gap-2'}>
-        <SourcePanel
-          source={source}
-          playback={playback}
-          receivedAt={dataUpdatedAt}
-          eventsConnected={connected}
-          mySessionId={shell.sessionId}
-          onSelect={(session) =>
-            run(
-              selectSource.mutateAsync({ sessionId: session.sessionId }),
-              `${SESSION_LABEL[session.source]} · ${session.label} 을(를) 송출 소스로 설정했습니다.`,
-            )
-          }
-          onLocate={(session) => run(locateSource.mutateAsync({ sessionId: session.sessionId }), `${SESSION_LABEL[session.source]} · ${session.label} 에 찾기 신호를 보냈습니다.`)}
-          onClearSelection={() => run(clearSourceSelection.mutateAsync(), '송출 소스 선택을 해제했습니다. 소리가 나지 않습니다.')}
-          onRegenerate={() =>
-            run(
-              regenerate.mutateAsync({ kind: 'source' }),
-              '주소를 새로 발급했습니다. OBS 에 다시 붙여넣으세요.',
-            )
-          }
-        />
+        <SourceStatusLine source={source} playback={playback} receivedAt={dataUpdatedAt} />
         {playback.status === 'STOPPED' && playback.failStreak >= FAIL_STREAK_LIMIT && (
           <HaltedBanner reason={playback.lastFailReason} streak={playback.failStreak} onResume={playerControls.onPlay} />
         )}
@@ -375,6 +347,27 @@ export function PlayerView() {
               )}
               <SettingsDialog
                 isApp={shell.isApp}
+                source={{
+                  status: source,
+                  receivedAt: dataUpdatedAt,
+                  mySessionId: shell.sessionId,
+                  onSelect: (session) =>
+                    run(
+                      selectSource.mutateAsync({ sessionId: session.sessionId }),
+                      session.source === 'ELECTRON' ? `${session.label} 앱을 송출 소스로 설정했습니다.` : 'OBS 브라우저 소스를 송출 소스로 설정했습니다.',
+                    ),
+                  onLocate: (session) =>
+                    run(
+                      locateSource.mutateAsync({ sessionId: session.sessionId }),
+                      session.source === 'ELECTRON' ? `${session.label} 앱에 찾기 신호를 보냈습니다.` : 'OBS 브라우저 소스에 찾기 신호를 보냈습니다.',
+                    ),
+                  onClearSelection: () => run(clearSourceSelection.mutateAsync(), '송출 소스 선택을 해제했습니다. 소리가 나지 않습니다.'),
+                  onRegenerate: () =>
+                    run(
+                      regenerate.mutateAsync({ kind: 'source' }),
+                      '주소를 새로 발급했습니다. OBS 에 다시 붙여넣으세요.',
+                    ),
+                }}
                 settings={{
                   active: data.active,
                   requestPolicy: data.requestPolicy,
@@ -467,247 +460,10 @@ export function PlayerView() {
   );
 }
 
-/** 컨트롤러 상태 재조회 주기 — 연결 판정의 여유 시간에도 쓴다 */
-const STATE_REFETCH_MS = 10_000;
 /** 서버 playbackService.FAIL_STREAK_LIMIT 과 같다 (#319) */
 const FAIL_STREAK_LIMIT = 3;
-/** 재생을 눌렀는데 이만큼 지나도 송출 세션의 응답이 없으면 경고 (#322) */
-const NO_RESPONSE_MS = 12_000;
-
-const SESSION_LABEL = { OBS: 'OBS 브라우저 소스', ELECTRON: '플레이어 앱' } as const;
-
-type SourceSession = { sessionId: string; source: 'OBS' | 'ELECTRON'; label: string; active: boolean; lastSeenAgoMs: number };
-
-/**
- * 송출 패널 (#322).
- * 위: 앱 내려받기 · OBS 브라우저 소스 주소(둘 다 항상). 아래: 지금 연결된 세션 목록 — 하나를 골라 송출 소스로 삼고, 「찾기」로 어느 창인지 확인한다.
- *
- * 연결 판정: 예전엔 서버의 lastSeenAt 을 **이 PC 시계**로 빼서 시계 오차만큼 틀렸고, 조회 직전 값(최대 5초 묵음)에 재조회 대기 10초가 더해져
- * 타임아웃 15초 경계에 걸리면 「연결됨 ↔ 연결 안 됨」이 깜빡였다 (#319). 지금은 서버가 준 「몇 ms 전」에 응답 수신 후 경과 시간을 더해 세고,
- * 여유는 타임아웃 + 재조회 주기 — 하트비트가 정말 끊기면 늦어도 25초 안에 「연결 안 됨」이 된다.
- */
-function SourcePanel({
-  source,
-  playback,
-  receivedAt,
-  eventsConnected,
-  mySessionId,
-  onSelect,
-  onLocate,
-  onClearSelection,
-  onRegenerate,
-}: {
-  source: {
-    selectedSessionId: string | null;
-    sourceType: 'NONE' | 'OBS' | 'ELECTRON';
-    sourceLabel: string | null;
-    online: boolean;
-    lastSeenAgoMs: number | null;
-    sessions: SourceSession[];
-    timeoutMs: number;
-    sourceToken: string | null;
-  };
-  playback: { status: 'PLAYING' | 'PAUSED' | 'STOPPED'; playRequestedAt: string | Date | null; sourceAckAt: string | Date | null };
-  /** getState 응답을 받은 시각 (react-query dataUpdatedAt) */
-  receivedAt: number;
-  /** 실시간(SSE) 연결이 살아 있는지 (#319) */
-  eventsConnected: boolean;
-  /** 앱 안이면 이 앱의 세션 ID — 목록에서 「이 앱」으로 표시 */
-  mySessionId: string | null;
-  onSelect: (session: SourceSession) => void;
-  onLocate: (session: SourceSession) => void;
-  onClearSelection: () => void;
-  onRegenerate: () => void;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const sinceReceived = Math.max(0, now - receivedAt);
-  const alive = (agoMs: number | null) => agoMs !== null && agoMs + sinceReceived <= source.timeoutMs + STATE_REFETCH_MS;
-  const online = source.online && alive(source.lastSeenAgoMs);
-  const sessions = source.sessions.filter((s) => alive(s.lastSeenAgoMs));
-  const selected = source.selectedSessionId ? sessions.find((s) => s.sessionId === source.selectedSessionId) ?? null : null;
-
-  //  재생을 눌렀는데 고른 세션이 켜져 있으면서도 응답(재생 시작·진행률)이 없다 (#322)
-  const requestedAt = playback.playRequestedAt ? new Date(playback.playRequestedAt).getTime() : null;
-  const ackedAt = playback.sourceAckAt ? new Date(playback.sourceAckAt).getTime() : null;
-  const unresponsive =
-    playback.status === 'PLAYING' && online && requestedAt !== null && (ackedAt === null || ackedAt < requestedAt) && now - requestedAt > NO_RESPONSE_MS;
-
-  const events = (
-    <span
-      className="ml-auto flex items-center gap-1 text-xs"
-      title={eventsConnected ? '실시간 연결됨 — 조작이 바로 반영됩니다' : '실시간 연결이 끊겨 다시 붙는 중 — 조작 반영이 몇 초 늦을 수 있습니다'}
-    >
-      <span className={`inline-block size-2 rounded-full ${eventsConnected ? 'bg-emerald-500' : 'animate-pulse bg-amber-500'}`} />
-      {eventsConnected ? '실시간' : '재연결 중'}
-    </span>
-  );
-
-  return (
-    <div className="flex flex-col gap-2 text-sm">
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="flex items-center gap-3 rounded-md border px-3 py-2">
-          <AppWindow className="size-5 shrink-0 text-muted-foreground" />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="font-medium">플레이어 앱</span>
-            <span className="text-xs text-muted-foreground">설치해 켜두면 아래 목록에 나타납니다. 전역 단축키·미니 플레이어 지원.</span>
-          </div>
-          {/* 앱 안에서 눌러도 setWindowOpenHandler 가 외부 브라우저로 넘긴다 */}
-          <Button asChild size="sm" variant="outline">
-            <a href="/download" target="_blank" rel="noreferrer">
-              <Download /> 내려받기
-            </a>
-          </Button>
-        </div>
-        <ObsSourceCard token={source.sourceToken} onRegenerate={onRegenerate} />
-      </div>
-
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {source.selectedSessionId === null ? (
-          <>
-            <Badge variant="outline">송출 소스 없음</Badge>
-            앱이나 OBS 브라우저 소스를 켜면 처음 연결된 것이 자동으로 선택됩니다.
-          </>
-        ) : online && selected ? (
-          <>
-            <Badge>연결됨</Badge>
-            {SESSION_LABEL[selected.source]} · {selected.label} 에서 재생 중입니다.
-          </>
-        ) : (
-          <>
-            <Badge variant="destructive">연결 안 됨</Badge>
-            선택한 {source.sourceType === 'NONE' ? '송출 소스' : SESSION_LABEL[source.sourceType]}
-            {source.sourceLabel ? ` · ${source.sourceLabel}` : ''} 이(가) 켜져 있지 않습니다. 재생해도 소리가 나지 않습니다.
-          </>
-        )}
-        {events}
-      </div>
-
-      {unresponsive && selected && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
-          송출 소스({SESSION_LABEL[selected.source]} · {selected.label})가 재생에 응답하지 않습니다. 「찾기」로 그 창을 확인하거나 앱·브라우저 소스를 다시 켜보세요.
-        </div>
-      )}
-
-      {sessions.length > 0 && (
-        <ul className="flex flex-col divide-y rounded-md border">
-          {sessions.map((session) => (
-            <li key={session.sessionId} className="flex items-center gap-3 px-3 py-2">
-              {session.source === 'ELECTRON' ? <MonitorSpeaker className="size-4 shrink-0 text-muted-foreground" /> : <RadioTower className="size-4 shrink-0 text-muted-foreground" />}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">
-                  {session.label}
-                  <span className="ml-2 text-xs text-muted-foreground">{SESSION_LABEL[session.source]}</span>
-                  {mySessionId === session.sessionId && <span className="ml-2 text-xs text-muted-foreground">(이 앱)</span>}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {session.active ? <span className="text-emerald-600 dark:text-emerald-400">송출 중</span> : '대기'} · 마지막 신호 {Math.round((session.lastSeenAgoMs + sinceReceived) / 1000)}초 전
-                </span>
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="찾기" onClick={() => onLocate(session)}>
-                    <Eye />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>찾기 — {session.source === 'ELECTRON' ? '그 컴퓨터의 앱이 깜빡이고 띵동 소리가 납니다' : 'OBS 의 그 브라우저 소스가 빨갛게 빛나고 띵동 소리가 납니다'}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant={session.active ? 'default' : 'outline'} size="icon" aria-label="송출 소스로 설정" disabled={session.active} onClick={() => onSelect(session)}>
-                    <Play />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{session.active ? '지금 송출 소스입니다' : `이 ${session.source === 'ELECTRON' ? '앱' : '브라우저 소스'}을(를) 송출 소스로 설정`}</TooltipContent>
-              </Tooltip>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {source.selectedSessionId !== null && (
-        <div>
-          <button type="button" className="text-xs text-muted-foreground underline-offset-2 hover:underline" onClick={onClearSelection}>
-            송출 소스 선택 해제 (소리 끄기)
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** OBS 브라우저 소스 주소 — 보기/복사/재발급. 설정 다이얼로그에 있던 것을 옮겼다 (#322) */
-function ObsSourceCard({ token, onRegenerate }: { token: string | null; onRegenerate: () => void }) {
-  // 주소는 방송 화면에 그대로 찍힐 수 있으므로 기본은 가려둔다
-  const [revealed, setRevealed] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [origin, setOrigin] = useState('');
-  useState(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  });
-  const playerUrl = token ? `${origin}/obs/${token}/player` : '';
-
-  return (
-    <div className="flex items-center gap-3 rounded-md border px-3 py-2">
-      <RadioTower className="size-5 shrink-0 text-muted-foreground" />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="font-medium">OBS 브라우저 소스</span>
-        <div className="flex items-center gap-1">
-          <Input readOnly value={playerUrl} type={revealed ? 'text' : 'password'} className="h-8 font-mono text-xs" />
-          <Button variant="ghost" size="icon" aria-label={revealed ? '주소 가리기' : '주소 보기'} title={revealed ? '주소 가리기' : '주소 보기'} onClick={() => setRevealed((prev) => !prev)}>
-            {revealed ? <EyeOff /> : <Eye />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="주소 복사"
-            title="주소 복사"
-            onClick={() => {
-              void navigator.clipboard.writeText(playerUrl);
-              toast.success('주소를 복사했습니다.');
-            }}
-          >
-            <Copy />
-          </Button>
-          <Button variant="ghost" size="icon" aria-label="주소 재발급" title="주소 재발급" onClick={() => setConfirming(true)}>
-            <RefreshCw />
-          </Button>
-        </div>
-        <span className="text-xs text-muted-foreground">이 주소를 OBS 브라우저 소스로 추가하세요. 아는 사람은 재생 상태를 볼 수 있으니 방송에 노출됐다면 재발급.</span>
-      </div>
-
-      <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>주소를 새로 발급할까요?</DialogTitle>
-            <DialogDescription>
-              새 주소가 발급되면 <strong>기존 주소는 즉시 사용할 수 없게 됩니다.</strong> 이미 OBS 에 등록해 둔 브라우저 소스는 재생이 멈추므로, 새 주소를 다시 붙여넣어야 합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)}>
-              취소
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setConfirming(false);
-                setRevealed(false);
-                onRegenerate();
-              }}
-            >
-              새로 발급
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
+/** 컨트롤러 상태 재조회 주기 — SSE 가 새는 경우의 백스톱 */
+const STATE_REFETCH_MS = 10_000;
 
 /** 미니 플레이어 위를 덮는 안내 (#322) — 「찾기」·「송출 소스로 설정됨」. 창이 작아 toast 대신 전체를 덮는다 */
 function AppNoticeOverlay({ text }: { text: string }) {
