@@ -1,17 +1,9 @@
 import { randomBytes } from 'node:crypto';
 
-import type { PrismaClient, SongSourceType } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
-import {
-  getSourcePresence,
-  isActiveSession,
-  listSourceSessions,
-  publishSongEvent,
-  releaseSource,
-  SOURCE_TIMEOUT_MS,
-  touchSource,
-} from './songEvents';
+import { getSourceSession, listSourceSessions, publishSongEvent, SOURCE_TIMEOUT_MS, touchSource } from './songEvents';
 import * as songFavoriteService from './songFavorite';
 
 /** 재생 제어·송출 소스 중재 (#5 2단계) */
@@ -48,6 +40,7 @@ async function pickAutoPlaySong(prisma: PrismaClient, userId: number) {
       durationSeconds: item.durationSeconds,
       positionSeconds: 0,
       startedAt: new Date(),
+      ...PLAY_REQUESTED,
     },
   });
 
@@ -92,6 +85,7 @@ export async function advanceToNext(prisma: PrismaClient, userId: number) {
         durationSeconds: next.durationSeconds,
         positionSeconds: 0,
         startedAt: new Date(),
+        ...PLAY_REQUESTED,
       },
     }),
     prisma.song.delete({ where: { id: next.id } }),
@@ -144,7 +138,7 @@ export async function play(prisma: PrismaClient, userId: number) {
 
   const updated = await prisma.songPlayback.update({
     where: { userId },
-    data: { status: 'PLAYING', ...RESET_FAILS },
+    data: { status: 'PLAYING', ...RESET_FAILS, ...PLAY_REQUESTED },
   });
   publishSongEvent(userId, { type: 'playback' });
   publishSongEvent(userId, { type: 'command', action: 'play' });
@@ -278,7 +272,7 @@ export async function reportEnded(prisma: PrismaClient, userId: number) {
   if (playback.repeatOne && playback.youtubeId) {
     const looped = await prisma.songPlayback.update({
       where: { userId },
-      data: { status: 'PLAYING', positionSeconds: 0, startedAt: new Date() },
+      data: { status: 'PLAYING', positionSeconds: 0, startedAt: new Date(), ...PLAY_REQUESTED },
     });
     publishSongEvent(userId, { type: 'playback' });
     publishSongEvent(userId, { type: 'command', action: 'play' });
@@ -296,6 +290,11 @@ export async function reportEnded(prisma: PrismaClient, userId: number) {
 /** 연속 실패가 이만큼이면 다음 곡으로 넘기지 않고 멈춘다 — 곡이 아니라 환경(임베드 차단·네트워크·로그인) 문제일 가능성이 크다 */
 export const FAIL_STREAK_LIMIT = 3;
 const RESET_FAILS = { failStreak: 0, lastFailReason: null };
+/** PLAYING 이 될 때마다 — 송출 세션의 응답(sourceAckAt)을 새로 기다린다 (#322). 함수라야 시각이 그때그때 찍힌다 */
+const PLAY_REQUESTED = {
+  get playRequestedAt() { return new Date(); },
+  sourceAckAt: null,
+};
 
 /**
  * YouTube IFrame API onError 코드 → 사람이 읽는 원인.
@@ -388,6 +387,7 @@ export async function playSongNow(
         positionSeconds: 0,
         startedAt: new Date(),
         ...RESET_FAILS,
+        ...PLAY_REQUESTED,
       },
     }),
     prisma.song.delete({ where: { id: target.id } }),
@@ -427,11 +427,25 @@ export async function reportPosition(
   // 이미 다음 곡으로 넘어갔다면 지난 곡의 보고다 — 버린다
   if (!playback || playback.youtubeId !== youtubeId) return playback;
 
-  // 진행률은 자주 오므로 이벤트를 쏘지 않는다 (컨트롤러는 자체 타이머로 보간)
+  // 진행률은 자주 오므로 이벤트를 쏘지 않는다 (컨트롤러는 자체 타이머로 보간). 진행률이 온다 = 송출 세션이 재생 중이다 → 응답으로 친다 (#322)
   return prisma.songPlayback.update({
     where: { userId },
-    data: { positionSeconds: Math.max(0, Math.floor(positionSeconds)) },
+    data: { positionSeconds: Math.max(0, Math.floor(positionSeconds)), sourceAckAt: new Date() },
   });
+}
+
+/**
+ * 송출 세션이 「이 곡을 실제로 재생 시작했다」(YouTube onStateChange PLAYING) (#322).
+ * 컨트롤러는 playRequestedAt 뒤 이 응답이 없으면 「송출 소스가 재생에 응답하지 않습니다」를 띄운다. 지난 곡의 보고는 버린다
+ */
+export async function reportPlaying(prisma: PrismaClient, userId: number, youtubeId: string) {
+  const playback = await prisma.songPlayback.findUnique({ where: { userId } });
+  if (!playback || playback.youtubeId !== youtubeId) return playback;
+  if (playback.sourceAckAt && playback.playRequestedAt && playback.sourceAckAt >= playback.playRequestedAt) return playback;
+  const updated = await prisma.songPlayback.update({ where: { userId }, data: { sourceAckAt: new Date() } });
+  //  경고를 바로 지울 수 있게 — 곡마다 1회뿐이라 부담이 없다
+  publishSongEvent(userId, { type: 'playback' });
+  return updated;
 }
 
 export async function setVolume(prisma: PrismaClient, userId: number, volume: number) {
@@ -445,25 +459,69 @@ export async function setVolume(prisma: PrismaClient, userId: number, volume: nu
   return updated;
 }
 
-/* ── 송출 소스 ── */
+/* ── 송출 세션 (#322) ── */
 
-/** 하트비트 갱신 — 창을 여러 개 열면 먼저 잡은 것이 활성, 나머지는 대기 */
-export function touchSourceSession(userId: number, source: string, sessionId: string) {
-  const { changed } = touchSource(userId, source, sessionId);
-  // 주인·세션 수가 바뀔 때만 알린다 — 끊기는 쪽은 구독자가 lastSeenAt 으로 직접 판정한다
-  if (changed) publishSongEvent(userId, { type: 'source' });
+export type SourceSessionInput = { sessionId: string; source: 'OBS' | 'ELECTRON'; label?: string | null };
+
+const DEFAULT_LABEL: Record<string, string> = { OBS: 'OBS 브라우저 소스', ELECTRON: '위즈봇 플레이어 앱' };
+
+/**
+ * 하트비트 — 세션을 목록에 올리고, 이 세션이 소리를 낼 차례인지 돌려준다.
+ * 소리를 내는 세션은 스트리머가 고른 것(songSourceSessionId) 하나. 아직 아무것도 고르지 않았으면 **처음 붙은 세션을 자동으로 고른다** —
+ * 앱을 설치하고 켜기만 하면 소리가 나야 하고, 예전 사용자(타입만 골라둔 상태)도 같은 타입의 창이 붙으면 그대로 이어진다.
+ */
+export async function touchSourceSession(prisma: PrismaClient, userId: number, input: SourceSessionInput) {
+  const label = (input.label?.trim() || DEFAULT_LABEL[input.source] || input.source).slice(0, 80);
+  const { changed } = touchSource(userId, { sessionId: input.sessionId, source: input.source, label });
+
+  const setting = await prisma.userSetting.findUnique({
+    where: { userId },
+    select: { id: true, songSourceSessionId: true, songSourceType: true },
+  });
+  let adopted = false;
+  if (setting && !setting.songSourceSessionId && (setting.songSourceType === 'NONE' || setting.songSourceType === input.source)) {
+    await prisma.userSetting.update({
+      where: { id: setting.id },
+      data: { songSourceSessionId: input.sessionId, songSourceType: input.source, songSourceLabel: label },
+    });
+    adopted = true;
+  }
+  if (changed || adopted) publishSongEvent(userId, { type: 'source' });
+
+  const activeId = adopted ? input.sessionId : setting?.songSourceSessionId ?? null;
+  return { active: activeId === input.sessionId, adopted };
 }
 
-/** 「다른 창으로 넘기기」 (#319) — 대기 중인 다른 창이 있어야 넘어간다 */
-export function handoffSource(userId: number) {
-  const moved = releaseSource(userId);
-  if (!moved) throw new ServiceError('CONFLICT', '넘길 다른 창이 없습니다. 대기 중인 플레이어가 있어야 합니다.');
+/** 스트리머가 이 세션을 송출 소스로 고른다 — 지금 붙어 있는 세션이어야 한다 */
+export async function selectSource(prisma: PrismaClient, userId: number, sessionId: string) {
+  const session = getSourceSession(userId, sessionId);
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않습니다. 켜져 있는지 확인해주세요.');
+  const setting = await prisma.userSetting.findUnique({ where: { userId }, select: { id: true } });
+  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
+  await prisma.userSetting.update({
+    where: { id: setting.id },
+    data: { songSourceSessionId: sessionId, songSourceType: session.source as 'OBS' | 'ELECTRON', songSourceLabel: session.label },
+  });
+  //  이전 주인은 멈추고 새 주인은 재생을 시작해야 한다 — 소스들은 이 이벤트로 다시 맞춘다
+  publishSongEvent(userId, { type: 'source' });
+  return { sessionId, source: session.source, label: session.label };
+}
+
+/** 선택 해제 — 어느 창도 소리를 내지 않는다 (예전 「사용 안 함」) */
+export async function clearSourceSelection(prisma: PrismaClient, userId: number) {
+  const setting = await prisma.userSetting.findUnique({ where: { userId }, select: { id: true } });
+  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
+  await prisma.userSetting.update({ where: { id: setting.id }, data: { songSourceSessionId: null, songSourceType: 'NONE', songSourceLabel: null } });
   publishSongEvent(userId, { type: 'source' });
   return { ok: true as const };
 }
 
-export function isSessionActive(userId: number, sessionId: string) {
-  return isActiveSession(userId, sessionId);
+/** 「찾기」 — 그 창이 스스로를 드러낸다(빨간 테두리·띵동·작업 표시줄 깜빡임) */
+export function locateSource(userId: number, sessionId: string) {
+  const session = getSourceSession(userId, sessionId);
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않습니다.');
+  publishSongEvent(userId, { type: 'locate', sessionId });
+  return { ok: true as const };
 }
 
 function newToken() {
@@ -499,40 +557,32 @@ export async function regenerateSourceToken(
   });
 }
 
-export async function setSourceType(
-  prisma: PrismaClient,
-  userId: number,
-  sourceType: SongSourceType,
-) {
-  const setting = await prisma.userSetting.findUnique({ where: { userId } });
-  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
-
-  const updated = await prisma.userSetting.update({
-    where: { id: setting.id },
-    data: { songSourceType: sourceType },
-  });
-  publishSongEvent(userId, { type: 'source' });
-  return updated;
-}
-
-/** 컨트롤러에 보여줄 소스 상태 — 지정된 소스가 오프라인이면 경고할 수 있게 */
+/** 컨트롤러에 보여줄 송출 상태 — 선택된 세션·연결 여부·붙어 있는 세션 전부 (#322) */
 export async function getSourceStatus(prisma: PrismaClient, userId: number, now = Date.now()) {
   const setting = await ensureSourceTokens(prisma, userId);
-  const presence = getSourcePresence(userId, now);
   const sessions = listSourceSessions(userId, now);
+  const selected = setting.songSourceSessionId ? sessions.find((s) => s.sessionId === setting.songSourceSessionId) ?? null : null;
 
   return {
+    /** 스트리머가 고른 세션 — null 이면 아직 선택 전 */
+    selectedSessionId: setting.songSourceSessionId,
     sourceType: setting.songSourceType,
-    online: presence !== null && presence.source === setting.songSourceType,
-    connectedSource: presence?.source ?? null,
-    lastSeenAt: presence ? new Date(presence.lastSeenAt) : null,
+    sourceLabel: setting.songSourceLabel,
+    /** 고른 세션이 지금 붙어 있는가 */
+    online: selected !== null,
     /**
      * 「몇 ms 전에 봤는지」 (#319) — 컨트롤러가 자기 시계로 lastSeenAt 을 빼면 PC 시계 오차만큼 틀려서
      * 「연결됨 ↔ 연결 안 됨」이 깜빡였다. 응답을 받은 시각에 이 값을 더해 세면 시계가 달라도 맞다
      */
-    lastSeenAgoMs: presence ? now - presence.lastSeenAt : null,
-    /** 붙어 있는 창 전부 — 활성 1 + 대기 N (#319). 지정된 소스 타입의 창만 하트비트가 등록된다 */
-    sessions: sessions.map((s) => ({ source: s.source, active: s.active, lastSeenAgoMs: now - s.lastSeenAt })),
+    lastSeenAgoMs: selected ? now - selected.lastSeenAt : null,
+    /** 붙어 있는 세션 전부 — 컨트롤러가 목록으로 보여주고 하나를 고른다 (#322) */
+    sessions: sessions.map((s) => ({
+      sessionId: s.sessionId,
+      source: s.source as 'OBS' | 'ELECTRON',
+      label: s.label,
+      active: s.sessionId === setting.songSourceSessionId,
+      lastSeenAgoMs: now - s.lastSeenAt,
+    })),
     timeoutMs: SOURCE_TIMEOUT_MS,
     sourceToken: setting.songSourceToken,
     overlayToken: setting.songOverlayToken,

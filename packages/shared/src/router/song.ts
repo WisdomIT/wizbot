@@ -12,8 +12,6 @@ import {
 } from '../services';
 import { publicProcedure, songSourceProcedure, streamerProcedure, t } from '../trpc';
 
-const sourceTypeSchema = z.enum(['NONE', 'OBS', 'ELECTRON']);
-
 /** 송출 소스가 재생을 맞추는 데 필요한 전부 — sourceState 와 heartbeat 가 같은 값을 돌려준다 */
 async function loadSourceState(
   prisma: PrismaClient,
@@ -27,7 +25,8 @@ async function loadSourceState(
 
   return {
     playback,
-    sourceType: setting?.songSourceType ?? ('NONE' as const),
+    /** 소리를 낼 세션 (#322) — 각 창은 자기 ID 와 비교한다 */
+    activeSessionId: setting?.songSourceSessionId ?? null,
     readOnly,
     overlay: {
       mode: setting?.songOverlayMode ?? ('TIMED' as const),
@@ -106,8 +105,14 @@ export const songRouter = t.router({
     playbackService.togglePlay(ctx.prisma, ctx.user.id),
   ),
   stop: streamerProcedure.mutation(({ ctx }) => playbackService.stop(ctx.prisma, ctx.user.id)),
-  /** 활성 플레이어를 대기 중인 다른 창으로 넘긴다 (#319) */
-  handoffSource: streamerProcedure.mutation(({ ctx }) => playbackService.handoffSource(ctx.user.id)),
+  /* ── 송출 세션 선택 (#322) ── */
+  selectSource: streamerProcedure
+    .input(z.object({ sessionId: z.string().min(1).max(64) }))
+    .mutation(({ ctx, input }) => playbackService.selectSource(ctx.prisma, ctx.user.id, input.sessionId)),
+  clearSourceSelection: streamerProcedure.mutation(({ ctx }) => playbackService.clearSourceSelection(ctx.prisma, ctx.user.id)),
+  locateSource: streamerProcedure
+    .input(z.object({ sessionId: z.string().min(1).max(64) }))
+    .mutation(({ ctx, input }) => playbackService.locateSource(ctx.user.id, input.sessionId)),
   next: streamerProcedure.mutation(({ ctx }) =>
     playbackService.skipToNext(ctx.prisma, ctx.user.id),
   ),
@@ -130,11 +135,6 @@ export const songRouter = t.router({
   setVolume: streamerProcedure
     .input(z.object({ volume: z.number().min(0).max(100) }))
     .mutation(({ ctx, input }) => playbackService.setVolume(ctx.prisma, ctx.user.id, input.volume)),
-  setSourceType: streamerProcedure
-    .input(z.object({ sourceType: sourceTypeSchema }))
-    .mutation(({ ctx, input }) =>
-      playbackService.setSourceType(ctx.prisma, ctx.user.id, input.sourceType),
-    ),
   regenerateToken: streamerProcedure
     .input(z.object({ kind: z.enum(['source', 'overlay']) }))
     .mutation(({ ctx, input }) =>
@@ -329,26 +329,15 @@ export const songRouter = t.router({
    * 하트비트 — 응답에 재생 상태를 함께 실어 보낸다.
    * 송출 소스는 어차피 5초마다 이걸 부르므로, 요청을 늘리지 않고도 5초마다 전체 대조가 된다.
    * (SSE 는 유실될 수 있고 재전송 장치가 없어서, 이 응답이 어긋남을 되돌리는 마지막 보루다)
+   * active = 이 세션이 스트리머가 고른 송출 세션인가 (#322). 아직 고른 게 없으면 처음 붙은 세션이 자동 선택된다
    */
   heartbeat: songSourceProcedure
-    .input(z.object({ sessionId: z.string(), source: sourceTypeSchema }))
+    .input(z.object({ sessionId: z.string().min(1).max(64), source: z.enum(['OBS', 'ELECTRON']), label: z.string().max(80).optional() }))
     .mutation(async ({ ctx, input }) => {
       const { userId, readOnly } = ctx.songSource;
+      const { active, adopted } = await playbackService.touchSourceSession(ctx.prisma, userId, input);
       const state = await loadSourceState(ctx.prisma, userId, readOnly);
-
-      // 지정된 소스가 아닌 창의 하트비트는 무시한다.
-      // OBS 페이지와 앱을 함께 열어두면 두 창이 같은 자리를 번갈아 덮어써서
-      // 연결 상태가 「연결됨 ↔ 연결 안 됨」으로 깜빡였다 (#85).
-      if (state.sourceType !== input.source) {
-        return { active: false, state };
-      }
-
-      playbackService.touchSourceSession(userId, input.source, input.sessionId);
-
-      return {
-        active: playbackService.isSessionActive(userId, input.sessionId),
-        state,
-      };
+      return { active, adopted, state };
     }),
 
   reportEnded: songSourceProcedure.mutation(({ ctx }) =>
@@ -357,9 +346,13 @@ export const songRouter = t.router({
   /** 재생 실패 — 유튜브 오류 코드·어느 창인지·어느 곡인지 함께 (#319). 연속 3회면 서버가 멈춘다 */
   reportFailed: songSourceProcedure
     .input(
-      z.object({ code: z.number().int().nullable().optional(), source: sourceTypeSchema.optional(), youtubeId: z.string().max(11).nullable().optional() }).optional(),
+      z.object({ code: z.number().int().nullable().optional(), source: z.enum(['OBS', 'ELECTRON']).optional(), youtubeId: z.string().max(11).nullable().optional() }).optional(),
     )
     .mutation(({ ctx, input }) => playbackService.reportFailed(ctx.prisma, ctx.songSource.userId, input ?? {})),
+  /** 송출 세션이 이 곡을 실제로 재생 시작했다 (#322) — 무응답 경고를 지운다 */
+  reportPlaying: songSourceProcedure
+    .input(z.object({ youtubeId: z.string().max(11) }))
+    .mutation(({ ctx, input }) => playbackService.reportPlaying(ctx.prisma, ctx.songSource.userId, input.youtubeId)),
   reportPosition: songSourceProcedure
     // youtubeId 를 함께 받아 지난 곡의 보고를 걸러낸다 (#122)
     .input(z.object({ positionSeconds: z.number().min(0), youtubeId: z.string() }))

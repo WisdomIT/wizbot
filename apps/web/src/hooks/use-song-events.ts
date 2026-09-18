@@ -12,7 +12,9 @@ export type SongEvent =
       action: 'play' | 'pause' | 'stop' | 'next' | 'seek' | 'volume';
       value?: number;
     }
-  | { type: 'source' };
+  | { type: 'source' }
+  /** 컨트롤러의 「찾기」 (#322) — sessionId 가 자기 것인 창만 반응한다 */
+  | { type: 'locate'; sessionId: string };
 
 /** 재연결 백오프 — 1초부터 2배씩, 최대 30초 (#319) */
 const RECONNECT_MIN_MS = 1_000;

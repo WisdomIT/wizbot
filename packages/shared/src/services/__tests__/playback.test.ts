@@ -7,14 +7,15 @@ import {
   FAIL_STREAK_LIMIT,
   formatFailReason,
   getSourceStatus,
-  handoffSource,
-  isSessionActive,
+  locateSource,
   play,
   playSongNow,
   reportEnded,
   reportFailed,
+  reportPlaying,
   reportPosition,
   seek,
+  selectSource,
   setShortcuts,
   skipToNext,
   togglePlay,
@@ -24,7 +25,7 @@ import { clearSource, listSourceSessions, SOURCE_TIMEOUT_MS, subscribeSongEvents
 
 const USER_ID = 1;
 
-function createPrisma(queue: unknown[] = [], playback: unknown = null) {
+function createPrisma(queue: unknown[] = [], playback: unknown = null, setting: Record<string, unknown> = {}) {
   const songPlayback = {
     findUnique: vi.fn().mockResolvedValue(playback),
     create: vi.fn().mockResolvedValue({ userId: USER_ID, status: 'STOPPED' }),
@@ -46,9 +47,12 @@ function createPrisma(queue: unknown[] = [], playback: unknown = null) {
       findUnique: vi.fn().mockResolvedValue({
         id: 1,
         userId: USER_ID,
-        songSourceType: 'OBS',
+        songSourceType: 'NONE',
+        songSourceSessionId: null,
+        songSourceLabel: null,
         songSourceToken: 'tok',
         songOverlayToken: 'otok',
+        ...setting,
       }),
       update: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ ...data })),
     },
@@ -91,8 +95,9 @@ describe('reportPosition (#122)', () => {
 
     await reportPosition(prisma, USER_ID, 12.7, 'newnewnewne');
 
+    //  진행률이 온다 = 송출 세션이 재생 중 → 응답 시각도 찍는다 (#322)
     expect(songPlayback.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { positionSeconds: 12 } }),
+      expect.objectContaining({ data: { positionSeconds: 12, sourceAckAt: expect.any(Date) } }),
     );
   });
 });
@@ -125,7 +130,7 @@ describe('togglePlay (#85)', () => {
 
     //  사람이 ▶ 를 누른 것 — 연속 실패 카운트도 함께 푼다 (#319)
     expect(songPlayback.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'PLAYING', failStreak: 0, lastFailReason: null } }),
+      expect.objectContaining({ data: { status: 'PLAYING', failStreak: 0, lastFailReason: null, playRequestedAt: expect.any(Date), sourceAckAt: null } }),
     );
   });
 });
@@ -342,58 +347,76 @@ describe('바로 재생·시크 (#5 2-b)', () => {
   });
 });
 
-describe('송출 소스 중재', () => {
+describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearSource(USER_ID);
   });
 
-  it('하트비트가 없으면 오프라인', async () => {
+  it('하트비트가 없으면 오프라인이고 목록도 비어 있다', async () => {
     const { prisma } = createPrisma();
     const status = await getSourceStatus(prisma, USER_ID);
     expect(status.online).toBe(false);
+    expect(status.sessions).toEqual([]);
   });
 
-  it('하트비트를 보내면 온라인이 된다', async () => {
+  it('아직 고른 세션이 없으면 처음 붙은 세션을 자동으로 고른다 (앱을 켜기만 하면 소리가 나야 한다)', async () => {
     const { prisma } = createPrisma();
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    const first = await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    expect(first).toEqual({ active: true, adopted: true });
+    expect(prisma.userSetting.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { songSourceSessionId: 'app-1', songSourceType: 'ELECTRON', songSourceLabel: '거실-PC' } }),
+    );
+  });
+
+  it('예전 사용자(타입만 골라둠)는 같은 타입의 첫 세션이 자동 선택되고 다른 타입은 대기', async () => {
+    const { prisma } = createPrisma([], null, { songSourceType: 'ELECTRON' });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'obs-1', source: 'OBS' })).toEqual({ active: false, adopted: false });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON' })).toEqual({ active: true, adopted: true });
+  });
+
+  it('고른 세션만 활성 — 다른 세션은 몇 번을 보내도 대기, 이름이 없으면 종류 이름', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 'obs-1', songSourceType: 'OBS', songSourceLabel: 'OBS 브라우저 소스' });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: 'PC' })).toMatchObject({ active: false, adopted: false });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'obs-1', source: 'OBS' })).toMatchObject({ active: true });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: 'PC' })).toMatchObject({ active: false });
     const status = await getSourceStatus(prisma, USER_ID);
     expect(status.online).toBe(true);
+    expect(status.lastSeenAgoMs).toBeGreaterThanOrEqual(0);
+    expect(status.sessions.map((x) => [x.sessionId, x.label, x.active]).sort()).toEqual([['app-1', 'PC', false], ['obs-1', 'OBS 브라우저 소스', true]]);
   });
 
-  it('지정 소스와 다른 소스가 붙어 있으면 오프라인으로 본다', async () => {
-    const { prisma } = createPrisma();
-    touchSourceSession(USER_ID, 'ELECTRON', 'session-1'); // 설정은 OBS
-    const status = await getSourceStatus(prisma, USER_ID);
-    expect(status.online).toBe(false);
-  });
-
-  it('같은 세션의 반복 하트비트는 이벤트를 만들지 않는다 (구독자 재조회 폭주 방지)', () => {
+  it('같은 세션의 반복 하트비트는 이벤트를 만들지 않는다 (구독자 재조회 폭주 방지)', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
     const events: unknown[] = [];
     const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
 
-    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 새 연결 → 알림
-    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 같은 세션 → 조용히
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' }); // 새 연결 → 알림
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' }); // 같은 세션 → 조용히
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's2', source: 'OBS' }); // 대기 세션 추가 → 알림
 
-    expect(events).toEqual([{ type: 'source' }]);
+    expect(events).toEqual([{ type: 'source' }, { type: 'source' }]);
     unsubscribe();
   });
 
-  it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', () => {
+  it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', async () => {
     vi.useFakeTimers();
     try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
 
       const events: unknown[] = [];
       const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
 
       vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
-      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+      expect((await getSourceStatus(prisma, USER_ID)).online).toBe(false);
+      expect(listSourceSessions(USER_ID)).toEqual([]);
 
       // 끊겼다가 같은 세션으로 돌아와도 새 연결이므로 알린다
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
       expect(events).toEqual([{ type: 'source' }]);
+      expect((await getSourceStatus(prisma, USER_ID)).online).toBe(true);
 
       unsubscribe();
     } finally {
@@ -401,38 +424,42 @@ describe('송출 소스 중재', () => {
     }
   });
 
-  it('창을 여러 개 열면 먼저 잡은 세션이 유지된다 (이중 재생 방지)', () => {
-    // 마지막 하트비트가 이기게 두면, 두 기기가 동시에 켜져 있을 때 5초마다 주인이
-    // 뒤바뀌어 어느 쪽도 재생하지 못한다 (#85 실측)
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
-
-    // 계속 번갈아 보내도 주인은 그대로다
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+  it('selectSource — 붙어 있는 세션을 고르면 설정에 ID·종류·이름이 남고 source 이벤트가 나간다', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    await expect(selectSource(prisma, USER_ID, 'app-1')).resolves.toEqual({ sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    expect(prisma.userSetting.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: { songSourceSessionId: 'app-1', songSourceType: 'ELECTRON', songSourceLabel: '거실-PC' } }),
+    );
+    expect(events).toEqual([{ type: 'source' }]);
+    unsubscribe();
+    await expect(selectSource(prisma, USER_ID, 'ghost')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('주인이 하트비트를 멈추면 타임아웃 뒤에 다른 세션이 이어받는다', () => {
-    vi.useFakeTimers();
-    try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-      expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+  it('locateSource — 붙어 있는 세션에만 locate 이벤트', async () => {
+    const { prisma } = createPrisma();
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    expect(locateSource(USER_ID, 's1')).toEqual({ ok: true });
+    expect(events).toEqual([{ type: 'locate', sessionId: 's1' }]);
+    expect(() => locateSource(USER_ID, 'nope')).toThrowError(/연결돼 있지 않습니다/);
+    unsubscribe();
+  });
 
-      // session-1 이 사라졌다 — session-2 만 계속 보낸다
-      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-
-      expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
-      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('reportPlaying — 현재 곡이면 응답 시각을 찍고 playback 이벤트, 지난 곡이면 무시', async () => {
+    const { prisma, songPlayback } = createPrisma([], { userId: USER_ID, youtubeId: 'newnewnewne', playRequestedAt: new Date(), sourceAckAt: null });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    await reportPlaying(prisma, USER_ID, 'oldoldoldol');
+    expect(songPlayback.update).not.toHaveBeenCalled();
+    await reportPlaying(prisma, USER_ID, 'newnewnewne');
+    expect(songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { sourceAckAt: expect.any(Date) } }));
+    expect(events).toEqual([{ type: 'playback' }]);
+    unsubscribe();
   });
 });
 
@@ -507,75 +534,5 @@ describe('재생 실패 차단기·원인 (#319)', () => {
     const c = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 2 });
     await reportEnded(c.prisma, USER_ID);
     expect(c.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
-  });
-});
-
-describe('다중 플레이어 세션 목록·넘기기 (#319)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearSource(USER_ID);
-  });
-
-  it('세션 목록 — 활성 1 + 대기 N, 소스 타입과 마지막 하트비트', async () => {
-    const { prisma } = createPrisma();
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    touchSourceSession(USER_ID, 'ELECTRON', 'session-3');
-    const status = await getSourceStatus(prisma, USER_ID);
-    expect(status.online).toBe(true);
-    expect(status.lastSeenAgoMs).toBeGreaterThanOrEqual(0);
-    //  활성 먼저, 그다음 최근 순 (같은 시각이면 붙은 순서)
-    expect(status.sessions.map((s) => [s.source, s.active])).toEqual([['OBS', true], ['OBS', false], ['ELECTRON', false]]);
-  });
-
-  it('대기 세션이 새로 붙거나 떨어지면 source 이벤트로 컨트롤러에 알린다', () => {
-    vi.useFakeTimers();
-    try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
-      const events: unknown[] = [];
-      const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
-      touchSourceSession(USER_ID, 'OBS', 'session-2'); // 대기 세션 추가 → 알림
-      touchSourceSession(USER_ID, 'OBS', 'session-2'); // 반복 → 조용히
-      expect(events).toEqual([{ type: 'source' }]);
-      unsubscribe();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('넘기기 — 대기 세션에게 바로 넘어가고, 내려놓은 세션은 다른 세션이 있는 동안 다시 잡지 않는다', () => {
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(handoffSource(USER_ID)).toEqual({ ok: true });
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
-    expect(listSourceSessions(USER_ID).map((s) => [s.sessionId, s.active])).toEqual([['session-2', true], ['session-1', false]]);
-  });
-
-  it('넘기기 — 대기 세션이 없으면 CONFLICT', () => {
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    expect(() => handoffSource(USER_ID)).toThrowError(/넘길 다른 창이 없습니다/);
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
-  });
-
-  it('주인이 끊기면 가장 최근에 본 대기 세션이 이어받는다', () => {
-    vi.useFakeTimers();
-    try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-      touchSourceSession(USER_ID, 'OBS', 'session-3');
-      vi.advanceTimersByTime(10_000);
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS - 9_000);
-      touchSourceSession(USER_ID, 'OBS', 'session-3');
-      //  session-1 은 15초 넘게 묵음 → 탈락. 가장 최근에 본 대기 세션(session-3)이 잡고 session-2 는 대기
-      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
-      expect(isSessionActive(USER_ID, 'session-3')).toBe(true);
-      expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
