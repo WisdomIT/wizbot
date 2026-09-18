@@ -1,5 +1,5 @@
- 
-import { GATE_RENDER_WIDTH, type GateBox, type GatePicks, type GatePlan, IMAGE_TAG_SELECTOR, YOUTUBE_TAG_SELECTOR } from '@wizbot/shared/lib/cafeGate';
+/* eslint-disable no-console */
+import { GATE_RENDER_WIDTH, type GateBox, type GatePicks, type GatePlan, IMAGE_TAG_SELECTOR, isSuspiciousGateRead, YOUTUBE_TAG_SELECTOR } from '@wizbot/shared/lib/cafeGate';
 import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer';
 
 /**
@@ -121,15 +121,45 @@ export async function verifyGateAccess(cookies: NaverCookies, clubId: string): P
 
 /* ── 대문 HTML 읽기·쓰기 (#9 PR3) ── */
 
-export type GateResult = { ok: true; html: string } | Exclude<CheckResult, { ok: true }>;
+export type GateResult =
+  | { ok: true; html: string; attempts: number }
+  | Exclude<CheckResult, { ok: true }>
+  /** 잘린 읽기 의심 (#318) — 재시도해도 같았다. 이번 확인은 건너뛰고 상태를 바꾸지 않는다 */
+  | { ok: false; reason: 'SUSPICIOUS'; message: string; html: string };
 
+/** textarea 값 안정 대기 (#318) — 이 간격으로 두 번 연속 같고 비어 있지 않을 때까지, 상한까지 */
+const STABLE_INTERVAL_MS = 300;
+const STABLE_TIMEOUT_MS = 5_000;
+/** 의심스러운 읽기 재시도 횟수 — 같은 페이지에서 편집기를 다시 열어 읽는다 */
+const READ_ATTEMPTS = 3;
 
 /**
- * 편집기를 열어 HTML 모드로 전환하고 textarea 를 돌려준다.
+ * HTML 모드 textarea 의 값을 읽는다 — 네이버가 WYSIWYG → HTML 변환을 비동기로 채우므로 나타난 직후의 값은
+ * 비어 있거나 잘려 있을 수 있다 (#318 의 원인 추정). 비어 있지 않고 300ms 간격 두 번 같을 때까지 기다린다(상한 5초).
+ * 상한까지 안정되지 않으면 마지막 값을 그대로 돌려주되 settled=false — 진짜 빈 대문일 수도 있어 여기서 실패로 치지 않고,
+ * 마지막으로 알고 있던 대문과의 비교(isSuspiciousGateRead)에 맡긴다
+ */
+async function readStableValue(textarea: ElementHandle<HTMLTextAreaElement>): Promise<{ value: string; settled: boolean }> {
+  const started = Date.now();
+  let prev: string | null = null;
+  for (;;) {
+    const value = await textarea.evaluate((el) => el.value);
+    if (value.length > 0 && value === prev) return { value, settled: true };
+    if (Date.now() - started >= STABLE_TIMEOUT_MS) return { value, settled: false };
+    prev = value;
+    await new Promise((resolve) => setTimeout(resolve, STABLE_INTERVAL_MS));
+  }
+}
+
+/**
+ * 편집기를 열어 HTML 모드로 전환하고 textarea 와 안정된 값을 돌려준다.
  * 실측 (2026-08-31): iframe(cafe_main) → Gate.nhn?m=viewEditorIframe, 폼 frmWrite 가 Gate.nhn 으로 POST,
  * 저장 버튼 `a._click(ManageGateEditor|Submit)` 은 바깥 페이지에 있다. 저장 1회 ≈ 0.4초.
  */
-async function openHtmlMode(page: Page, clubId: string): Promise<{ ok: true; textarea: ElementHandle<HTMLTextAreaElement> } | Exclude<CheckResult, { ok: true }>> {
+async function openHtmlMode(
+  page: Page,
+  clubId: string,
+): Promise<{ ok: true; textarea: ElementHandle<HTMLTextAreaElement>; html: string; settled: boolean } | Exclude<CheckResult, { ok: true }>> {
   await page.goto(GATE_URL(clubId), { waitUntil: 'networkidle0', timeout: NAV_TIMEOUT });
   if (bouncedToLogin(page)) {
     return { ok: false, reason: 'SESSION_INVALID', message: '봇 계정의 네이버 세션이 만료됐습니다. 관리자에게 문의해주세요.' };
@@ -143,14 +173,31 @@ async function openHtmlMode(page: Page, clubId: string): Promise<{ ok: true; tex
   await button.click();
   const textarea = (await frame.waitForSelector('textarea[name="content"]', { timeout: NAV_TIMEOUT })) as ElementHandle<HTMLTextAreaElement> | null;
   if (!textarea) return { ok: false, reason: 'UNKNOWN', message: 'HTML 편집 모드로 전환하지 못했습니다.' };
-  return { ok: true, textarea };
+  const { value, settled } = await readStableValue(textarea);
+  return { ok: true, textarea, html: value, settled };
 }
 
-export async function readGate(cookies: NaverCookies, clubId: string): Promise<GateResult> {
+/**
+ * 대문 HTML 읽기. expected = 마지막으로 알고 있던 대문(DB 의 gateHtml) — 있으면 건전성 검사를 한다 (#318):
+ * 표식이 사라졌고 길이가 60% 미만이면 「의심스러운 읽기」로 보고 편집기를 다시 열어 최대 3회 읽는다.
+ * 그래도 같으면 SUSPICIOUS 실패 — 호출자는 이번 주기를 건너뛰고(중지·초기화 없음) 그 HTML 로 gateHtml 을 덮어쓰지 않는다
+ */
+export async function readGate(cookies: NaverCookies, clubId: string, expected: string | null = null): Promise<GateResult> {
   return withPage(cookies, async (page) => {
-    const opened = await openHtmlMode(page, clubId);
-    if (!opened.ok) return opened;
-    return { ok: true, html: await opened.textarea.evaluate((el) => el.value) };
+    let last: { html: string; settled: boolean } | null = null;
+    for (let attempt = 1; attempt <= READ_ATTEMPTS; attempt++) {
+      const opened = await openHtmlMode(page, clubId);
+      if (!opened.ok) return opened;
+      if (!isSuspiciousGateRead(opened.html, expected)) return { ok: true, html: opened.html, attempts: attempt };
+      last = opened;
+      console.warn(`⚠️ 대문 읽기 의심 (${attempt}/${READ_ATTEMPTS}): ${opened.html.length}자 — 이전 ${expected!.length}자${opened.settled ? '' : ', 값 미안정'}`);
+    }
+    return {
+      ok: false,
+      reason: 'SUSPICIOUS',
+      message: `대문 읽기가 불안정합니다 (${last!.html.length}자, 이전 ${expected!.length}자, ${READ_ATTEMPTS}회 시도) — 이번 확인을 건너뜁니다.`,
+      html: last!.html,
+    };
   });
 }
 
@@ -166,7 +213,8 @@ export async function writeGate(cookies: NaverCookies, clubId: string, html: str
     ]);
     const reopened = await openHtmlMode(page, clubId);
     if (!reopened.ok) return reopened;
-    return { ok: true, html: await reopened.textarea.evaluate((el) => el.value) };
+    if (!reopened.settled) console.warn(`⚠️ 저장 후 대문 읽기 값 미안정: ${reopened.html.length}자 (쓴 값 ${html.length}자)`);
+    return { ok: true, html: reopened.html, attempts: 1 };
   });
 }
 

@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CAFE_LINK_STATUS_LABEL } from '@wizbot/shared/lib/cafe';
-import { CheckCircle2, Circle, Clock, XCircle } from 'lucide-react';
+import { CAFE_EVENT_KIND_LABEL, CAFE_LINK_STATUS_LABEL } from '@wizbot/shared/lib/cafe';
+import { CheckCircle2, ChevronDown, Circle, Clock, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -37,9 +38,12 @@ export function CafeSettingsView() {
     ...trpc.cafe.gate.queryOptions(),
     refetchInterval: (query) => (data?.pendingAction ? 5000 : false),
   });
+  //  판정 이벤트 (#318) — 워커가 30초마다 남길 수 있어 화면이 열려 있는 동안 갱신한다
+  const { data: events } = useQuery({ ...trpc.cafe.events.queryOptions(), refetchInterval: 30000 });
   const invalidate = () => {
     void queryClient.invalidateQueries(trpc.cafe.get.queryFilter());
     void queryClient.invalidateQueries(trpc.cafe.gate.queryFilter());
+    void queryClient.invalidateQueries(trpc.cafe.events.queryFilter());
   };
 
   const setEnabled = useMutation(trpc.cafe.setEnabled.mutationOptions());
@@ -269,6 +273,7 @@ export function CafeSettingsView() {
                     : null
                 }
               />
+              <EventList events={events ?? []} />
             </CardContent>
           </Card>
         </div>
@@ -280,6 +285,8 @@ export function CafeSettingsView() {
 type Activity = {
   gateUpdatedAt: string | Date | null; lastSavedAt: string | Date | null; serial: number; gateSerial: number;
   snapshot: { live: boolean; title: string; category: string; viewers: number; openedAt: string | null } | null; imageUrl: string | null;
+  /** 자동 복구 진행 (#318) — 위치가 자동으로 풀려 다시 불러오기를 돌고 있을 때 */
+  recovery: { count: number; max: number; nextAt: string | Date | null; gaveUp: boolean } | null;
 };
 
 function ActivityPanel({
@@ -310,6 +317,16 @@ function ActivityPanel({
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
         <dt className="text-muted-foreground">동작 상태</dt>
         <dd>{sessionExpired ? <span className="text-destructive">중단 — 봇 계정 세션 만료 (운영자 갱신 대기)</span> : active ? '동작 중 — 방송 상태에 따라 자동 갱신' : '중지 — 위치를 지정하고 반영하면 시작됩니다'}</dd>
+        {activity.recovery && !active && (
+          <>
+            <dt className="text-muted-foreground">자동 복구</dt>
+            <dd>
+              {activity.recovery.gaveUp
+                ? <span className="text-destructive">{activity.recovery.max}회 실패 — 위치를 다시 지정해주세요</span>
+                : `시도 ${activity.recovery.count}/${activity.recovery.max}${activity.recovery.nextAt ? ` · 다음 ${new Date(activity.recovery.nextAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+            </dd>
+          </>
+        )}
         <dt className="text-muted-foreground">마지막 대문 변경</dt>
         <dd>{fmt(activity.gateUpdatedAt)}{activity.gateSerial > 0 && <span className="ml-2 font-mono text-xs text-muted-foreground">v{activity.gateSerial}</span>}</dd>
         <dt className="text-muted-foreground">반영된 방송 상태</dt>
@@ -339,6 +356,33 @@ function ActivityPanel({
       </div>
     )}
     </div>
+  );
+}
+
+type GateEvent = { id: number; kind: keyof typeof CAFE_EVENT_KIND_LABEL; message: string; htmlLength: number | null; createdAt: string | Date };
+
+/** 최근 판정 이벤트 (#318) — 접힌 목록. 워커 로그가 사라져도 왜 풀렸는지 여기서 본다 */
+function EventList({ events }: { events: GateEvent[] }) {
+  const [open, setOpen] = useState(false);
+  if (events.length === 0) return null;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-4 border-t pt-3">
+      <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        최근 이벤트 ({events.length})
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="mt-2 flex max-h-64 flex-col gap-1 overflow-y-auto text-xs">
+          {events.map((event) => (
+            <li key={event.id} className="grid grid-cols-[9.5rem_6rem_1fr] gap-2">
+              <span className="font-mono text-muted-foreground">{new Date(event.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="font-medium">{CAFE_EVENT_KIND_LABEL[event.kind] ?? event.kind}</span>
+              <span className="break-all">{event.message}{event.htmlLength !== null && <span className="ml-1 text-muted-foreground">({event.htmlLength.toLocaleString('ko-KR')}자)</span>}</span>
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

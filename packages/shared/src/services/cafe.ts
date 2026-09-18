@@ -1,4 +1,4 @@
-import { type CafeAction, type CafeLinkStatus, Prisma, type PrismaClient } from '@prisma/client';
+import { type CafeAction, type CafeEventKind, type CafeLinkStatus, Prisma, type PrismaClient } from '@prisma/client';
 
 import { parseCafeSlug, parseClubInfo } from '../lib/cafe';
 import { buildGatePlan, cafeImageUrl, EMPTY_PICKS, findImageTags, findYoutubeTags, type GateBox, type GatePicks, gatePicksSchema, normalizeGateHtml } from '../lib/cafeGate';
@@ -36,6 +36,50 @@ const DEFAULTS = {
   youtubeTitle: null,
   youtubeUrl: null,
 };
+
+/* ── 판정 안정화 (#318) ── */
+
+/** 폴링 갱신에서 표식을 못 찾은 주기가 이만큼 연속돼야 「사라짐」으로 중지한다 (재시도 1분 간격 → ≈3분) */
+export const MISSING_STREAK_LIMIT = 3;
+/** 위치가 자동으로 풀린 뒤 자동 재불러오기 — 5분부터 2배씩(최대 1시간), 10회까지 */
+export const AUTO_REFETCH_MAX = 10;
+const AUTO_REFETCH_BASE_MS = 5 * 60 * 1000;
+const AUTO_REFETCH_CAP_MS = 60 * 60 * 1000;
+/** n번째 시도(1부터) 뒤 다음 시도까지의 간격: 5·10·20·40·60·60… 분 */
+export function autoRefetchDelayMs(attempt: number): number {
+  return Math.min(AUTO_REFETCH_CAP_MS, AUTO_REFETCH_BASE_MS * 2 ** Math.max(0, attempt - 1));
+}
+/** 연동당 남기는 이벤트 수 */
+const EVENT_KEEP = 100;
+
+/** 사용자가 직접 위치를 지정·반영했다 — 자동 판정 상태(연속 사라짐·자동 재불러오기)는 처음부터 */
+const RESET_AUTO = { missingStreak: 0, autoRefetchCount: 0, nextRefetchAt: null };
+
+/**
+ * 판정 이벤트 기록 (#318) — 워커 컨테이너가 재생성돼 로그가 사라져도 「왜 풀렸는지」를 볼 수 있게. 연동당 최근 100건만 남긴다.
+ * 기록 실패가 본 처리를 막으면 안 되므로 호출자는 await 하되 실패는 삼킨다
+ */
+export async function recordEvent(prisma: PrismaClient, integrationId: number, kind: CafeEventKind, message: string, htmlLength: number | null = null) {
+  try {
+    await prisma.cafeIntegrationEvent.create({ data: { integrationId, kind, message: message.slice(0, 500), htmlLength } });
+    const edge = await prisma.cafeIntegrationEvent.findMany({ where: { integrationId }, orderBy: { id: 'desc' }, skip: EVENT_KEEP, take: 1, select: { id: true } });
+    if (edge[0]) await prisma.cafeIntegrationEvent.deleteMany({ where: { integrationId, id: { lte: edge[0].id } } });
+  } catch {
+    /* 이벤트는 보조 기록 — 본 처리를 막지 않는다 */
+  }
+}
+
+/** 스트리머(대행 콘솔 포함)의 최근 이벤트 */
+export async function listEvents(prisma: PrismaClient, userId: number, limit = 50) {
+  const row = await prisma.cafeIntegration.findUnique({ where: { userId }, select: { id: true } });
+  if (!row) return [];
+  return prisma.cafeIntegrationEvent.findMany({
+    where: { integrationId: row.id },
+    orderBy: { id: 'desc' },
+    take: limit,
+    select: { id: true, kind: true, message: true, htmlLength: true, createdAt: true },
+  });
+}
 
 export async function getIntegration(prisma: PrismaClient, userId: number) {
   const row = await prisma.cafeIntegration.findUnique({ where: { userId } });
@@ -167,6 +211,10 @@ export async function getGate(prisma: PrismaClient, userId: number) {
       gateSerial: row.gateSerial,
       snapshot: snapshot.success && row.lastSavedAt ? snapshot.data : null,
       imageUrl: row.gateSerial > 0 ? cafeImageUrl(siteUrl(), row.user.channelId, row.gateSerial) : null,
+      /** 자동 복구 진행 상황 (#318) — 위치가 자동으로 풀려 재불러오기를 돌고 있을 때만 */
+      recovery: row.autoRefetchCount > 0 || row.nextRefetchAt
+        ? { count: row.autoRefetchCount, max: AUTO_REFETCH_MAX, nextAt: row.nextRefetchAt, gaveUp: row.autoRefetchCount >= AUTO_REFETCH_MAX && !row.nextRefetchAt }
+        : null,
     },
     gateHtml: row.gateHtml,
     gateFetchedAt: row.gateFetchedAt,
@@ -186,7 +234,8 @@ export async function getGate(prisma: PrismaClient, userId: number) {
 export async function savePicks(prisma: PrismaClient, userId: number, picks: GatePicks) {
   const row = await requirePermitted(prisma, userId);
   if (!row.gateHtml) throw new ServiceError('INVALID_INPUT', '먼저 대문 HTML 을 가져와주세요.');
-  await prisma.cafeIntegration.update({ where: { userId }, data: { gatePicks: picks } });
+  //  사용자가 직접 자리를 골랐다 — 자동 복구 카운터·연속 사라짐은 초기화 (#318)
+  await prisma.cafeIntegration.update({ where: { userId }, data: { gatePicks: picks, ...RESET_AUTO } });
   return { applying: await autoApplyGate(prisma, userId) };
 }
 
@@ -255,7 +304,33 @@ export async function autoApplyGate(prisma: PrismaClient, userId: number): Promi
 
 /* ── 워커 (internal) ── */
 
-export async function listPendingActions(prisma: PrismaClient) {
+/**
+ * 자동 재불러오기 (#318) — 위치가 자동으로 풀려(사라짐 확정) PERMISSION_OK 가 된 연동을 예약 시각에 FETCH_GATE 로 올린다.
+ * 워커는 보통의 FETCH_GATE 와 똑같이 처리하고, completeGateFetch 가 표식이 있으면 재개·없으면 다음 시각을 잡거나 포기한다.
+ * 시도 횟수는 여기서 올리고 다음 시각도 미리 잡는다 — 읽기가 오류로 끝나도(completeGateSave 실패 경로) 예약이 끊기지 않게
+ */
+async function promoteDueRefetches(prisma: PrismaClient, now: Date) {
+  const due = await prisma.cafeIntegration.findMany({
+    where: { enabled: true, status: 'PERMISSION_OK', pendingAction: null, clubId: { not: null }, nextRefetchAt: { lte: now } },
+    select: { id: true, autoRefetchCount: true },
+  });
+  for (const row of due) {
+    const attempt = row.autoRefetchCount + 1;
+    await prisma.cafeIntegration.update({
+      where: { id: row.id },
+      data: {
+        pendingAction: 'FETCH_GATE',
+        requestedAt: now,
+        autoRefetchCount: attempt,
+        nextRefetchAt: attempt >= AUTO_REFETCH_MAX ? null : new Date(now.getTime() + autoRefetchDelayMs(attempt)),
+      },
+    });
+    await recordEvent(prisma, row.id, 'AUTO_REFETCH', `자동 재불러오기 ${attempt}/${AUTO_REFETCH_MAX}`);
+  }
+}
+
+export async function listPendingActions(prisma: PrismaClient, now = new Date()) {
+  await promoteDueRefetches(prisma, now);
   const rows = await prisma.cafeIntegration.findMany({
     where: { pendingAction: { not: null }, clubId: { not: null } },
     select: {
@@ -307,51 +382,87 @@ function hasPendingPicks(gatePicks: unknown): boolean {
   return picks.success && (!!picks.data.image || !!picks.data.youtube);
 }
 
+/** 자동 복구를 포기할 때 라우터가 운영자에게 알릴 정보 */
+export type GaveUpInfo = { id: number; channelName: string; cafeName: string | null; attempts: number };
+
+/**
+ * 자동 재불러오기가 표식 없이 끝났다 (#318). 횟수를 다 썼으면(다음 예약 없음) 포기 — 상태 메시지를 남기고 라우터가 운영자에게 알린다.
+ * 아직 예약이 남아 있으면 진행 상황만 메시지로
+ */
+async function afterAutoRefetchMiss(
+  prisma: PrismaClient,
+  row: { id: number; autoRefetchCount: number; nextRefetchAt: Date | null; user: { channelName: string }; cafeName: string | null },
+): Promise<{ statusMessage: string; gaveUp: GaveUpInfo | null }> {
+  if (row.autoRefetchCount >= AUTO_REFETCH_MAX && !row.nextRefetchAt) {
+    const message = `자동 복구 ${AUTO_REFETCH_MAX}회 실패 — 대문에서 방송 상태 이미지를 찾지 못했습니다. 위치를 다시 지정해주세요.`;
+    await recordEvent(prisma, row.id, 'GAVE_UP', message);
+    return { statusMessage: message, gaveUp: { id: row.id, channelName: row.user.channelName, cafeName: row.cafeName, attempts: row.autoRefetchCount } };
+  }
+  return { statusMessage: `대문에서 방송 상태 이미지가 사라졌습니다. 자동 복구 시도 중 (${row.autoRefetchCount}/${AUTO_REFETCH_MAX}) — 위치를 다시 지정하면 바로 시작합니다.`, gaveUp: null };
+}
+
 /**
  * 워커가 대문을 읽고 렌더했다. 대문이 바뀌었으면 고른 자리는 옛 경로라 버리되, 왜 버렸는지 남긴다 (#294).
- * 블록이 이미 들어 있는(반영된) 대문이면 상태를 ACTIVE 로 되돌린다 — 표식 오탐으로 중지됐던 연동의 복구 경로
+ * 블록이 이미 들어 있는(반영된) 대문이면 상태를 ACTIVE 로 되돌린다 — 표식 오탐으로 중지됐던 연동의 복구 경로.
+ * 되돌릴 때는 「지금 반영」처럼 마지막 스냅샷도 비워 다음 폴링에 바로 저장하게 한다 (#318 — 전에는 불러오기 뒤 「지금 반영」을 눌러야 했다)
  */
 export async function completeGateFetch(prisma: PrismaClient, id: number, input: { html: string; render: GateRenderInput | null }) {
-  const row = await prisma.cafeIntegration.findUnique({ where: { id }, select: { gateHtml: true, gatePicks: true, status: true } });
+  const row = await prisma.cafeIntegration.findUnique({
+    where: { id },
+    select: { gateHtml: true, gatePicks: true, status: true, autoRefetchCount: true, nextRefetchAt: true, cafeName: true, user: { select: { channelName: true } } },
+  });
   const changed = normalizeGateHtml(row?.gateHtml ?? '') !== normalizeGateHtml(input.html);
   const reset = changed && hasPendingPicks(row?.gatePicks);
   const present = findImageTags(input.html).length > 0;
   const reactivate = present && row?.status === 'PERMISSION_OK';
+  const auto = !!row && row.autoRefetchCount > 0;
+  const miss = auto && !present && row.status === 'PERMISSION_OK' ? await afterAutoRefetchMiss(prisma, { id, ...row }) : null;
   await prisma.cafeIntegration.update({
     where: { id },
     data: {
       pendingAction: null,
-      statusMessage: reset ? '대문이 바뀌어 고른 자리를 초기화했습니다. 자리를 다시 골라주세요.' : null,
+      statusMessage: miss ? miss.statusMessage : reset ? '대문이 바뀌어 고른 자리를 초기화했습니다. 자리를 다시 골라주세요.' : null,
       gateHtml: input.html,
       gateFetchedAt: new Date(),
       ...(changed ? { gatePicks: EMPTY_PICKS } : {}),
-      ...(reactivate ? { status: 'ACTIVE' as CafeLinkStatus } : {}),
+      ...(reactivate ? { status: 'ACTIVE' as CafeLinkStatus, lastSnapshot: Prisma.DbNull, saveAttemptedAt: null, ...RESET_AUTO } : {}),
       gateImage: input.render ? Buffer.from(input.render.png, 'base64') : null,
       gateBoxes: input.render ? input.render.boxes : [],
       gateWidth: input.render?.width ?? null,
       gateHeight: input.render?.height ?? null,
     },
   });
-  return { changed, reset, reactivated: reactivate };
+  if (reactivate) await recordEvent(prisma, id, 'RECOVERED', `대문에 표식이 있어 동작 재개${auto ? ` (자동 복구 ${row.autoRefetchCount}회째)` : ''} — 다음 확인에 바로 반영`, input.html.length);
+  return { changed, reset, reactivated: reactivate, auto, gaveUp: miss?.gaveUp ?? null };
 }
 
 /**
  * 워커의 대문 반영 결과. 블록이 하나라도 들어 있으면 ACTIVE(폴링 대상), 아니면 PERMISSION_OK.
  * stale = 대문이 그사이 바뀜 → 고른 자리를 버리고 다시 고르게 한다
  */
-export function completeGateSave(
+export async function completeGateSave(
   prisma: PrismaClient,
   id: number,
-  result: { ok: true; html: string; picks: GatePicks; render: GateRenderInput | null } | { ok: false; message: string; stale?: boolean },
-) {
+  result:
+    | { ok: true; html: string; picks: GatePicks; render: GateRenderInput | null }
+    | { ok: false; message: string; stale?: boolean; suspicious?: boolean; htmlLength?: number },
+): Promise<{ gaveUp: GaveUpInfo | null }> {
   if (!result.ok) {
-    return prisma.cafeIntegration.update({
+    //  자동 재불러오기가 읽기 오류로 끝났을 수도 있다 — 예약이 남아 있으면 이어가고, 다 썼으면 포기 (#318)
+    const row = await prisma.cafeIntegration.findUnique({
       where: { id },
-      data: { pendingAction: null, statusMessage: result.message, ...(result.stale ? { gatePicks: EMPTY_PICKS } : {}) },
+      select: { status: true, autoRefetchCount: true, nextRefetchAt: true, cafeName: true, user: { select: { channelName: true } } },
     });
+    const miss = row && row.autoRefetchCount > 0 && row.status === 'PERMISSION_OK' ? await afterAutoRefetchMiss(prisma, { id, ...row }) : null;
+    await prisma.cafeIntegration.update({
+      where: { id },
+      data: { pendingAction: null, statusMessage: miss?.gaveUp ? miss.statusMessage : result.message, ...(result.stale ? { gatePicks: EMPTY_PICKS } : {}) },
+    });
+    await recordEvent(prisma, id, result.stale ? 'STALE' : result.suspicious ? 'SUSPICIOUS_READ' : 'SAVE_FAILED', result.message, result.htmlLength ?? null);
+    return { gaveUp: miss?.gaveUp ?? null };
   }
   const active = findImageTags(result.html).length > 0 || findYoutubeTags(result.html).length > 0;
-  return prisma.cafeIntegration.update({
+  await prisma.cafeIntegration.update({
     where: { id },
     data: {
       pendingAction: null,
@@ -361,11 +472,14 @@ export function completeGateSave(
       gateFetchedAt: new Date(),
       ...(result.render ? { gateUpdatedAt: new Date() } : {}),
       gatePicks: result.picks,
+      //  사용자 반영이 끝났다 — 자동 판정 상태는 처음부터 (#318)
+      ...RESET_AUTO,
       ...(result.render
         ? { gateImage: Buffer.from(result.render.png, 'base64'), gateBoxes: result.render.boxes, gateWidth: result.render.width, gateHeight: result.render.height }
         : {}),
     },
   });
+  return { gaveUp: null };
 }
 
 /* ── 방송 상태 폴링·대문 갱신 (#9 PR3b) ── */
@@ -385,7 +499,8 @@ export async function listActive(prisma: PrismaClient) {
   if (revived.length > 0) {
     await prisma.cafeIntegration.updateMany({ where: { id: { in: revived } }, data: { status: 'ACTIVE', statusMessage: null } });
   }
-  return active.map((r) => ({ id: r.id, clubId: r.clubId!, cafeName: r.cafeName, channelId: r.user.channelId, channelName: r.user.channelName, revived: revived.includes(r.id) }));
+  //  gateHtml = 마지막으로 알고 있던 대문 — 워커가 읽기 건전성 검사(잘린 읽기)에 쓴다 (#318)
+  return active.map((r) => ({ id: r.id, clubId: r.clubId!, cafeName: r.cafeName, channelId: r.user.channelId, channelName: r.user.channelName, revived: revived.includes(r.id), gateHtml: r.gateHtml! }));
 }
 
 /**
@@ -399,7 +514,7 @@ export async function requestGateRefresh(prisma: PrismaClient, userId: number) {
   }
   await prisma.cafeIntegration.update({
     where: { userId },
-    data: { lastSnapshot: Prisma.DbNull, saveAttemptedAt: null, status: 'ACTIVE', statusMessage: null },
+    data: { lastSnapshot: Prisma.DbNull, saveAttemptedAt: null, status: 'ACTIVE', statusMessage: null, ...RESET_AUTO },
   });
   return { ok: true as const };
 }
@@ -434,23 +549,56 @@ export async function evaluateLive(prisma: PrismaClient, id: number, snapshot: C
 }
 type CafeSnapshotInput = ReturnType<typeof cafeSnapshotSchema.parse>;
 
-/** 워커의 대문 갱신 결과. missing = 대문에서 이미지 블록이 사라짐(alt·src 어느 쪽으로도 없음) → 동작 중지, 자리를 다시 고르게 */
-export function reportSave(
+/**
+ * 워커의 대문 갱신 결과.
+ * - missing = 대문에서 이미지 블록을 못 찾음(alt·src 어느 쪽으로도). 잘린 읽기일 수 있어 3주기 연속일 때만 중지·위치 초기화하고
+ *   자동 재불러오기를 예약한다 (#318). 그 전엔 진행 상황만 남긴다. 확정 전에는 그 HTML 로 gateHtml 을 덮어쓰지 않는다
+ * - suspicious = 읽기 건전성 검사에 걸려 이번 주기를 건너뜀 — 상태는 그대로, 이벤트만
+ */
+export async function reportSave(
   prisma: PrismaClient,
   id: number,
-  result: { ok: true; serial: number; html: string } | { ok: false; message: string; missing?: boolean; html?: string },
+  result:
+    | { ok: true; serial: number; html: string }
+    | { ok: false; message: string; missing?: boolean; suspicious?: boolean; html?: string; htmlLength?: number },
+  now = new Date(),
 ) {
   if (result.ok) {
-    return prisma.cafeIntegration.update({ where: { id }, data: { gateSerial: result.serial, gateHtml: result.html, gateUpdatedAt: new Date(), statusMessage: null } });
+    await prisma.cafeIntegration.update({ where: { id }, data: { gateSerial: result.serial, gateHtml: result.html, gateUpdatedAt: now, statusMessage: null, missingStreak: 0 } });
+    return { stopped: false };
   }
-  return prisma.cafeIntegration.update({
+  const length = result.htmlLength ?? result.html?.length ?? null;
+  if (result.suspicious) {
+    await recordEvent(prisma, id, 'SUSPICIOUS_READ', result.message, length);
+    return { stopped: false };
+  }
+  if (!result.missing) {
+    await prisma.cafeIntegration.update({ where: { id }, data: { statusMessage: result.message } });
+    await recordEvent(prisma, id, 'SAVE_FAILED', result.message, length);
+    return { stopped: false };
+  }
+  const row = await prisma.cafeIntegration.findUnique({ where: { id }, select: { missingStreak: true } });
+  const streak = (row?.missingStreak ?? 0) + 1;
+  if (streak < MISSING_STREAK_LIMIT) {
+    const message = `대문에서 방송 상태 이미지를 찾지 못했습니다 (${streak}/${MISSING_STREAK_LIMIT}) — 재확인 중`;
+    await prisma.cafeIntegration.update({ where: { id }, data: { missingStreak: streak, statusMessage: message } });
+    await recordEvent(prisma, id, 'MISSING', message, length);
+    return { stopped: false };
+  }
+  await prisma.cafeIntegration.update({
     where: { id },
     data: {
-      statusMessage: result.message,
-      ...(result.missing ? { status: 'PERMISSION_OK' as CafeLinkStatus, gatePicks: EMPTY_PICKS } : {}),
+      status: 'PERMISSION_OK' as CafeLinkStatus,
+      statusMessage: `${result.message} 자동으로 대문을 다시 확인합니다 (5분 후부터, 최대 ${AUTO_REFETCH_MAX}회).`,
+      gatePicks: EMPTY_PICKS,
+      missingStreak: streak,
+      autoRefetchCount: 0,
+      nextRefetchAt: new Date(now.getTime() + autoRefetchDelayMs(1)),
       ...(result.html !== undefined ? { gateHtml: result.html } : {}),
     },
   });
+  await recordEvent(prisma, id, 'STOPPED', `${MISSING_STREAK_LIMIT}주기 연속 표식 없음 — 동작 중지, 위치 초기화, 자동 재불러오기 예약`, length);
+  return { stopped: true };
 }
 
 /** 워커용 — 쿠키 값 그대로. internal 외에는 절대 내려보내지 않는다 */
