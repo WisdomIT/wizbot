@@ -181,8 +181,11 @@ export function SourcePlayer({
               void trpc.song.reportEnded.mutate();
             }
           },
-          onError: () => {
-            if (isActiveRef.current) void trpc.song.reportFailed.mutate();
+          onError: (event: any) => {
+            //  오류 코드(2·5·100·101·150)와 어느 창·어느 곡인지 함께 보낸다 — 이력에 원인이 남고, 늦은 보고는 서버가 버린다 (#319)
+            if (!isActiveRef.current) return;
+            const code = typeof event?.data === 'number' ? event.data : null;
+            void trpc.song.reportFailed.mutate({ code, source, youtubeId: currentVideoRef.current }).catch(() => null);
           },
         },
       });
@@ -192,7 +195,7 @@ export function SourcePlayer({
       disposed = true;
       playerRef.current?.destroy?.();
     };
-  }, [sync, trpc]);
+  }, [sync, trpc, source]);
 
   /**
    * 하트비트 — 활성 세션 여부를 갱신하고, 같은 응답으로 재생 상태까지 맞춘다.

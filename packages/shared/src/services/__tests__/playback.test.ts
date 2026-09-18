@@ -3,10 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   advanceToNext,
+  describeFailCode,
+  FAIL_STREAK_LIMIT,
+  formatFailReason,
   getSourceStatus,
+  handoffSource,
   isSessionActive,
+  play,
   playSongNow,
   reportEnded,
+  reportFailed,
   reportPosition,
   seek,
   setShortcuts,
@@ -14,7 +20,7 @@ import {
   togglePlay,
   touchSourceSession,
 } from '../playback';
-import { clearSource, SOURCE_TIMEOUT_MS, subscribeSongEvents } from '../songEvents';
+import { clearSource, listSourceSessions, SOURCE_TIMEOUT_MS, subscribeSongEvents } from '../songEvents';
 
 const USER_ID = 1;
 
@@ -117,8 +123,9 @@ describe('togglePlay (#85)', () => {
 
     await togglePlay(prisma, USER_ID);
 
+    //  사람이 ▶ 를 누른 것 — 연속 실패 카운트도 함께 푼다 (#319)
     expect(songPlayback.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'PLAYING' } }),
+      expect.objectContaining({ data: { status: 'PLAYING', failStreak: 0, lastFailReason: null } }),
     );
   });
 });
@@ -423,6 +430,150 @@ describe('송출 소스 중재', () => {
 
       expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
       expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('재생 실패 차단기·원인 (#319)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const CURRENT = {
+    userId: USER_ID,
+    status: 'PLAYING',
+    youtubeId: 'bbbbbbbbbbb',
+    title: '현재 곡',
+    videoUploader: 'ch',
+    requester: '위즈',
+    durationSeconds: 100,
+    startedAt: new Date(),
+    failStreak: 0,
+    lastFailReason: null,
+  };
+
+  it('오류 코드를 사람이 읽는 원인으로 — 창 종류도 함께', () => {
+    expect(describeFailCode(150)).toBe('임베드 차단');
+    expect(describeFailCode(100)).toBe('삭제·비공개 영상');
+    expect(describeFailCode(null)).toBe('원인 미상');
+    expect(formatFailReason(101, 'ELECTRON')).toBe('임베드 차단 · 앱');
+    expect(formatFailReason(5, 'OBS')).toBe('플레이어 오류(HTML5) · OBS');
+  });
+
+  it('1·2회째 실패: FAILED(원인 포함)로 남기고 다음 곡으로, 카운트 +1', async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 1 });
+    const result = await reportFailed(prisma, USER_ID, { code: 150, source: 'ELECTRON', youtubeId: 'bbbbbbbbbbb' });
+    expect(result.halted).toBe(false);
+    expect(prisma.songHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', failReason: '임베드 차단 · 앱' }) }),
+    );
+    expect(songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 2, lastFailReason: '임베드 차단 · 앱' } }));
+    //  다음 곡으로 넘어갔다 (트랜잭션으로 큐에서 꺼냄)
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it(`${FAIL_STREAK_LIMIT}회 연속 실패: 다음 곡으로 넘기지 않고 STOPPED 로 멈춘다 (자동 재생도 돌지 않는다)`, async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: FAIL_STREAK_LIMIT - 1 });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    const result = await reportFailed(prisma, USER_ID, { code: 101, source: 'OBS' });
+    unsubscribe();
+    expect(result.halted).toBe(true);
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'STOPPED', youtubeId: null, failStreak: FAIL_STREAK_LIMIT, lastFailReason: '임베드 차단 · OBS' }) }),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: 'playback' }, { type: 'command', action: 'stop' }]);
+  });
+
+  it('이미 넘어간 곡의 늦은 실패 보고는 버린다', async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], CURRENT);
+    const result = await reportFailed(prisma, USER_ID, { code: 100, youtubeId: 'oldoldoldol' });
+    expect(result.halted).toBe(false);
+    expect(prisma.songHistory.create).not.toHaveBeenCalled();
+    expect(songPlayback.update).not.toHaveBeenCalled();
+  });
+
+  it('▶(재생)·다음 곡·정상 종료는 카운트를 푼다', async () => {
+    const halted = { ...CURRENT, status: 'STOPPED', youtubeId: null, title: null, failStreak: 3, lastFailReason: '임베드 차단 · 앱' };
+    const a = createPrisma([QUEUE_ITEM], halted);
+    await play(a.prisma, USER_ID);
+    expect(a.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
+
+    const b = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 2 });
+    await skipToNext(b.prisma, USER_ID);
+    expect(b.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
+
+    const c = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 2 });
+    await reportEnded(c.prisma, USER_ID);
+    expect(c.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
+  });
+});
+
+describe('다중 플레이어 세션 목록·넘기기 (#319)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearSource(USER_ID);
+  });
+
+  it('세션 목록 — 활성 1 + 대기 N, 소스 타입과 마지막 하트비트', async () => {
+    const { prisma } = createPrisma();
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    touchSourceSession(USER_ID, 'OBS', 'session-2');
+    touchSourceSession(USER_ID, 'ELECTRON', 'session-3');
+    const status = await getSourceStatus(prisma, USER_ID);
+    expect(status.online).toBe(true);
+    expect(status.lastSeenAgoMs).toBeGreaterThanOrEqual(0);
+    //  활성 먼저, 그다음 최근 순 (같은 시각이면 붙은 순서)
+    expect(status.sessions.map((s) => [s.source, s.active])).toEqual([['OBS', true], ['OBS', false], ['ELECTRON', false]]);
+  });
+
+  it('대기 세션이 새로 붙거나 떨어지면 source 이벤트로 컨트롤러에 알린다', () => {
+    vi.useFakeTimers();
+    try {
+      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      const events: unknown[] = [];
+      const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+      touchSourceSession(USER_ID, 'OBS', 'session-2'); // 대기 세션 추가 → 알림
+      touchSourceSession(USER_ID, 'OBS', 'session-2'); // 반복 → 조용히
+      expect(events).toEqual([{ type: 'source' }]);
+      unsubscribe();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('넘기기 — 대기 세션에게 바로 넘어가고, 내려놓은 세션은 다른 세션이 있는 동안 다시 잡지 않는다', () => {
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    touchSourceSession(USER_ID, 'OBS', 'session-2');
+    expect(handoffSource(USER_ID)).toEqual({ ok: true });
+    expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
+    expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
+    expect(listSourceSessions(USER_ID).map((s) => [s.sessionId, s.active])).toEqual([['session-2', true], ['session-1', false]]);
+  });
+
+  it('넘기기 — 대기 세션이 없으면 CONFLICT', () => {
+    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    expect(() => handoffSource(USER_ID)).toThrowError(/넘길 다른 창이 없습니다/);
+    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
+  });
+
+  it('주인이 끊기면 가장 최근에 본 대기 세션이 이어받는다', () => {
+    vi.useFakeTimers();
+    try {
+      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      touchSourceSession(USER_ID, 'OBS', 'session-2');
+      touchSourceSession(USER_ID, 'OBS', 'session-3');
+      vi.advanceTimersByTime(10_000);
+      touchSourceSession(USER_ID, 'OBS', 'session-2');
+      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS - 9_000);
+      touchSourceSession(USER_ID, 'OBS', 'session-3');
+      //  session-1 은 15초 넘게 묵음 → 탈락. 가장 최근에 본 대기 세션(session-3)이 잡고 session-2 는 대기
+      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+      expect(isSessionActive(USER_ID, 'session-3')).toBe(true);
+      expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
     } finally {
       vi.useRealTimers();
     }

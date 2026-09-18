@@ -6,7 +6,9 @@ import { ServiceError } from './errors';
 import {
   getSourcePresence,
   isActiveSession,
+  listSourceSessions,
   publishSongEvent,
+  releaseSource,
   SOURCE_TIMEOUT_MS,
   touchSource,
 } from './songEvents';
@@ -109,6 +111,7 @@ async function recordHistory(
   userId: number,
   status: 'PLAYED' | 'SKIPPED' | 'FAILED',
   resolvedBy?: string,
+  failReason?: string,
 ) {
   const playback = await prisma.songPlayback.findUnique({ where: { userId } });
   if (!playback?.youtubeId || !playback.title) return;
@@ -123,6 +126,7 @@ async function recordHistory(
       durationSeconds: playback.durationSeconds,
       status,
       resolvedBy,
+      failReason,
       requestedAt: playback.startedAt ?? new Date(),
       resolvedAt: new Date(),
     },
@@ -132,12 +136,15 @@ async function recordHistory(
 export async function play(prisma: PrismaClient, userId: number) {
   const playback = await getPlayback(prisma, userId);
 
-  // 올려둔 곡이 없으면 큐에서 하나 꺼낸다
-  if (!playback.youtubeId) return advanceToNext(prisma, userId);
+  // 올려둔 곡이 없으면 큐에서 하나 꺼낸다. 연속 실패로 멈췄던 상태(차단기)는 사람이 ▶ 를 누른 것으로 풀린다 (#319)
+  if (!playback.youtubeId) {
+    if (playback.failStreak > 0) await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
+    return advanceToNext(prisma, userId);
+  }
 
   const updated = await prisma.songPlayback.update({
     where: { userId },
-    data: { status: 'PLAYING' },
+    data: { status: 'PLAYING', ...RESET_FAILS },
   });
   publishSongEvent(userId, { type: 'playback' });
   publishSongEvent(userId, { type: 'command', action: 'play' });
@@ -183,6 +190,7 @@ export async function stop(prisma: PrismaClient, userId: number, resolvedBy?: st
       durationSeconds: 0,
       positionSeconds: 0,
       startedAt: null,
+      ...RESET_FAILS,
     },
   });
   publishSongEvent(userId, { type: 'playback' });
@@ -194,6 +202,8 @@ export async function stop(prisma: PrismaClient, userId: number, resolvedBy?: st
 export async function skipToNext(prisma: PrismaClient, userId: number, resolvedBy?: string) {
   await getPlayback(prisma, userId);
   await recordHistory(prisma, userId, 'SKIPPED', resolvedBy);
+  //  사람이 넘긴 것 — 연속 실패 카운트는 처음부터 (#319)
+  await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
   const playback = await advanceToNext(prisma, userId);
   publishSongEvent(userId, { type: 'command', action: 'next' });
   return playback;
@@ -276,13 +286,80 @@ export async function reportEnded(prisma: PrismaClient, userId: number) {
   }
 
   await recordHistory(prisma, userId, 'PLAYED');
+  //  끝까지 재생됐다 — 환경 문제가 아니었으니 연속 실패 카운트를 푼다 (#319)
+  if (playback.failStreak > 0) await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
   return advanceToNext(prisma, userId);
 }
 
-/** 재생 실패 — 임베드 차단 등. 이력에 FAILED 로 남기고 다음 곡으로 */
-export async function reportFailed(prisma: PrismaClient, userId: number) {
-  await recordHistory(prisma, userId, 'FAILED');
-  return advanceToNext(prisma, userId);
+/* ── 재생 실패 (#319) ── */
+
+/** 연속 실패가 이만큼이면 다음 곡으로 넘기지 않고 멈춘다 — 곡이 아니라 환경(임베드 차단·네트워크·로그인) 문제일 가능성이 크다 */
+export const FAIL_STREAK_LIMIT = 3;
+const RESET_FAILS = { failStreak: 0, lastFailReason: null };
+
+/**
+ * YouTube IFrame API onError 코드 → 사람이 읽는 원인.
+ * https://developers.google.com/youtube/iframe_api_reference#onError
+ */
+export function describeFailCode(code: number | null | undefined): string {
+  switch (code) {
+    case 2: return '잘못된 영상 ID';
+    case 5: return '플레이어 오류(HTML5)';
+    case 100: return '삭제·비공개 영상';
+    case 101:
+    case 150: return '임베드 차단';
+    default: return code == null ? '원인 미상' : `알 수 없는 오류(${code})`;
+  }
+}
+
+const FAIL_SOURCE_LABEL: Record<string, string> = { OBS: 'OBS', ELECTRON: '앱' };
+
+/** 이력·배너에 남기는 문구: 「임베드 차단 · 앱」 */
+export function formatFailReason(code: number | null | undefined, source: string | null | undefined): string {
+  const where = source ? FAIL_SOURCE_LABEL[source] ?? source : null;
+  return where ? `${describeFailCode(code)} · ${where}` : describeFailCode(code);
+}
+
+/**
+ * 재생 실패 — 임베드 차단 등. 이력에 FAILED(원인 포함)로 남기고 다음 곡으로.
+ * 연속 FAIL_STREAK_LIMIT 회면 넘기지 않고 STOPPED 로 멈춘다(차단기) — 자동 재생이 켜져 있으면 실패→다음 곡→실패가 끝없이 이어져
+ * 정지조차 못 하던 문제. 사람이 ▶·다음 곡을 누르면 카운트가 풀린다. 이미 넘어간 곡의 늦은 보고(youtubeId 불일치)는 버린다
+ */
+export async function reportFailed(
+  prisma: PrismaClient,
+  userId: number,
+  detail: { code?: number | null; source?: string | null; youtubeId?: string | null } = {},
+) {
+  const playback = await getPlayback(prisma, userId);
+  if (detail.youtubeId && playback.youtubeId && playback.youtubeId !== detail.youtubeId) return { playback, halted: false };
+
+  const reason = formatFailReason(detail.code, detail.source);
+  await recordHistory(prisma, userId, 'FAILED', undefined, reason);
+  const streak = playback.failStreak + 1;
+
+  if (streak >= FAIL_STREAK_LIMIT) {
+    const halted = await prisma.songPlayback.update({
+      where: { userId },
+      data: {
+        status: 'STOPPED',
+        youtubeId: null,
+        title: null,
+        videoUploader: null,
+        requester: null,
+        durationSeconds: 0,
+        positionSeconds: 0,
+        startedAt: null,
+        failStreak: streak,
+        lastFailReason: reason,
+      },
+    });
+    publishSongEvent(userId, { type: 'playback' });
+    publishSongEvent(userId, { type: 'command', action: 'stop' });
+    return { playback: halted, halted: true };
+  }
+
+  await prisma.songPlayback.update({ where: { userId }, data: { failStreak: streak, lastFailReason: reason } });
+  return { playback: await advanceToNext(prisma, userId), halted: false };
 }
 
 /** 대기열의 특정 곡을 지금 재생한다 — 현재 곡은 SKIPPED 로 기록 (#5 2-b) */
@@ -310,6 +387,7 @@ export async function playSongNow(
         durationSeconds: target.durationSeconds,
         positionSeconds: 0,
         startedAt: new Date(),
+        ...RESET_FAILS,
       },
     }),
     prisma.song.delete({ where: { id: target.id } }),
@@ -369,11 +447,19 @@ export async function setVolume(prisma: PrismaClient, userId: number, volume: nu
 
 /* ── 송출 소스 ── */
 
-/** 하트비트 갱신 — 창을 여러 개 열면 마지막 것이 활성 세션이 된다 */
+/** 하트비트 갱신 — 창을 여러 개 열면 먼저 잡은 것이 활성, 나머지는 대기 */
 export function touchSourceSession(userId: number, source: string, sessionId: string) {
   const { changed } = touchSource(userId, source, sessionId);
-  // 연결이 새로 붙었을 때만 알린다 — 끊기는 쪽은 구독자가 lastSeenAt 으로 직접 판정한다
+  // 주인·세션 수가 바뀔 때만 알린다 — 끊기는 쪽은 구독자가 lastSeenAt 으로 직접 판정한다
   if (changed) publishSongEvent(userId, { type: 'source' });
+}
+
+/** 「다른 창으로 넘기기」 (#319) — 대기 중인 다른 창이 있어야 넘어간다 */
+export function handoffSource(userId: number) {
+  const moved = releaseSource(userId);
+  if (!moved) throw new ServiceError('CONFLICT', '넘길 다른 창이 없습니다. 대기 중인 플레이어가 있어야 합니다.');
+  publishSongEvent(userId, { type: 'source' });
+  return { ok: true as const };
 }
 
 export function isSessionActive(userId: number, sessionId: string) {
@@ -430,15 +516,23 @@ export async function setSourceType(
 }
 
 /** 컨트롤러에 보여줄 소스 상태 — 지정된 소스가 오프라인이면 경고할 수 있게 */
-export async function getSourceStatus(prisma: PrismaClient, userId: number) {
+export async function getSourceStatus(prisma: PrismaClient, userId: number, now = Date.now()) {
   const setting = await ensureSourceTokens(prisma, userId);
-  const presence = getSourcePresence(userId);
+  const presence = getSourcePresence(userId, now);
+  const sessions = listSourceSessions(userId, now);
 
   return {
     sourceType: setting.songSourceType,
     online: presence !== null && presence.source === setting.songSourceType,
     connectedSource: presence?.source ?? null,
     lastSeenAt: presence ? new Date(presence.lastSeenAt) : null,
+    /**
+     * 「몇 ms 전에 봤는지」 (#319) — 컨트롤러가 자기 시계로 lastSeenAt 을 빼면 PC 시계 오차만큼 틀려서
+     * 「연결됨 ↔ 연결 안 됨」이 깜빡였다. 응답을 받은 시각에 이 값을 더해 세면 시계가 달라도 맞다
+     */
+    lastSeenAgoMs: presence ? now - presence.lastSeenAt : null,
+    /** 붙어 있는 창 전부 — 활성 1 + 대기 N (#319). 지정된 소스 타입의 창만 하트비트가 등록된다 */
+    sessions: sessions.map((s) => ({ source: s.source, active: s.active, lastSeenAgoMs: now - s.lastSeenAt })),
     timeoutMs: SOURCE_TIMEOUT_MS,
     sourceToken: setting.songSourceToken,
     overlayToken: setting.songOverlayToken,

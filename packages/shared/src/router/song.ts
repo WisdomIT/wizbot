@@ -106,6 +106,8 @@ export const songRouter = t.router({
     playbackService.togglePlay(ctx.prisma, ctx.user.id),
   ),
   stop: streamerProcedure.mutation(({ ctx }) => playbackService.stop(ctx.prisma, ctx.user.id)),
+  /** 활성 플레이어를 대기 중인 다른 창으로 넘긴다 (#319) */
+  handoffSource: streamerProcedure.mutation(({ ctx }) => playbackService.handoffSource(ctx.user.id)),
   next: streamerProcedure.mutation(({ ctx }) =>
     playbackService.skipToNext(ctx.prisma, ctx.user.id),
   ),
@@ -352,9 +354,12 @@ export const songRouter = t.router({
   reportEnded: songSourceProcedure.mutation(({ ctx }) =>
     playbackService.reportEnded(ctx.prisma, ctx.songSource.userId),
   ),
-  reportFailed: songSourceProcedure.mutation(({ ctx }) =>
-    playbackService.reportFailed(ctx.prisma, ctx.songSource.userId),
-  ),
+  /** 재생 실패 — 유튜브 오류 코드·어느 창인지·어느 곡인지 함께 (#319). 연속 3회면 서버가 멈춘다 */
+  reportFailed: songSourceProcedure
+    .input(
+      z.object({ code: z.number().int().nullable().optional(), source: sourceTypeSchema.optional(), youtubeId: z.string().max(11).nullable().optional() }).optional(),
+    )
+    .mutation(({ ctx, input }) => playbackService.reportFailed(ctx.prisma, ctx.songSource.userId, input ?? {})),
   reportPosition: songSourceProcedure
     // youtubeId 를 함께 받아 지난 곡의 보고를 걸러낸다 (#122)
     .input(z.object({ positionSeconds: z.number().min(0), youtubeId: z.string() }))
