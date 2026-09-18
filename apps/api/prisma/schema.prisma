@@ -634,6 +634,8 @@ model SongHistory {
   status             SongHistoryStatus
   /// 삭제/스킵을 실행한 사람 (닉네임). 본인 취소면 신청자와 같다
   resolvedBy         String?           @db.VarChar(40)
+  /// FAILED 의 원인 (#319) — 유튜브 오류 코드를 사람이 읽는 문구로 + 어느 창(앱/OBS)에서 실패했는지
+  failReason         String?           @db.VarChar(60)
   /// 스트리머가 이 항목만 시청자에게 숨김
   hiddenFromViewers  Boolean           @default(false) @db.TinyInt
   requestedAt        DateTime          @default(now())
@@ -687,6 +689,10 @@ model SongPlayback {
   volume        Int        @default(70) @db.Int // 0~100
   /// 한 곡 반복 — 곡이 끝나면 다음 곡으로 넘기지 않고 처음부터 다시 재생한다
   repeatOne     Boolean    @default(false) @db.TinyInt
+  /// 연속 재생 실패 수 (#319) — 3회가 되면 다음 곡으로 넘기지 않고 멈춘다(차단기). 정상 종료·수동 재생/다음 곡에서 0
+  failStreak    Int        @default(0) @db.Int
+  /// 마지막 실패 원인 (사람이 읽는 문구) — 멈춤 배너에 보여준다
+  lastFailReason String?   @db.VarChar(60)
   /// 현재 곡이 큐에서 나온 시각 — 이력 기록·타임아웃 판단용
   startedAt     DateTime?
   updatedAt     DateTime   @updatedAt

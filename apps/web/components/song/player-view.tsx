@@ -19,7 +19,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, GripVertical, Heart, Minimize2, PlayCircle, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Eraser, GripVertical, Heart, Minimize2, Play, PlayCircle, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -63,10 +63,10 @@ import { SettingsDialog } from './settings-dialog';
 export function PlayerView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data, isPending, error } = useQuery({
+  const { data, isPending, error, dataUpdatedAt } = useQuery({
     ...trpc.song.getState.queryOptions(),
     // SSE 가 주된 경로다. 이건 프록시 계층에서 이벤트가 조용히 새는 경우를 대비한 백스톱
-    refetchInterval: 10_000,
+    refetchInterval: STATE_REFETCH_MS,
   });
 
   const invalidate = useCallback(
@@ -74,7 +74,7 @@ export function PlayerView() {
     [queryClient, trpc],
   );
 
-  useSongEvents((event) => {
+  const { connected } = useSongEvents((event) => {
     // SSE 가 끊겨 있던 동안의 이벤트는 재전송되지 않는다.
     // 재연결(connected)이 곧 유실 구간의 끝이므로 이때 전체를 다시 읽는다.
     if (
@@ -111,6 +111,7 @@ export function PlayerView() {
   const dismissSuggestion = useMutation(trpc.suggestion.dismiss.mutationOptions());
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
   const setShortcuts = useMutation(trpc.song.setShortcuts.mutationOptions());
+  const handoffSource = useMutation(trpc.song.handoffSource.mutationOptions());
 
   const shell = useAppShell();
 
@@ -262,13 +263,17 @@ export function PlayerView() {
         </div>
       )}
 
-      {shell.isApp ? (
-        <div className="px-4 pt-3">
-          <SourceStatus source={source} />
-        </div>
-      ) : (
-        <SourceStatus source={source} />
-      )}
+      <div className={shell.isApp ? 'flex flex-col gap-2 px-4 pt-3' : 'flex flex-col gap-2'}>
+        <SourceStatus
+          source={source}
+          receivedAt={dataUpdatedAt}
+          eventsConnected={connected}
+          onHandoff={() => run(handoffSource.mutateAsync(), '대기 중인 다른 창으로 넘겼습니다.')}
+        />
+        {playback.status === 'STOPPED' && playback.failStreak >= FAIL_STREAK_LIMIT && (
+          <HaltedBanner reason={playback.lastFailReason} streak={playback.failStreak} onResume={playerControls.onPlay} />
+        )}
+      </div>
 
       {/* 큰 화면은 좌측 플레이어 · 우측 대기열, 작은 화면은 플레이어가 위 */}
       <div
@@ -402,26 +407,44 @@ export function PlayerView() {
   );
 }
 
-/**
- * 송출 소스 연결 상태.
- * 서버는 조회 시점에 online 을 계산해 주지만, 소스가 끊기면 하트비트도 멈춰서
- * 다시 조회할 계기가 사라진다. 마지막 하트비트 시각과 타임아웃으로 여기서 센다.
- */
+/** 컨트롤러 상태 재조회 주기 — 연결 판정의 여유 시간에도 쓴다 */
+const STATE_REFETCH_MS = 10_000;
+/** 서버 playbackService.FAIL_STREAK_LIMIT 과 같다 (#319) */
+const FAIL_STREAK_LIMIT = 3;
+
 const SOURCE_LABEL = {
   NONE: '사용 안 함',
   OBS: 'OBS 브라우저 소스',
   ELECTRON: '위즈봇 플레이어 앱',
 } as const;
+const SESSION_LABEL = { OBS: 'OBS 페이지', ELECTRON: '앱' } as const;
 
+/**
+ * 송출 소스 연결 상태.
+ * 서버는 조회 시점에 online 을 계산해 주지만, 소스가 끊기면 하트비트도 멈춰서 다시 조회할 계기가 사라진다 — 여기서 시간을 센다.
+ *
+ * 예전엔 서버의 lastSeenAt 을 **이 PC 시계**로 빼서 시계 오차만큼 틀렸고, 조회 직전 값(최대 5초 묵음)에 재조회 대기 10초가 더해져
+ * 타임아웃 15초 경계에 걸리면 「연결됨 ↔ 연결 안 됨」이 깜빡였다 (#319). 지금은 서버가 준 「몇 ms 전」에 응답 수신 후 경과 시간을 더해 세고,
+ * 여유는 타임아웃 + 재조회 주기 — 하트비트가 정말 끊기면 늦어도 25초 안에 「연결 안 됨」이 된다.
+ */
 function SourceStatus({
   source,
+  receivedAt,
+  eventsConnected,
+  onHandoff,
 }: {
   source: {
     sourceType: 'NONE' | 'OBS' | 'ELECTRON';
     online: boolean;
-    lastSeenAt: string | Date | null;
+    lastSeenAgoMs: number | null;
+    sessions: { source: string; active: boolean; lastSeenAgoMs: number }[];
     timeoutMs: number;
   };
+  /** getState 응답을 받은 시각 (react-query dataUpdatedAt) */
+  receivedAt: number;
+  /** 실시간(SSE) 연결이 살아 있는지 (#319) */
+  eventsConnected: boolean;
+  onHandoff: () => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -430,26 +453,68 @@ function SourceStatus({
     return () => clearInterval(timer);
   }, []);
 
+  const events = (
+    <span
+      className="ml-auto flex items-center gap-1 text-xs"
+      title={eventsConnected ? '실시간 연결됨 — 조작이 바로 반영됩니다' : '실시간 연결이 끊겨 다시 붙는 중 — 조작 반영이 몇 초 늦을 수 있습니다'}
+    >
+      <span className={`inline-block size-2 rounded-full ${eventsConnected ? 'bg-emerald-500' : 'animate-pulse bg-amber-500'}`} />
+      {eventsConnected ? '실시간' : '재연결 중'}
+    </span>
+  );
+
   if (source.sourceType === 'NONE') {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Badge variant="outline">송출 소스 사용 안 함</Badge>
         설정에서 OBS 또는 앱을 선택하세요.
+        {events}
       </div>
     );
   }
 
+  const sinceReceived = Math.max(0, now - receivedAt);
   const online =
     source.online &&
-    !!source.lastSeenAt &&
-    now - new Date(source.lastSeenAt).getTime() <= source.timeoutMs;
+    source.lastSeenAgoMs !== null &&
+    source.lastSeenAgoMs + sinceReceived <= source.timeoutMs + STATE_REFETCH_MS;
+  const waiting = source.sessions.filter((s) => !s.active && s.lastSeenAgoMs + sinceReceived <= source.timeoutMs);
+  const activeSession = source.sessions.find((s) => s.active);
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      {online ? <Badge>연결됨</Badge> : <Badge variant="destructive">연결 안 됨</Badge>}
-      {online
-        ? `${SOURCE_LABEL[source.sourceType]} 에서 재생 중입니다.`
-        : '송출 소스가 연결되어 있지 않습니다. 재생해도 소리가 나지 않습니다.'}
+    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        {online ? <Badge>연결됨</Badge> : <Badge variant="destructive">연결 안 됨</Badge>}
+        {online
+          ? `${SOURCE_LABEL[source.sourceType]} 에서 재생 중입니다.`
+          : '송출 소스가 연결되어 있지 않습니다. 재생해도 소리가 나지 않습니다.'}
+        {events}
+      </div>
+      {online && waiting.length > 0 && activeSession && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
+          <span>
+            플레이어 {waiting.length + 1}개가 연결돼 있습니다. 소리는 먼저 연결된 {SESSION_LABEL[activeSession.source as keyof typeof SESSION_LABEL] ?? activeSession.source} 1개에서만 나고,
+            나머지 {waiting.length}개({waiting.map((s) => SESSION_LABEL[s.source as keyof typeof SESSION_LABEL] ?? s.source).join(', ')})는 대기 중입니다.
+          </span>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={onHandoff}>
+            <ArrowLeftRight /> 다른 창으로 넘기기
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 연속 실패 차단기 (#319) — 곡이 아니라 환경 문제일 때 자동 재생이 즐겨찾기를 끝없이 소비하지 않도록 서버가 멈춘 상태 */
+function HaltedBanner({ reason, streak, onResume }: { reason: string | null; streak: number; onResume: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+      <span>
+        곡이 {streak}번 연속 재생되지 않아 멈췄습니다{reason ? ` (마지막 원인: ${reason})` : ''}. 재생 창의 유튜브 로그인·네트워크를 확인하고 다시 시작하세요.
+      </span>
+      <Button size="sm" className="ml-auto" onClick={onResume}>
+        <Play /> 다시 시작
+      </Button>
     </div>
   );
 }
