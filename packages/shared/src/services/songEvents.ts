@@ -18,8 +18,10 @@ export type SongEvent =
       action: 'play' | 'pause' | 'stop' | 'next' | 'seek' | 'volume';
       value?: number;
     }
-  /** 송출 소스 연결 상태가 바뀜 */
-  | { type: 'source' };
+  /** 송출 소스 연결 상태·선택이 바뀜 */
+  | { type: 'source' }
+  /** 컨트롤러의 「찾기」 (#322) — 이 세션 ID 를 가진 창이 자신을 드러낸다 */
+  | { type: 'locate'; sessionId: string };
 
 const emitter = new EventEmitter();
 // 채널마다 컨트롤러·소스·시청자가 붙으므로 기본 상한(10)으로는 부족하다
@@ -39,13 +41,15 @@ export function subscribeSongEvents(userId: number, listener: (event: SongEvent)
   return () => emitter.off(channel(userId), listener);
 }
 
-/* ── 송출 소스 하트비트 (오프라인 감지·중복 방지) ── */
+/* ── 송출 세션 프레즌스 (#322) ── */
 
 export interface SourcePresence {
   /** 'OBS' | 'ELECTRON' */
   source: string;
-  /** 창을 여러 개 열었을 때 하나만 활성으로 삼는다 */
+  /** 창이 스스로 만들어 컴퓨터를 껐다 켜도 유지하는 고유 ID — 앱은 userData, OBS 페이지는 localStorage */
   sessionId: string;
+  /** 앱은 컴퓨터 이름, OBS 는 「OBS 브라우저 소스」 */
+  label: string;
   lastSeenAt: number;
 }
 
@@ -57,113 +61,50 @@ export interface SourcePresence {
 export const SOURCE_TIMEOUT_MS = 15_000;
 
 /**
- * 스트리머당 붙어 있는 송출 세션 전부 (#319). 활성은 하나, 나머지는 대기.
- * 이전엔 활성 하나만 기억해 창이 몇 개 열려 있는지 아무도 몰랐다 — 컨트롤러가 「플레이어 2개 연결, 1개 대기」를 알리려면 목록이 필요하다.
- * releasedSessionId = 「다른 창으로 넘기기」로 주인을 내려놓은 세션. 다른 세션이 잡기 전까지는 다시 주인이 되지 않는다(다른 세션이 없으면 타임아웃 뒤 복귀)
+ * 스트리머당 붙어 있는 송출 세션 전부. 어느 세션이 소리를 내는지는 여기서 정하지 않는다 —
+ * 스트리머가 고른 세션(UserSetting.songSourceSessionId)이 주인이고, 이 목록은 「지금 누가 켜져 있나」만 안다 (#322).
+ * 예전(#85·#319)엔 먼저 하트비트를 보낸 세션이 주인이 되는 규칙이 여기 있었는데, 어느 창이 소리를 내는지 사용자가 고를 수 없어 걷어냈다
  */
-interface SourceRoom {
-  activeSessionId: string | null;
-  releasedSessionId: string | null;
-  sessions: Map<string, SourcePresence>;
-}
+const rooms = new Map<number, Map<string, SourcePresence>>();
 
-const rooms = new Map<number, SourceRoom>();
-
-function room(userId: number): SourceRoom {
-  let r = rooms.get(userId);
-  if (!r) {
-    r = { activeSessionId: null, releasedSessionId: null, sessions: new Map() };
-    rooms.set(userId, r);
+function prune(sessions: Map<string, SourcePresence>, now: number) {
+  for (const [id, p] of sessions) {
+    if (now - p.lastSeenAt > SOURCE_TIMEOUT_MS) sessions.delete(id);
   }
-  return r;
-}
-
-/** 타임아웃 지난 세션을 치우고, 주인이 사라졌으면 가장 최근에 본 대기 세션에게 넘긴다 */
-function prune(r: SourceRoom, now: number): boolean {
-  for (const [id, p] of r.sessions) {
-    if (now - p.lastSeenAt > SOURCE_TIMEOUT_MS) r.sessions.delete(id);
-  }
-  if (r.activeSessionId && r.sessions.has(r.activeSessionId)) return false;
-  const previous = r.activeSessionId;
-  r.activeSessionId = null;
-  let best: SourcePresence | null = null;
-  for (const p of r.sessions.values()) {
-    if (p.sessionId === r.releasedSessionId) continue;
-    if (!best || p.lastSeenAt > best.lastSeenAt) best = p;
-  }
-  //  내려놓은 세션밖에 없으면 그 세션이 다시 잡는다 — 아무도 재생하지 않는 것보다 낫다
-  if (!best && r.releasedSessionId && r.sessions.has(r.releasedSessionId)) best = r.sessions.get(r.releasedSessionId)!;
-  if (best) {
-    r.activeSessionId = best.sessionId;
-    r.releasedSessionId = null;
-  }
-  return r.activeSessionId !== previous;
 }
 
 /**
- * 하트비트 수신.
- *
- * **먼저 잡은 세션이 유지된다.** 이전에는 하트비트마다 세션을 덮어써서, 두 기기가
- * 동시에 켜져 있으면 5초마다 주인이 뒤바뀌었다. 각 창은 자기 차례가 아니면 재생을
- * 멈추므로 어느 쪽도 제대로 재생하지 못했다.
- *
- * 주인이 하트비트를 멈추면 SOURCE_TIMEOUT_MS 뒤에 자리가 비고, 그때 대기 세션이 잡는다.
- *
- * changed 는 주인이 바뀌었거나 세션 수가 달라진 경우에만 true — 매번 이벤트를 쏘면 구독자 전원이 5초마다
- * 전체 상태를 다시 읽게 된다.
+ * 하트비트 수신. changed = 세션이 새로 붙었거나(타임아웃 뒤 복귀 포함) 이름·종류가 바뀌었거나 다른 세션이 떨어져 목록이 달라진 경우 —
+ * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽으므로 그때만 true
  */
-export function touchSource(
-  userId: number,
-  source: string,
-  sessionId: string,
-  now = Date.now(),
-): { changed: boolean; active: boolean } {
-  const r = room(userId);
-  const before = { active: r.activeSessionId, count: r.sessions.size, source: r.sessions.get(sessionId)?.source };
-  r.sessions.set(sessionId, { source, sessionId, lastSeenAt: now });
-  prune(r, now);
-  const active = r.activeSessionId === sessionId;
-  const changed = before.active !== r.activeSessionId || before.count !== r.sessions.size || (before.source !== undefined && before.source !== source);
-  return { changed, active };
+export function touchSource(userId: number, presence: Omit<SourcePresence, 'lastSeenAt'>, now = Date.now()): { changed: boolean } {
+  let sessions = rooms.get(userId);
+  if (!sessions) {
+    sessions = new Map();
+    rooms.set(userId, sessions);
+  }
+  const before = sessions.size;
+  const prev = sessions.get(presence.sessionId);
+  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now });
+  prune(sessions, now);
+  const changed = !prev || prev.source !== presence.source || prev.label !== presence.label || before !== sessions.size;
+  return { changed };
 }
 
-/** 활성 세션 — 없거나 타임아웃이면 null */
-export function getSourcePresence(userId: number, now = Date.now()): SourcePresence | null {
-  const r = rooms.get(userId);
-  if (!r) return null;
-  prune(r, now);
-  return r.activeSessionId ? (r.sessions.get(r.activeSessionId) ?? null) : null;
+/** 붙어 있는 세션 전부 — 최근 순 */
+export function listSourceSessions(userId: number, now = Date.now()): SourcePresence[] {
+  const sessions = rooms.get(userId);
+  if (!sessions) return [];
+  prune(sessions, now);
+  return [...sessions.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
 }
 
-/** 붙어 있는 세션 전부 (활성 먼저, 그다음 최근 순) — 컨트롤러의 다중 플레이어 안내용 (#319) */
-export function listSourceSessions(userId: number, now = Date.now()): (SourcePresence & { active: boolean })[] {
-  const r = rooms.get(userId);
-  if (!r) return [];
-  prune(r, now);
-  return [...r.sessions.values()]
-    .map((p) => ({ ...p, active: p.sessionId === r.activeSessionId }))
-    .sort((a, b) => Number(b.active) - Number(a.active) || b.lastSeenAt - a.lastSeenAt);
-}
-
-/** 이 세션이 현재 활성 세션인지 — 중복 실행된 창은 재생하지 않는다 */
-export function isActiveSession(userId: number, sessionId: string): boolean {
-  return getSourcePresence(userId)?.sessionId === sessionId;
-}
-
-/**
- * 「다른 창으로 넘기기」 (#319) — 주인을 내려놓고 대기 세션 중 가장 최근에 본 창에게 바로 넘긴다.
- * 대기 세션이 없으면 false (넘길 곳이 없다). 내려놓은 세션은 다른 세션이 붙기 전까지 다시 주인이 되지 않는다
- */
-export function releaseSource(userId: number, now = Date.now()): boolean {
-  const r = rooms.get(userId);
-  if (!r?.activeSessionId) return false;
-  prune(r, now);
-  const others = [...r.sessions.values()].filter((p) => p.sessionId !== r.activeSessionId);
-  if (others.length === 0) return false;
-  r.releasedSessionId = r.activeSessionId;
-  r.activeSessionId = null;
-  prune(r, now);
-  return true;
+/** 특정 세션 — 없거나 타임아웃이면 null */
+export function getSourceSession(userId: number, sessionId: string, now = Date.now()): SourcePresence | null {
+  const sessions = rooms.get(userId);
+  if (!sessions) return null;
+  prune(sessions, now);
+  return sessions.get(sessionId) ?? null;
 }
 
 export function clearSource(userId: number) {

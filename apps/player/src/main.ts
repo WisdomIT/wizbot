@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -69,6 +72,44 @@ let quitting = false;
 /** 컴퓨터 시작과 함께 켜진 경우 — 창을 띄우지 않고 트레이에만 남는다 */
 const startedHidden = process.argv.includes('--hidden');
 
+/**
+ * 이 앱(설치)의 송출 세션 ID (#322) — 컴퓨터를 껐다 켜도 같아야 스트리머가 고른 「이 앱」이 유지된다.
+ * userData 에 1회 만들어 저장하고, 숨은 재생 창(URL)과 메인 창(브리지)에 같은 값을 준다
+ */
+let sessionId = '';
+function loadSessionId(): string {
+  const file = join(app.getPath('userData'), 'source-session-id');
+  try {
+    if (existsSync(file)) {
+      const saved = readFileSync(file, 'utf8').trim();
+      if (/^[0-9a-f-]{36}$/i.test(saved)) return saved;
+    }
+  } catch {
+    /* 읽기 실패면 새로 만든다 */
+  }
+  const fresh = randomUUID();
+  try {
+    writeFileSync(file, fresh, 'utf8');
+  } catch {
+    /* 저장이 안 되면 이번 실행 동안만 유지된다 */
+  }
+  return fresh;
+}
+/** 컨트롤러 목록에 보일 이름 — 컴퓨터 이름 */
+const sessionLabel = hostname().slice(0, 80);
+
+/**
+ * 「찾기」 (#322) — 어느 컴퓨터의 앱인지 사용자가 알아볼 수 있게.
+ * Windows 는 작업 표시줄 아이콘이 노랗게 깜빡이고(포커스하면 멈춤), macOS 는 독 아이콘이 뛴다. 창이 트레이에 숨어 있으면 먼저 보이게 한다
+ */
+function drawAttention() {
+  const win = mainWindow;
+  if (!win) return;
+  if (!win.isVisible()) win.showInactive();
+  if (process.platform === 'darwin') app.dock?.bounce('critical');
+  else win.flashFrame(true);
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: DESKTOP.width,
@@ -119,6 +160,9 @@ function createMainWindow() {
       mainWindow?.hide();
     }
   });
+
+  //  찾기로 깜빡이던 작업 표시줄은 사용자가 창을 보면 멈춘다
+  mainWindow.on('focus', () => mainWindow?.flashFrame(false));
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -193,7 +237,7 @@ function createSourceWindow() {
     },
   });
 
-  void sourceWindow.loadURL(SOURCE_URL);
+  void sourceWindow.loadURL(`${SOURCE_URL}?session=${encodeURIComponent(sessionId)}&label=${encodeURIComponent(sessionLabel)}`);
 
   sourceWindow.on('closed', () => {
     sourceWindow = null;
@@ -421,6 +465,9 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle('app:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+  //  송출 세션 (#322) — 웹뷰가 자기 앱의 ID 를 알아야 「찾기」·「설정됨」 이벤트를 자기 것으로 알아본다
+  ipcMain.handle('app:get-session', () => ({ sessionId, label: sessionLabel }));
+  ipcMain.on('app:attention', () => drawAttention());
 
   ipcMain.on('app:open-youtube', () => openYoutubeWindow());
   ipcMain.handle('app:get-youtube-login', () => isYoutubeLoggedIn());
@@ -449,6 +496,7 @@ if (!app.requestSingleInstanceLock()) {
     // 기본 메뉴는 「Electron」 이름이 그대로 노출되고, 자체 타이틀바를 쓰므로 쓸 일도 없다
     Menu.setApplicationMenu(null);
 
+    sessionId = loadSessionId();
     createMainWindow();
     createSourceWindow();
     createTray();

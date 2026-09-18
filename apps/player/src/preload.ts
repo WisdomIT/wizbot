@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('wizbotApp', {
     return () => ipcRenderer.removeListener('app:update-changed', listener);
   },
 
+  /** 송출 세션 (#322) — 이 앱의 고유 ID·컴퓨터 이름. 「찾기」가 오면 attention 으로 작업 표시줄을 깜빡인다 */
+  getSession: (): Promise<{ sessionId: string; label: string }> => ipcRenderer.invoke('app:get-session'),
+  attention: () => ipcRenderer.send('app:attention'),
+
   minimize: () => ipcRenderer.send('app:window', 'minimize'),
   toggleMaximize: () => ipcRenderer.send('app:window', 'toggle-maximize'),
   close: () => ipcRenderer.send('app:window', 'close'),

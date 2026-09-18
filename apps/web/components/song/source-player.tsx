@@ -4,12 +4,13 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@wizbot/shared/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { playDing } from '@/lib/ding';
 import { useSongEvents } from '@/src/hooks/use-song-events';
 
 /**
  * OBS 브라우저 소스 하나로 재생과 자막을 모두 처리한다 (#5 2단계).
  *
- * - 지정된 송출 소스가 OBS 이고, 이 창이 활성 세션일 때만 재생한다
+ * - 스트리머가 컨트롤러에서 고른 세션(이 창)일 때만 재생한다 (#322)
  *   (브라우저 소스를 실수로 두 개 열어도 이중 재생되지 않게)
  * - 곡이 끝나면 reportEnded → 서버가 큐에서 다음 곡을 올리고 SSE 로 알린다
  * - 재생 불가 영상은 reportFailed 로 보고해 자동으로 넘어간다
@@ -52,6 +53,45 @@ const PLAYER_HEIGHT = 480;
  */
 const HEARTBEAT_MS = 5_000;
 
+/**
+ * OBS 페이지의 영구 세션 ID (#322). 컴퓨터를 껐다 켜도 같아야 스트리머가 고른 「이 브라우저 소스」가 유지된다.
+ * ⚠ 같은 OBS 안의 브라우저 소스들은 localStorage 를 공유한다 — 열려 있는 다른 탭이 쓰는 ID(alive 키가 15초 안에 갱신됨)는
+ * 건너뛰고 새 ID 를 만들어 목록에 보탠다. 소스가 하나면 항상 같은 ID, 둘 이상이면 재시작 때 서로 바뀔 수 있다.
+ * 이 탭이 잡은 ID 는 sessionStorage 에도 두어 새로고침에도 같은 ID 를 쓴다
+ */
+const IDS_KEY = 'wizbot:source-session-ids';
+const TAB_KEY = 'wizbot:source-session-id';
+const aliveKey = (id: string) => `wizbot:source-session-alive:${id}`;
+const ALIVE_STALE_MS = 15_000;
+
+function claimSessionId(): string {
+  try {
+    const mine = sessionStorage.getItem(TAB_KEY);
+    if (mine) return mine;
+    const ids: string[] = JSON.parse(localStorage.getItem(IDS_KEY) ?? '[]');
+    const now = Date.now();
+    let chosen = ids.find((id) => now - Number(localStorage.getItem(aliveKey(id)) ?? 0) > ALIVE_STALE_MS);
+    if (!chosen) {
+      chosen = crypto.randomUUID();
+      localStorage.setItem(IDS_KEY, JSON.stringify([...ids, chosen].slice(-8)));
+    }
+    localStorage.setItem(aliveKey(chosen), String(now));
+    sessionStorage.setItem(TAB_KEY, chosen);
+    return chosen;
+  } catch {
+    //  저장소를 못 쓰면(비공개 모드 등) 이번 실행 동안만 유지된다
+    return crypto.randomUUID();
+  }
+}
+
+function touchAlive(id: string) {
+  try {
+    localStorage.setItem(aliveKey(id), String(Date.now()));
+  } catch {
+    /* 무시 */
+  }
+}
+
 function loadYouTubeApi(): Promise<any> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
 
@@ -70,22 +110,31 @@ function loadYouTubeApi(): Promise<any> {
 export function SourcePlayer({
   token,
   source = 'OBS',
+  sessionId: givenSessionId,
+  label,
   fontFamily,
 }: {
   token: string;
-  /** 이 창이 어떤 송출 소스인지 — 설정과 일치할 때만 재생한다 */
+  /** 이 창이 어떤 송출 소스인지 — 컨트롤러 목록의 아이콘·이름에 쓴다 */
   source?: 'OBS' | 'ELECTRON';
+  /** 앱은 메인 프로세스가 영구 ID 를 준다. 없으면(OBS 페이지) 저장소에서 스스로 잡는다 (#322) */
+  sessionId?: string;
+  /** 컨트롤러 목록에 보일 이름 — 앱은 컴퓨터 이름 */
+  label?: string;
   /** 자막 폰트 — 스트리머 테마 (#77). CSS font-family */
   fontFamily?: string;
 }) {
   const [now, setNow] = useState<NowPlaying | null>(null);
   const [overlay, setOverlay] = useState<OverlaySetting>({ mode: 'ALWAYS', durationSeconds: 10 });
+  /** 「찾기」·「송출 소스로 설정됨」 안내 (#322) — OBS 페이지에서만 그린다(앱의 재생 창은 보이지 않고, 메인 창이 대신 알린다) */
+  const [notice, setNotice] = useState<'locate' | 'selected' | null>(null);
 
   const playerRef = useRef<any>(null);
   const currentVideoRef = useRef<string | null>(null);
-  // 창마다 고유 — 마지막에 연 창만 활성 세션이 된다
-  const sessionId = useMemo(() => crypto.randomUUID(), []);
+  // 컴퓨터를 껐다 켜도 같은 ID — 스트리머가 고른 「이 창」이 유지된다 (#322)
+  const sessionId = useMemo(() => givenSessionId || claimSessionId(), [givenSessionId]);
   const isActiveRef = useRef(false);
+  const wasActiveRef = useRef<boolean | null>(null);
 
   const trpc = useMemo(
     () =>
@@ -124,7 +173,7 @@ export function SourcePlayer({
       const player = playerRef.current;
       if (!player) return;
 
-      const shouldPlay = state.sourceType === source && isActiveRef.current;
+      const shouldPlay = isActiveRef.current;
       if (!shouldPlay || !hasSong) {
         player.stopVideo?.();
         currentVideoRef.current = null;
@@ -141,7 +190,7 @@ export function SourcePlayer({
       if (playback.status === 'PLAYING') player.playVideo?.();
       else player.pauseVideo?.();
     },
-    [source],
+    [],
   );
 
   /** 서버에서 상태를 읽어와 맞춘다 — SSE 로 변화를 통보받았을 때 쓴다 */
@@ -180,6 +229,10 @@ export function SourcePlayer({
             if (event.data === 0 && isActiveRef.current) {
               void trpc.song.reportEnded.mutate();
             }
+            // 1 = PLAYING — 실제로 소리가 나기 시작했다고 알린다. 컨트롤러의 「응답 없음」 경고가 이걸로 풀린다 (#322)
+            if (event.data === 1 && isActiveRef.current && currentVideoRef.current) {
+              void trpc.song.reportPlaying.mutate({ youtubeId: currentVideoRef.current }).catch(() => null);
+            }
           },
           onError: (event: any) => {
             //  오류 코드(2·5·100·101·150)와 어느 창·어느 곡인지 함께 보낸다 — 이력에 원인이 남고, 늦은 보고는 서버가 버린다 (#319)
@@ -203,18 +256,32 @@ export function SourcePlayer({
    */
   useEffect(() => {
     const beat = async () => {
+      if (!givenSessionId) touchAlive(sessionId);
       const result = await trpc.song.heartbeat
-        .mutate({ sessionId, source })
+        .mutate({ sessionId, source, label })
         .catch(() => null);
       if (!result) return;
 
+      //  대기 → 선택 전환은 「이 브라우저 소스가 송출 소스로 설정됨」 안내 (#322). 첫 응답은 안내하지 않는다(재시작마다 뜨면 시끄럽다)
+      if (wasActiveRef.current === false && result.active && source === 'OBS') {
+        setNotice('selected');
+        void playDing(1);
+      }
+      wasActiveRef.current = result.active;
       isActiveRef.current = result.active;
       applyState(result.state);
     };
     void beat();
     const timer = setInterval(() => void beat(), HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [trpc, sessionId, source, applyState]);
+  }, [trpc, sessionId, source, label, givenSessionId, applyState]);
+
+  //  안내는 잠깐만 — 방송 화면에 그대로 나가는 페이지라 오래 남기지 않는다
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), notice === 'locate' ? 6_000 : 4_000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   /**
    * 진행률 보고.
@@ -244,6 +311,14 @@ export function SourcePlayer({
 
   // 서버 이벤트에 반응
   useSongEvents((event) => {
+    // 「찾기」 (#322) — 이 창이면 빨간 테두리 + 텍스트 + 띵동 3회. 앱의 재생 창은 보이지 않으니 메인 창이 대신한다
+    if (event.type === 'locate') {
+      if (event.sessionId === sessionId && source === 'OBS') {
+        setNotice('locate');
+        void playDing(3);
+      }
+      return;
+    }
     // 시크는 재로드 없이 위치만 옮긴다
     if (event.type === 'command' && event.action === 'seek' && typeof event.value === 'number') {
       if (isActiveRef.current) playerRef.current?.seekTo?.(event.value, true);
@@ -269,6 +344,46 @@ export function SourcePlayer({
         overflow: 'hidden',
       }}
     >
+      {/* 찾기·설정됨 안내 (#322) — OBS 미리보기에서 어느 소스인지 바로 알아볼 수 있게 화면 전체 테두리를 빨갛게 빛낸다 */}
+      {notice && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4%',
+            boxSizing: 'border-box',
+            border: notice === 'locate' ? '10px solid #ef4444' : '10px solid #22c55e',
+            boxShadow: notice === 'locate' ? '0 0 40px 10px rgba(239,68,68,0.8), inset 0 0 40px 10px rgba(239,68,68,0.5)' : '0 0 40px 10px rgba(34,197,94,0.7), inset 0 0 40px 10px rgba(34,197,94,0.4)',
+            animation: 'wizbot-locate-pulse 0.8s ease-in-out infinite alternate',
+            pointerEvents: 'none',
+          }}
+        >
+          <style
+            dangerouslySetInnerHTML={{
+              __html: '@keyframes wizbot-locate-pulse { from { opacity: 0.55; } to { opacity: 1; } }',
+            }}
+          />
+          <div
+            style={{
+              fontFamily,
+              background: 'rgba(0,0,0,0.75)',
+              color: '#ffffff',
+              borderRadius: '0.5em',
+              padding: '0.5em 1em',
+              fontSize: 'min(72px, 12vh, 6vw)',
+              fontWeight: 700,
+              textAlign: 'center',
+              lineHeight: 1.3,
+            }}
+          >
+            {notice === 'locate' ? '이 브라우저 소스가 찾기에 의해 호출됨' : '이 브라우저 소스가 송출 소스로 설정됨'}
+          </div>
+        </div>
+      )}
+
       {/* 영상은 보이지 않게 두고 소리만 내보낸다 (크기는 음질 때문에 유지) */}
       <div
         id="obs-player"

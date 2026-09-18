@@ -23,6 +23,9 @@ interface WizbotApp {
   getUpdate?: () => Promise<AppUpdate>;
   applyUpdate?: () => void;
   onUpdateChanged?: (callback: (state: AppUpdate) => void) => () => void;
+  /** 송출 세션 (#322) — 구버전 앱에는 없어 optional */
+  getSession?: () => Promise<{ sessionId: string; label: string }>;
+  attention?: () => void;
 }
 
 export type AppUpdate = { version: string } | null;
@@ -47,6 +50,8 @@ export function useAppShell() {
   const [youtubeLoggedIn, setYoutubeLoggedIn] = useState(false);
   /** 설치할 수 있는 새 버전 (#117) — 앱이 알려준다 */
   const [update, setUpdate] = useState<AppUpdate>(null);
+  /** 이 앱의 송출 세션 (#322) — 컨트롤러가 「이 앱」을 알아보는 데 쓴다 */
+  const [session, setSession] = useState<{ sessionId: string; label: string } | null>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect --
      Electron 브리지(window.wizbotApp)·localStorage 는 하이드레이션 뒤에만 읽을 수 있고,
@@ -68,6 +73,7 @@ export function useAppShell() {
     void app.getAutoLaunch().then(setAutoLaunchState);
     void app.getYoutubeLogin().then(setYoutubeLoggedIn);
     void app.getUpdate?.().then(setUpdate);
+    void app.getSession?.().then(setSession);
     const unsubscribe = app.onUpdateChanged?.(setUpdate);
 
     // 로그인은 다른 창에서 하므로, 이 창으로 돌아왔을 때 상태를 다시 읽는다
@@ -139,6 +145,10 @@ export function useAppShell() {
     /** 설치할 수 있는 새 버전 — 없으면 null */
     update: bridge ? update : null,
     applyUpdate: () => bridge?.applyUpdate?.(),
+    /** 이 앱의 송출 세션 ID — 웹·구버전 앱이면 null */
+    sessionId: bridge ? session?.sessionId ?? null : null,
+    /** 「찾기」에 답해 작업 표시줄·독을 깜빡인다 */
+    attention: () => bridge?.attention?.(),
     mode: bridge ? mode : ('desktop' as WindowMode),
     setMode,
     queueOpen,
