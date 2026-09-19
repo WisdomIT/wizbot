@@ -155,3 +155,42 @@ describe('송출 소스 도구 (#326 2단계)', () => {
     expect(result.content).toContain('카드');
   });
 });
+
+describe('계정·카페·문의 도구 (#326 3단계)', () => {
+  it('끄기만 카드: 챗봇·카페 연동. 시청자 목록 노출·문의 추가 메시지는 항상 카드', () => {
+    expect(needsConfirmation('set_chatbot_active', { active: false })).toBe(true);
+    expect(needsConfirmation('set_chatbot_active', { active: true })).toBe(false);
+    expect(needsConfirmation('set_cafe_enabled', { enabled: false })).toBe(true);
+    expect(needsConfirmation('set_cafe_enabled', { enabled: true })).toBe(false);
+    expect(CONFIRM_TOOLS.has('set_listed')).toBe(true);
+    expect(CONFIRM_TOOLS.has('reply_inquiry')).toBe(true);
+    expect(needsConfirmation('set_chatbot_default_repeat', { seconds: 300 })).toBe(false);
+  });
+
+  it('get_account_settings — 계정 요약 + 테마는 위치 안내', async () => {
+    const { prisma } = db();
+    (prisma as unknown as { user: unknown }).user = { findUnique: vi.fn().mockResolvedValue({ channelId: 'c', channelName: '위즈', channelImageUrl: null, hidden: false, userSetting: { chatbotActive: true } }) };
+    const result = await runTool(prisma, 1, 10, 'get_account_settings', {});
+    if (!('content' in result)) throw new Error('card?');
+    const parsed = JSON.parse(result.content);
+    expect(parsed).toMatchObject({ channelName: '위즈', listed: true, chatbotActive: true });
+    expect(String(parsed.theme)).toContain('설정 › 테마');
+  });
+
+  it('set_chatbot_default_repeat — 범위 검증 후 저장 + 감사 기록', async () => {
+    const { prisma, userSetting, auditLog } = db();
+    await expect(runTool(prisma, 1, 10, 'set_chatbot_default_repeat', { seconds: 3 })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(await runTool(prisma, 1, 10, 'set_chatbot_default_repeat', { seconds: 600 })).toMatchObject({ isError: false });
+    expect(userSetting.update).toHaveBeenCalledWith(expect.objectContaining({ data: { chatbotDefaultRepeat: 600 } }));
+    expect(auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ procedure: 'agent.set_chatbot_default_repeat' }) }));
+  });
+
+  it('get_cafe_integration — 연결 전이면 메뉴 안내만', async () => {
+    const { prisma } = db();
+    (prisma as unknown as { cafeIntegration: unknown }).cafeIntegration = { findUnique: vi.fn().mockResolvedValue(null) };
+    const result = await runTool(prisma, 1, 10, 'get_cafe_integration', {});
+    if (!('content' in result)) throw new Error('card?');
+    expect(JSON.parse(result.content)).toMatchObject({ linked: false, enabled: false });
+    expect(result.content).toContain('/manual/cafe');
+  });
+});
