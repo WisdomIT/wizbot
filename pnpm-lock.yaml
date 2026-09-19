@@ -391,8 +391,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       nodemailer:
-        specifier: ^9.0.6
-        version: 9.0.6
+        specifier: ^10.0.3
+        version: 10.0.3
       youtubei.js:
         specifier: ^18.0.0
         version: 18.0.0
@@ -4409,9 +4409,9 @@ packages:
     resolution: {integrity: sha512-YHs7BmmcsdAI5Ozuf8JZo6PT0mv2GIWC9vMfvUC3dp65M8hn7Ux8CPL+2oBI7juNuj9d0ndhTcznq2ODBps9cQ==}
     engines: {node: '>=18'}
 
-  nodemailer@9.0.6:
-    resolution: {integrity: sha512-IQUGFdhdGwI9+AWX+FpUt4DLmvFaOjTMEoneTIWX/RXxuy1TdenPwWrvFMSfLkPKl+HQEXWuSAxEMMbPYXtBmg==}
-    engines: {node: '>=6.0.0'}
+  nodemailer@10.0.3:
+    resolution: {integrity: sha512-h5c8ypcMoOIh44bIcVROvTDbjRdOJX8AXTkxMht2C92HlSjkG+/8kjoqmNPypfjQaVNaUHWyZ3tqs5I3K91F3g==}
+    engines: {node: '>=20.0.0'}
 
   nopt@9.0.0:
     resolution: {integrity: sha512-Zhq3a+yFKrYwSBluL4H9XP3m3y5uvQkB/09CwDruCiRmR/UJYnn9W4R48ry0uGC70aeTPKLynBtscP9efFFcPw==}
@@ -9999,7 +9999,7 @@ snapshots:
 
   node-releases@2.0.54: {}
 
-  nodemailer@9.0.6: {}
+  nodemailer@10.0.3: {}
 
   nopt@9.0.0:
     dependencies:
