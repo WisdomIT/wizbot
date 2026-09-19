@@ -11,6 +11,15 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@napi-rs/canvas'],
   // 카페 이미지 렌더가 읽는 폰트 파일 — import 되지 않는 파일이라 트레이싱에 직접 넣는다
   outputFileTracingIncludes: { '/cafe/[channelId]': ['./fonts/**/*'] },
+  // 랜딩 쇼케이스 영상 (#277) — 파일명에 버전(v1)을 박고 1년 immutable 로 캐시한다. 다시 찍으면 v 를 올린다
+  async headers() {
+    return [
+      {
+        source: '/videos/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
