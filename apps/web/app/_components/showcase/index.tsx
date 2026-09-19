@@ -88,8 +88,8 @@ export default function Showcase() {
     <section id="benefits" ref={sectionRef} className="container py-24 sm:py-32 mx-auto px-4 md:px-0">
       <div className="mb-10 lg:mb-14">
         <h2 className="md:text-lg text-blue-500 mb-2 tracking-wider font-black">Showcase</h2>
-        <h2 className="text-3xl md:text-4xl font-bold mb-4">위즈봇에만 있는 것</h2>
-        <p className="md:text-xl text-muted-foreground">기능을 나열하는 대신, 실제로 어떻게 쓰이는지 그대로 보여드립니다. 직접 눌러봐도 됩니다.</p>
+        <h2 className="text-3xl md:text-4xl font-bold mb-4">위즈봇은 이렇게 쓰입니다</h2>
+        <p className="md:text-xl text-muted-foreground">채팅에서, 콘솔에서, 방송 화면에서 — 실제 화면 그대로 직접 만져보세요.</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:gap-12">

@@ -1,10 +1,12 @@
 'use client';
 
+import { Crown, Sword } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 /**
  * 치지직 채팅 모사 (#277) — 위즈봇이 채팅에서 실제로 하는 일을 대본으로 돌린다.
- * 색·글꼴·간격은 치지직 라이브 페이지 실측값(이슈 #277 코멘트). 대본은 실제 위즈봇 명령어와 응답 형식을 따른다
+ * 색·글꼴·간격은 치지직 라이브 페이지 실측값(이슈 #277 코멘트). 대본은 실제 위즈봇 명령어와 응답 형식을 따른다.
+ * 스트리머는 왕관, 매니저는 칼 아이콘(흰색)이 닉네임 앞에 붙고 닉네임·본문이 역할 색으로 — 봇은 보통 매니저로 지정하므로 매니저와 같게
  */
 const CHZZK = {
   panelBg: '#141517',
@@ -22,9 +24,9 @@ const CHZZK = {
 const NICK_COLORS = ['#e2be61', '#eca843', '#ec8a43', '#ea723d', '#e56b79', '#e68199', '#e16cb5', '#bc7acc', '#a983e7', '#8b89e1', '#7194ee', '#7994d0', '#71aaed', '#5fb7e8', '#80bdd3', '#80d3ce', '#99d3ba', '#94d59a', '#bbe69a', '#cce57d'];
 const ROLE = { streamer: '#d9ae41', manager: '#749ffe' } as const;
 
-type Line = { kind: 'chat' | 'bot' | 'notice'; nick?: string; text: string; role?: keyof typeof ROLE; after: number };
+type Line = { kind: 'chat' | 'bot'; nick?: string; text: string; role?: keyof typeof ROLE; after: number };
 
-/** 실제 위즈봇 동작 — 명령어 호출·추가·노래 신청·방송 제목 변경·에이전트 호출 */
+/** 실제 위즈봇 동작 — 명령어 호출·추가·노래 신청·방송 제목 변경·채팅에서 에이전트 호출(승인은 채팅 「승인」으로) */
 const SCRIPT: Line[] = [
   { kind: 'chat', nick: '구독각', text: '!디스코드', after: 900 },
   { kind: 'bot', text: '디스코드 참여 👉 https://discord.gg/wizbot', after: 1600 },
@@ -39,8 +41,9 @@ const SCRIPT: Line[] = [
   { kind: 'chat', nick: '매니저짱', role: 'manager', text: '!제목 신작 엔딩까지 달립니다 🎮', after: 1000 },
   { kind: 'bot', text: '방송 제목을 「신작 엔딩까지 달립니다 🎮」로 바꿨습니다.', after: 1600 },
   { kind: 'chat', nick: '스트리머', role: 'streamer', text: '!에이전트 !인사 명령어 매니저만 쓰게 바꿔줘', after: 1200 },
-  { kind: 'notice', text: '⚠ 명령어 수정 — 「승인」 또는 「거절」로 답해주세요', after: 1500 },
+  { kind: 'bot', text: '⚠ 명령어 수정 — 진행하려면 "승인", 취소는 "거절"로 답해주세요.', after: 1500 },
   { kind: 'chat', nick: '스트리머', role: 'streamer', text: '승인', after: 900 },
+  { kind: 'bot', text: '카드를 승인했습니다 — 실행할게요.', after: 1100 },
   { kind: 'bot', text: '!인사 명령어 권한을 매니저로 바꿨습니다.', after: 2200 },
 ];
 
@@ -118,25 +121,19 @@ export function DemoChat({ active }: { active: boolean }) {
 
 function Row({ msg }: { msg: Msg }) {
   const animation = 'wizbot-chat-in 180ms ease-out';
-  if (msg.kind === 'notice') {
-    return (
-      <div className="px-1.5 py-1 motion-reduce:animate-none" style={{ animation }}>
-        <div className="rounded-md px-2.5 py-2 text-[13px] leading-[19px]" style={{ background: CHZZK.brandDim, border: `1px solid ${CHZZK.brandBorder}`, color: CHZZK.brand }}>
-          {msg.text}
-        </div>
-      </div>
-    );
-  }
-  const isBot = msg.kind === 'bot';
+  //  봇은 매니저와 같게 — 실제로도 봇 계정을 매니저로 지정한다
+  const role: keyof typeof ROLE | undefined = msg.kind === 'bot' ? 'manager' : msg.role;
+  const color = role ? ROLE[role] : msg.color;
+  const nick = msg.kind === 'bot' ? '위즈봇' : msg.nick;
   return (
     <div className="px-1.5 py-1 text-sm leading-5 motion-reduce:animate-none" style={{ animation }}>
-      {isBot ? (
-        <span className="mr-1.5 inline-flex items-center rounded px-1 text-[10px] font-bold align-[1px]" style={{ background: CHZZK.brandDim, color: CHZZK.brand, border: `1px solid ${CHZZK.brandBorder}` }}>BOT</span>
-      ) : msg.role ? (
-        <span className="mr-1.5 inline-flex items-center rounded px-1 text-[10px] font-bold text-black align-[1px]" style={{ background: ROLE[msg.role] }}>{msg.role === 'streamer' ? '스트리머' : '매니저'}</span>
-      ) : null}
-      <span className="font-medium" style={{ color: isBot ? CHZZK.brand : msg.color }}>{isBot ? '위즈봇' : msg.nick}</span>
-      <span className="ml-[5px]" style={{ color: CHZZK.textPrimary }}>{msg.text}</span>
+      {role && (
+        <span className="mr-1 inline-flex size-4 items-center justify-center rounded align-[-3px]" style={{ background: ROLE[role] }} aria-label={role === 'streamer' ? '스트리머' : '매니저'}>
+          {role === 'streamer' ? <Crown className="size-3 text-white" strokeWidth={2.5} /> : <Sword className="size-3 text-white" strokeWidth={2.5} />}
+        </span>
+      )}
+      <span className="font-medium" style={{ color }}>{nick}</span>
+      <span className="ml-[5px]" style={{ color: role ? color : CHZZK.textPrimary }}>{msg.text}</span>
     </div>
   );
 }

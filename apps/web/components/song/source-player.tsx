@@ -17,12 +17,12 @@ import { useSongEvents } from '@/src/hooks/use-song-events';
  * - 배경은 투명이라 화면에 그대로 얹으면 현재 곡 제목만 보인다
  */
 
-interface NowPlaying {
+export interface NowPlaying {
   title: string;
   status: 'PLAYING' | 'PAUSED' | 'STOPPED';
 }
 
-interface OverlaySetting {
+export interface OverlaySetting {
   mode: 'ALWAYS' | 'TIMED';
   durationSeconds: number;
 }
@@ -407,8 +407,9 @@ export function SourcePlayer({
 /**
  * 현재 곡 자막.
  * 글자 크기는 브라우저 소스 높이를 따라가고(최대 120px), 제목이 가로를 넘치면 옆으로 흐른다.
+ * 랜딩 데모(#277)가 OBS 화면 모사에 같은 컴포넌트를 쓴다
  */
-function SongOverlay({
+export function SongOverlay({
   now,
   setting,
   fontFamily,
