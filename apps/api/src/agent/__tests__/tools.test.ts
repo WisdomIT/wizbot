@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { clearSource, touchSource } from '@wizbot/shared/services';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AGENT_TOOLS, CONFIRM_TOOLS, needsConfirmation, runTool } from '../tools';
@@ -102,5 +103,55 @@ describe('runTool (#326)', () => {
     const result = await runTool(prisma, 1, 10, 'set_overlay_settings', { mode: 'ALWAYS' });
     expect(result).toMatchObject({ isError: false, content: expect.stringContaining('"durationSeconds": 15') });
     expect(userSetting.update).toHaveBeenCalledWith(expect.objectContaining({ data: { songOverlayMode: 'ALWAYS', songOverlayDurationSeconds: 15 } }));
+  });
+});
+
+describe('송출 소스 도구 (#326 2단계)', () => {
+  it('get_source_status — 세션 목록과 선택, 토큰 없음', async () => {
+    clearSource(1);
+    touchSource(1, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    touchSource(1, { sessionId: 'obs-1', source: 'OBS', label: 'OBS 브라우저 소스' });
+    const { prisma } = db();
+    const result = await runTool(prisma, 1, 10, 'get_source_status', {});
+    if (!('content' in result)) throw new Error('card?');
+    const parsed = JSON.parse(result.content);
+    expect(parsed.selected).toMatchObject({ sessionId: 'app-1', kind: 'ELECTRON', label: '거실-PC', connected: true });
+    expect(parsed.sessions.map((x: { sessionId: string; active: boolean }) => [x.sessionId, x.active])).toEqual([['app-1', true], ['obs-1', false]]);
+    expect(result.content).not.toContain('secret-');
+  });
+
+  it('select_source 는 카드 — 대상·지금 소리 나는 창을 적는다. 이미 선택된 세션·없는 세션은 오류', async () => {
+    clearSource(1);
+    touchSource(1, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    touchSource(1, { sessionId: 'obs-1', source: 'OBS', label: 'OBS 브라우저 소스' });
+    const { prisma, userSetting } = db();
+    const result = await runTool(prisma, 1, 10, 'select_source', { sessionId: 'obs-1' });
+    expect(result).toMatchObject({ card: { title: '송출 소스 변경' } });
+    if (!('card' in result)) return;
+    expect(result.card.lines[0]).toContain('OBS 브라우저 소스 · OBS 브라우저 소스 에서 소리가');
+    expect(result.card.lines[1]).toContain('플레이어 앱 · 거실-PC');
+    expect(userSetting.update).not.toHaveBeenCalled();
+    await expect(runTool(prisma, 1, 10, 'select_source', { sessionId: 'app-1' })).rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    await expect(runTool(prisma, 1, 10, 'select_source', { sessionId: 'ghost' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('clear_source_selection 은 카드, locate_source 는 바로 실행(연결된 세션만)', async () => {
+    clearSource(1);
+    touchSource(1, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    const { prisma } = db();
+    expect(await runTool(prisma, 1, 10, 'clear_source_selection', {})).toMatchObject({ card: { title: '송출 소스 선택 해제' } });
+    expect(await runTool(prisma, 1, 10, 'locate_source', { sessionId: 'app-1' })).toMatchObject({ isError: false });
+    const missing = await runTool(prisma, 1, 10, 'locate_source', { sessionId: 'nope' }).catch((e: unknown) => e);
+    expect(missing).toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('get_obs_source_url 은 주소를 돌려주지 않는다 — 카드 안내만', async () => {
+    const { prisma } = db();
+    const result = await runTool(prisma, 1, 10, 'get_obs_source_url', {});
+    if (!('content' in result)) throw new Error('card?');
+    expect(result.isError).toBe(false);
+    expect(result.content).not.toContain('secret-');
+    expect(result.content).not.toContain('/obs/');
+    expect(result.content).toContain('카드');
   });
 });

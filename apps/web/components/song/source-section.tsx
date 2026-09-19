@@ -1,22 +1,15 @@
 'use client';
 
-import { Copy, Download, Eye, EyeOff, MonitorSpeaker, Play, Plus, RadioTower, RefreshCw, Settings2, VolumeX } from 'lucide-react';
+import { Download, Eye, MonitorSpeaker, Play, Plus, RadioTower, Settings2, VolumeX } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+import { ObsSourceUrlField } from './obs-source-url-field';
 
 /**
  * 송출 소스 (#322) — 앱·OBS 브라우저 소스 중 **연결된 세션 하나**를 골라 소리를 내게 한다.
@@ -234,78 +227,21 @@ export function SourceSection({
 
 /** OBS 브라우저 소스 주소 — 보기/복사/재발급. 「플레이어 추가 → OBS 브라우저 소스 설정…」 으로 여는 작은 모달 */
 function ObsSourceDialog({ open, onOpenChange, token, onRegenerate }: { open: boolean; onOpenChange: (open: boolean) => void; token: string | null; onRegenerate: () => void }) {
-  // 주소는 방송 화면에 그대로 찍힐 수 있으므로 기본은 가려둔다
-  const [revealed, setRevealed] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [origin, setOrigin] = useState('');
-  useState(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  });
-  const playerUrl = token ? `${origin}/obs/${token}/player` : '';
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>OBS 브라우저 소스</DialogTitle>
-            <DialogDescription>
-              이 주소를 OBS 에 브라우저 소스로 추가하면 목록에 「OBS 브라우저 소스」로 나타납니다. 주소를 아는 사람은 재생 상태를 볼 수 있으니 방송에 노출됐다면 재발급하세요.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-1">
-            <Input readOnly value={playerUrl} type={revealed ? 'text' : 'password'} className="font-mono text-xs" />
-            <Button variant="outline" size="icon" aria-label={revealed ? '주소 가리기' : '주소 보기'} title={revealed ? '주소 가리기' : '주소 보기'} onClick={() => setRevealed((prev) => !prev)}>
-              {revealed ? <EyeOff /> : <Eye />}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="주소 복사"
-              title="주소 복사"
-              onClick={() => {
-                void navigator.clipboard.writeText(playerUrl);
-                toast.success('주소를 복사했습니다.');
-              }}
-            >
-              <Copy />
-            </Button>
-            <Button variant="outline" size="icon" aria-label="주소 재발급" title="주소 재발급" onClick={() => setConfirming(true)}>
-              <RefreshCw />
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            💡 유튜브 프리미엄 계정이 있다면, OBS 에서 브라우저 소스를 하나 더 만들어 주소를 <code className="font-mono">https://www.youtube.com</code> 으로 두고 [상호작용] 창에서 로그인해두면 광고 없이 재생됩니다.
-          </p>
-          <p className="text-xs text-muted-foreground">⚠️ 한 OBS 안에 이 주소를 둘 이상 넣지 마세요 — 재시작 때 두 소스의 ID 가 서로 바뀔 수 있습니다.</p>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>주소를 새로 발급할까요?</DialogTitle>
-            <DialogDescription>
-              새 주소가 발급되면 <strong>기존 주소는 즉시 사용할 수 없게 됩니다.</strong> 이미 OBS 에 등록해 둔 브라우저 소스는 재생이 멈추므로, 새 주소를 다시 붙여넣어야 합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)}>
-              취소
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setConfirming(false);
-                setRevealed(false);
-                onRegenerate();
-              }}
-            >
-              새로 발급
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>OBS 브라우저 소스</DialogTitle>
+          <DialogDescription>
+            이 주소를 OBS 에 브라우저 소스로 추가하면 목록에 「OBS 브라우저 소스」로 나타납니다. 주소를 아는 사람은 재생 상태를 볼 수 있으니 방송에 노출됐다면 재발급하세요.
+          </DialogDescription>
+        </DialogHeader>
+        <ObsSourceUrlField token={token} onRegenerate={onRegenerate} />
+        <p className="text-xs text-muted-foreground">
+          💡 유튜브 프리미엄 계정이 있다면, OBS 에서 브라우저 소스를 하나 더 만들어 주소를 <code className="font-mono">https://www.youtube.com</code> 으로 두고 [상호작용] 창에서 로그인해두면 광고 없이 재생됩니다.
+        </p>
+        <p className="text-xs text-muted-foreground">⚠️ 한 OBS 안에 이 주소를 둘 이상 넣지 마세요 — 재시작 때 두 소스의 ID 가 서로 바뀔 수 있습니다.</p>
+      </DialogContent>
+    </Dialog>
   );
 }

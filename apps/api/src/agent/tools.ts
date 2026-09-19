@@ -88,6 +88,8 @@ export const CONFIRM_TOOLS = new Set([
   'temp_restrict_viewer', 'blind_chat_message',
   //  파괴적이거나 사용자가 바로 느끼는 큰 변화 (#326)
   'delete_favorite', 'clear_favorite_items', 'set_history_public',
+  //  소리 나는 창이 바뀌거나 사라진다 (#326 2단계)
+  'select_source', 'clear_source_selection',
 ]);
 
 /** 입력에 따라 카드가 필요한 tool — 노래 신청 기능을 **끄는** 것은 시청자가 바로 느끼는 변화라 확인을 거친다 (#326) */
@@ -372,6 +374,34 @@ export const AGENT_TOOLS: ToolDef[] = [
       required: ['favoriteId', 'url'], additionalProperties: false,
     },
   },
+  /* ── 송출 소스 (#322 #326) ── */
+  {
+    name: 'get_source_status',
+    description:
+      'Sound source status: which player (app/OBS browser source) is selected and whether it is connected, plus every known player session (sessionId, kind app/OBS, label = computer name, connected, active, seconds since last signal). Use before select_source/locate_source; users refer to players by label.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'select_source',
+    description: 'Makes one player session the sound source (sessionId from get_source_status; disconnected ones may be pre-selected). A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'], additionalProperties: false },
+  },
+  {
+    name: 'locate_source',
+    description: 'Makes a connected player reveal itself: the OBS page flashes a red border with a chime, the app flashes its taskbar/dock icon. sessionId from get_source_status.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'], additionalProperties: false },
+  },
+  {
+    name: 'clear_source_selection',
+    description: 'Deselects the sound source so no player makes sound. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'get_obs_source_url',
+    description:
+      'Shows the OBS browser-source URL to the user as a card in the console panel (masked, with reveal/copy/regenerate buttons). The URL is secret and is NEVER returned to you or written in chat — call this and tell the user to use the card.',
+    inputSchema: noInput,
+  },
   /* ── 노래 설정 (#326) ── */
   {
     name: 'set_overlay_settings',
@@ -635,6 +665,7 @@ const AUDITED_TOOLS = new Set([
   'set_overlay_settings', 'set_auto_play', 'set_history_public', 'set_history_hidden',
   'set_default_favorite', 'create_favorite', 'rename_favorite', 'delete_favorite',
   'add_favorite_song', 'remove_favorite_song', 'clear_favorite_items',
+  'select_source', 'clear_source_selection',
 ]);
 
 export async function runTool(
@@ -698,6 +729,8 @@ async function resolveFunctionOption(
   }
   return option;
 }
+
+const SOURCE_KIND_LABEL: Record<string, string> = { OBS: 'OBS 브라우저 소스', ELECTRON: '플레이어 앱' };
 
 /** 카드 내용 — 무엇이 실행되는지 검증하며 구체적으로. 대상이 없으면 여기서 던진다 */
 async function buildCard(prisma: PrismaClient, userId: number, name: string, input: Record<string, unknown>): Promise<PendingCard> {
@@ -772,6 +805,26 @@ async function buildCard(prisma: PrismaClient, userId: number, name: string, inp
         title: input.isPublic ? '재생 기록 공개' : '재생 기록 비공개',
         lines: [input.isPublic ? '시청자 페이지에 재생 기록이 보이게 됩니다.' : '시청자 페이지에서 재생 기록이 사라집니다.'],
       };
+    }
+    /* ── 송출 소스 (#326 2단계) ── */
+    case 'select_source': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      const target = status.sessions.find((x) => x.sessionId === String(input.sessionId));
+      if (!target) throw new ServiceError('NOT_FOUND', '그 플레이어가 목록에 없습니다. get_source_status 로 확인하세요.');
+      if (target.active) throw new ServiceError('INVALID_INPUT', '이미 송출 소스로 선택된 플레이어입니다.');
+      const current = status.sessions.find((x) => x.active);
+      return {
+        title: '송출 소스 변경',
+        lines: [
+          `${SOURCE_KIND_LABEL[target.source]} · ${target.label} 에서 소리가 나게 합니다.${target.connected ? '' : ' (지금은 연결돼 있지 않아 켜질 때부터 납니다)'}`,
+          current ? `지금 소리가 나는 ${SOURCE_KIND_LABEL[current.source]} · ${current.label} 은(는) 멈춥니다.` : '지금은 선택된 송출 소스가 없습니다.',
+        ],
+      };
+    }
+    case 'clear_source_selection': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      if (!status.selectedSessionId) throw new ServiceError('INVALID_INPUT', '이미 선택된 송출 소스가 없습니다.');
+      return { title: '송출 소스 선택 해제', lines: ['어느 플레이어에서도 소리가 나지 않게 됩니다.', '다시 소리를 내려면 목록에서 플레이어를 골라야 합니다.'] };
     }
     case 'set_song_request_policy': {
       //  needsConfirmation 이 enabled:false 일 때만 여기로 보낸다
@@ -1048,6 +1101,30 @@ async function execute(
       });
       return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength, maxDurationMinutes: maxDurationSeconds / 60 }));
     }
+
+    /* ── 송출 소스 (#326 2단계) ── */
+    case 'get_source_status': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      //  토큰은 절대 넣지 않는다 — 주소는 get_obs_source_url 카드가 화면에서 직접 읽는다
+      return ok(toResult({
+        selected: status.selectedSessionId
+          ? { sessionId: status.selectedSessionId, kind: status.sourceType, label: status.sourceLabel, connected: status.online }
+          : null,
+        sessions: status.sessions.map((x) => ({
+          sessionId: x.sessionId, kind: x.source, label: x.label, active: x.active, connected: x.connected, lastSeenSecondsAgo: Math.round(x.lastSeenAgoMs / 1000),
+        })),
+      }));
+    }
+    case 'select_source':
+      return ok(toResult(await playbackService.selectSource(prisma, userId, requireText(input.sessionId, 'sessionId', 64))));
+    case 'locate_source':
+      playbackService.locateSource(userId, requireText(input.sessionId, 'sessionId', 64));
+      return ok('찾기 신호를 보냈습니다 — 그 플레이어가 깜빡이고 띵동 소리가 납니다.');
+    case 'clear_source_selection':
+      return ok(toResult(await playbackService.clearSourceSelection(prisma, userId)));
+    case 'get_obs_source_url':
+      //  주소는 여기 없다. 웹 패널이 이 tool_use 를 보고 카드를 그려 tRPC 로 직접 읽는다 (#326)
+      return ok('OBS 브라우저 소스 주소 카드를 콘솔 에이전트 패널에 표시했습니다. 주소는 카드의 보기/복사 버튼으로만 확인할 수 있고, 채팅으로는 보내지 않습니다.');
 
     /* ── 노래 설정 (#326) ── */
     case 'set_overlay_settings': {
