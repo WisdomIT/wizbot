@@ -8,17 +8,10 @@ export function nextIndex(index: number, length: number): number {
   return (index + 1) % length;
 }
 
-/** 진행률 0~1 — duration 이 없거나 0 이면 0 */
-export function progressRatio(currentTime: number, duration: number): number {
-  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(currentTime)) return 0;
-  return Math.min(1, Math.max(0, currentTime / duration));
-}
-
-/** 미리 받을 항목 — 현재와 다음 하나만 (6개 동시 로드 금지). 한 개뿐이면 그것만 */
-export function preloadIndexes(index: number, length: number): number[] {
-  if (length <= 0) return [];
-  const next = nextIndex(index, length);
-  return next === index ? [index] : [index, next];
+/** 진행률 0~1 — 전체가 없거나 0 이면 0 */
+export function progressRatio(elapsed: number, total: number): number {
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(elapsed)) return 0;
+  return Math.min(1, Math.max(0, elapsed / total));
 }
 
 /** 방향키 탐색 — Home/End, ArrowUp/Left = 이전, ArrowDown/Right = 다음. 관련 없는 키는 null */
@@ -40,5 +33,5 @@ export function keyboardTarget(key: string, index: number, length: number): numb
   }
 }
 
-/** 영상이 없거나 못 불러왔을 때 플레이스홀더를 보여주는 시간(ms) — 그 뒤 다음 항목으로 넘어간다 */
-export const PLACEHOLDER_DWELL_MS = 8_000;
+/** 자동 순환 타이머 틱(ms) — 진행 바 갱신 주기 */
+export const TICK_MS = 100;
