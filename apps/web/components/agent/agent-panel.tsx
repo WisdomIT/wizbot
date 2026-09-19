@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { AGENT_OPEN_EVENT, type AgentOpenDetail } from './agent-bus';
+import { ObsSourceUrlCard } from './obs-source-url-card';
 
 /**
  * 위즈봇 에이전트 패널 (#35). 콘솔 우측 채팅창 — 스트리밍 응답, tool 표시,
@@ -91,6 +92,11 @@ const TOOL_LABEL: Record<string, string> = {
   remove_favorite_song: '즐겨찾기 곡 삭제',
   clear_favorite_items: '즐겨찾기 비우기',
   add_current_song_to_favorite: '현재 곡 즐겨찾기 담기',
+  get_source_status: '송출 소스 조회',
+  select_source: '송출 소스 설정',
+  locate_source: '플레이어 찾기',
+  clear_source_selection: '송출 소스 선택 해제',
+  get_obs_source_url: 'OBS 주소 카드',
   get_recent_chat: '최근 채팅 조회',
   temp_restrict_viewer: '시청자 임시제한',
   remove_temp_restrict: '임시제한 해제',
@@ -154,6 +160,7 @@ const TOOL_INVALIDATE: Record<string, InvalidateTarget> = {
   //  노래 설정·즐겨찾기 (#326) — 설정 모달·플레이어 화면이 보고 있는 getState 와 즐겨찾기 목록
   set_song_request_policy: 'song', set_overlay_settings: 'song', set_auto_play: 'song', set_history_public: 'song',
   set_history_hidden: 'song', requeue_from_history: 'song',
+  select_source: 'song', clear_source_selection: 'song',
   set_default_favorite: 'songFavorite', create_favorite: 'songFavorite', rename_favorite: 'songFavorite', delete_favorite: 'songFavorite',
   add_favorite_song: 'songFavorite', remove_favorite_song: 'songFavorite', clear_favorite_items: 'songFavorite', add_current_song_to_favorite: 'songFavorite',
 };
@@ -529,6 +536,8 @@ function PanelBody({
           />
         );
       }
+      //  OBS 주소는 모델을 거치지 않고 카드가 직접 읽는다 (#326) — 실시간·기록 재열기 모두 tool_use 이름으로 그린다
+      if (item.name === 'get_obs_source_url') return <ObsSourceUrlCard key={item.toolUseId ?? index} />;
       return (
         <div key={index} className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Wrench className="size-3" /> {TOOL_LABEL[item.name] ?? item.name}
