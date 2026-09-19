@@ -1,0 +1,28 @@
+name: Portainer check (dry run)
+
+# 운영 스택의 Env·IMAGE_TAG 를 읽어 보여주기만 한다 (#261) — 시크릿(PORTAINER_API_KEY·STACK_ID·ENDPOINT_ID)이 맞게 등록됐는지,
+# 릴리즈 때 어떤 값이 어떻게 바뀔지 미리 본다. 아무것도 바꾸지 않는다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 바꿀 것으로 가정할 IMAGE_TAG (v 없이, 예 1.4.6). 비우면 0.0.0-dry-run
+        required: false
+
+jobs:
+  check:
+    name: portainer stack dry run
+    runs-on: [self-hosted, wisdomserver]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read stack and plan
+        env:
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
+          PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
+          PORTAINER_URL: ${{ vars.PORTAINER_URL || 'https://portainer.wisdomit.co.kr' }}
+          IMAGE_TAG: ${{ inputs.image_tag || '0.0.0-dry-run' }}
+          DRY_RUN: '1'
+        run: bash .github/scripts/portainer-deploy.sh
