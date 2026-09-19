@@ -128,15 +128,17 @@ git push origin v1.2.0
 ```
 verify(태그가 main 에 있는지) → build(web·api·chatbot 이미지) → release(GitHub Release)
                                                               → app(플레이어 dmg×2·exe 첨부)
-                                                              → deploy(운영 Portainer 재배포)
+                                                              → app 뒤 deploy(운영 Portainer IMAGE_TAG 갱신·재배포)
 ```
 
 ### 알아둘 것
 
 - **이미지 태그에는 `v` 가 없다.** git 태그 `v1.2.0` → 이미지 `1.2.0`. Portainer 의 `IMAGE_TAG` 에
   `v1.2.0` 을 넣으면 pull 이 not found 로 실패한다.
-- **운영 전환은 수동이다.** 자동 재배포는 스택을 다시 올릴 뿐, `IMAGE_TAG` 는 고정돼 있다.
-  릴리즈 후 Portainer 에서 `IMAGE_TAG` 를 새 버전으로 바꾸고 재배포해야 실제로 넘어간다.
+- **운영 전환은 자동이다 (#261).** `deploy` 잡이 Portainer API 로 스택의 `IMAGE_TAG` 를 그 버전으로 바꿔
+  재배포한다 — GitHub Release·플레이어 패키징까지 끝난 뒤에만. 시크릿 `PORTAINER_API_KEY`·`PORTAINER_STACK_ID`·
+  `PORTAINER_ENDPOINT_ID`(environment: production)가 있어야 하고, 없으면 예전 웹훅 재배포로 떨어지며 `IMAGE_TAG` 를
+  손으로 바꿔야 한다. 시크릿이 맞는지는 `Portainer check (dry run)` 워크플로를 수동 실행해 확인한다.
 - **프리릴리즈**는 태그에 `-` 를 넣는다 (`v1.2.0-alpha.1`). `latest` 이미지를 덮지 않고 운영
   재배포도 건너뛴다. 플레이어 앱은 빌드되지만 `electron-updater` 가 일반 사용자에게 내려보내지
   않는다. 배포 경로 자체를 시험할 때 쓴다.
