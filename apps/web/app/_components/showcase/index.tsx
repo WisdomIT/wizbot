@@ -30,6 +30,8 @@ export default function Showcase() {
   const [hovering, setHovering] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [fading, setFading] = useState(false);
+  //  lg 이상이면 데모를 오른쪽 열에, 아니면 활성 항목 바로 아래에 — 첫 렌더는 서버와 같게 데스크톱으로
+  const [isDesktop, setIsDesktop] = useState(true);
   const sectionRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const current = items[index];
@@ -48,6 +50,13 @@ export default function Showcase() {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     setReduceMotion(media.matches);
     const onChange = (event: MediaQueryListEvent) => setReduceMotion(event.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 64rem)');
+    setIsDesktop(media.matches);
+    const onChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
   }, []);
@@ -84,6 +93,23 @@ export default function Showcase() {
 
   const progress = progressRatio(elapsed, current.dwellMs);
 
+  const panel = (
+    <div
+      role="tabpanel"
+      id={`showcase-panel-${current.key}`}
+      aria-labelledby={`showcase-tab-${current.key}`}
+      className={cn('h-[26rem] overflow-hidden rounded-xl border bg-muted shadow-lg transition-opacity duration-200 lg:h-[30rem]', fading ? 'opacity-0' : 'opacity-100')}
+      onPointerEnter={() => setHovering(true)}
+      onPointerLeave={() => setHovering(false)}
+      onFocusCapture={() => setHovering(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovering(false);
+      }}
+    >
+      <Demo demoKey={current.key} active={visible && !fading} />
+    </div>
+  );
+
   return (
     <section id="benefits" ref={sectionRef} className="container py-24 sm:py-32 mx-auto px-4 md:px-0">
       <div className="mb-10 lg:mb-14">
@@ -93,71 +119,59 @@ export default function Showcase() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:gap-12">
-        {/* 데모 — 모바일은 위 */}
-        <div
-          role="tabpanel"
-          id={`showcase-panel-${current.key}`}
-          aria-labelledby={`showcase-tab-${current.key}`}
-          className={cn('order-1 h-[26rem] overflow-hidden rounded-xl border bg-muted shadow-lg transition-opacity duration-200 lg:order-2 lg:h-[30rem]', fading ? 'opacity-0' : 'opacity-100')}
-          onPointerEnter={() => setHovering(true)}
-          onPointerLeave={() => setHovering(false)}
-          onFocusCapture={() => setHovering(true)}
-          onBlurCapture={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovering(false);
-          }}
-        >
-          <Demo demoKey={current.key} active={visible && !fading} />
-        </div>
+        {/* 데모 — 넓은 화면은 오른쪽 열. 좁은 화면은 아래 리스트의 활성 항목 바로 밑에 끼워 넣는다(한 번만 마운트) */}
+        {isDesktop && <div className="lg:order-2">{panel}</div>}
 
-        {/* 리스트 — 모바일은 아래 */}
-        <div role="tablist" aria-label="위즈봇 기능" aria-orientation="vertical" className="order-2 flex flex-col gap-2 lg:order-1">
+        <div role="tablist" aria-label="위즈봇 기능" aria-orientation="vertical" className="flex flex-col gap-2 lg:order-1">
           {items.map((item, i) => {
             const active = i === index;
             return (
-              <button
-                key={item.key}
-                ref={(el) => { tabRefs.current[i] = el; }}
-                type="button"
-                role="tab"
-                id={`showcase-tab-${item.key}`}
-                aria-selected={active}
-                aria-controls={`showcase-panel-${item.key}`}
-                tabIndex={active ? 0 : -1}
-                className={cn(
-                  'relative overflow-hidden rounded-lg border px-4 py-3 text-left transition-colors',
-                  active ? 'border-blue-500/50 bg-muted/60' : 'hover:bg-muted/40',
-                )}
-                onClick={() => { if (!active) goTo(i); }}
-                onKeyDown={(event) => {
-                  const target = keyboardTarget(event.key, index, items.length);
-                  if (target === null) return;
-                  event.preventDefault();
-                  goTo(target);
-                  tabRefs.current[target]?.focus();
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={cn('shrink-0', active ? 'text-blue-500' : 'text-muted-foreground')}>{item.icon}</span>
-                  <span className="font-bold">{item.title}</span>
-                </div>
-                {/* 활성 항목만 설명 펼침 — 높이 트랜지션 */}
-                <div className={cn('grid transition-[grid-template-rows] duration-300 ease-out', active ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
-                  <div className="overflow-hidden">
-                    <p className="pt-2 text-sm text-muted-foreground">{item.description}</p>
-                    {item.manualHref && (
-                      <Link href={item.manualHref} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-500 hover:underline" onClick={(event) => event.stopPropagation()}>
-                        자세히 <ArrowRight className="size-3" />
-                      </Link>
-                    )}
+              <div key={item.key} className="flex flex-col gap-2">
+                <button
+                  ref={(el) => { tabRefs.current[i] = el; }}
+                  type="button"
+                  role="tab"
+                  id={`showcase-tab-${item.key}`}
+                  aria-selected={active}
+                  aria-controls={`showcase-panel-${item.key}`}
+                  tabIndex={active ? 0 : -1}
+                  className={cn(
+                    'relative overflow-hidden rounded-lg border px-4 py-3 text-left transition-colors',
+                    active ? 'border-blue-500/50 bg-muted/60' : 'hover:bg-muted/40',
+                  )}
+                  onClick={() => { if (!active) goTo(i); }}
+                  onKeyDown={(event) => {
+                    const target = keyboardTarget(event.key, index, items.length);
+                    if (target === null) return;
+                    event.preventDefault();
+                    goTo(target);
+                    tabRefs.current[target]?.focus();
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={cn('shrink-0', active ? 'text-blue-500' : 'text-muted-foreground')}>{item.icon}</span>
+                    <span className="font-bold">{item.title}</span>
                   </div>
-                </div>
-                {/* 자동 순환 진행률 — 조작 중이면 멈춘 채로 */}
-                {active && !reduceMotion && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500/20" aria-hidden>
-                    <span className="block h-full bg-blue-500" style={{ width: `${Math.round(progress * 100)}%`, transition: `width ${TICK_MS}ms linear` }} />
-                  </span>
-                )}
-              </button>
+                  {/* 활성 항목만 설명 펼침 — 높이 트랜지션 */}
+                  <div className={cn('grid transition-[grid-template-rows] duration-300 ease-out', active ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                    <div className="overflow-hidden">
+                      <p className="pt-2 text-sm text-muted-foreground">{item.description}</p>
+                      {item.manualHref && (
+                        <Link href={item.manualHref} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-500 hover:underline" onClick={(event) => event.stopPropagation()}>
+                          자세히 <ArrowRight className="size-3" />
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                  {/* 자동 순환 진행률 — 조작 중이면 멈춘 채로 */}
+                  {active && !reduceMotion && (
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-blue-500/20" aria-hidden>
+                      <span className="block h-full bg-blue-500" style={{ width: `${Math.round(progress * 100)}%`, transition: `width ${TICK_MS}ms linear` }} />
+                    </span>
+                  )}
+                </button>
+                {active && !isDesktop && panel}
+              </div>
             );
           })}
         </div>

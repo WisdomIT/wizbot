@@ -34,15 +34,15 @@ export default function Hero() {
           <div className="space-y-4 md:space-y-0 md:space-x-4">
             <Button asChild className="px-4 font-bold hover:gap-4">
               <Link href="/list">
-                명령어 보러가기
+                스트리머 목록
                 <ArrowRight className="size-5 group-hover/arrow:translate-x-1 transition-transform" />
               </Link>
             </Button>
             <Button asChild variant="secondary" className="px-4 font-bold">
-              <Link href="/login">스트리머 로그인</Link>
+              <Link href="/manual">이용 안내</Link>
             </Button>
             <Button asChild variant="outline" className="px-4 font-bold">
-              <Link href="/manual">이용 안내</Link>
+              <Link href="/login">스트리머 로그인</Link>
             </Button>
           </div>
         </div>
