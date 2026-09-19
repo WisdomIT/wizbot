@@ -18,8 +18,10 @@ export type SongEvent =
       action: 'play' | 'pause' | 'stop' | 'next' | 'seek' | 'volume';
       value?: number;
     }
-  /** 송출 소스 연결 상태가 바뀜 */
-  | { type: 'source' };
+  /** 송출 소스 연결 상태·선택이 바뀜 */
+  | { type: 'source' }
+  /** 컨트롤러의 「찾기」 (#322) — 이 세션 ID 를 가진 창이 자신을 드러낸다 */
+  | { type: 'locate'; sessionId: string };
 
 const emitter = new EventEmitter();
 // 채널마다 컨트롤러·소스·시청자가 붙으므로 기본 상한(10)으로는 부족하다
@@ -39,14 +41,18 @@ export function subscribeSongEvents(userId: number, listener: (event: SongEvent)
   return () => emitter.off(channel(userId), listener);
 }
 
-/* ── 송출 소스 하트비트 (오프라인 감지·중복 방지) ── */
+/* ── 송출 세션 프레즌스 (#322) ── */
 
 export interface SourcePresence {
   /** 'OBS' | 'ELECTRON' */
   source: string;
-  /** 창을 여러 개 열었을 때 최신 하나만 활성으로 삼는다 */
+  /** 창이 스스로 만들어 컴퓨터를 껐다 켜도 유지하는 고유 ID — 앱은 userData, OBS 페이지는 localStorage */
   sessionId: string;
+  /** 앱은 컴퓨터 이름, OBS 는 「OBS 브라우저 소스」 */
+  label: string;
   lastSeenAt: number;
+  /** 이번에 붙은 시각 — 목록 순서를 고정하는 기준(먼저 연결된 것이 위). 타임아웃 뒤 다시 붙으면 새로 찍힌다 */
+  firstSeenAt: number;
 }
 
 /**
@@ -55,55 +61,68 @@ export interface SourcePresence {
  * (한 번쯤 늦는다고 「연결 안 됨」이 깜빡이지 않게).
  */
 export const SOURCE_TIMEOUT_MS = 15_000;
+/**
+ * 신호가 끊긴 세션도 이만큼은 목록에 남긴다 (#322 후속) — 꺼진 앱·닫힌 OBS 를 사용자가 목록에서 알아보고(「신호 없음 · N분 전」)
+ * 다시 켜질 것을 기대해 미리 송출 소스로 골라둘 수 있게. 그 뒤엔 지운다 (API 재시작이면 어차피 비운다)
+ */
+export const SESSION_RETENTION_MS = 60 * 60 * 1000;
 
-const presences = new Map<number, SourcePresence>();
+/** 지금 붙어 있는가 — 마지막 하트비트가 타임아웃 안 */
+export function isConnected(p: { lastSeenAt: number }, now = Date.now()): boolean {
+  return now - p.lastSeenAt <= SOURCE_TIMEOUT_MS;
+}
 
 /**
- * 하트비트 수신.
- *
- * **먼저 잡은 세션이 유지된다.** 이전에는 하트비트마다 세션을 덮어써서, 두 기기가
- * 동시에 켜져 있으면 5초마다 주인이 뒤바뀌었다. 각 창은 자기 차례가 아니면 재생을
- * 멈추므로 어느 쪽도 제대로 재생하지 못했다.
- *
- * 주인이 하트비트를 멈추면 SOURCE_TIMEOUT_MS 뒤에 자리가 비고, 그때 다음 세션이 잡는다.
- *
- * changed 는 주인이 바뀐 경우에만 true — 매번 이벤트를 쏘면 구독자 전원이 5초마다
- * 전체 상태를 다시 읽게 된다.
+ * 스트리머당 붙어 있는 송출 세션 전부. 어느 세션이 소리를 내는지는 여기서 정하지 않는다 —
+ * 스트리머가 고른 세션(UserSetting.songSourceSessionId)이 주인이고, 이 목록은 「지금 누가 켜져 있나」만 안다 (#322).
+ * 예전(#85·#319)엔 먼저 하트비트를 보낸 세션이 주인이 되는 규칙이 여기 있었는데, 어느 창이 소리를 내는지 사용자가 고를 수 없어 걷어냈다
  */
-export function touchSource(
-  userId: number,
-  source: string,
-  sessionId: string,
-): { changed: boolean; active: boolean } {
-  const current = getSourcePresence(userId);
+const rooms = new Map<number, Map<string, SourcePresence>>();
 
-  if (current === null) {
-    presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
-    return { changed: true, active: true };
+function prune(sessions: Map<string, SourcePresence>, now: number) {
+  for (const [id, p] of sessions) {
+    if (now - p.lastSeenAt > SESSION_RETENTION_MS) sessions.delete(id);
   }
-
-  if (current.sessionId === sessionId) {
-    const changed = current.source !== source;
-    presences.set(userId, { source, sessionId, lastSeenAt: Date.now() });
-    return { changed, active: true };
-  }
-
-  // 다른 세션이 잡고 있다 — 자리를 뺏지 않는다 (이 창은 대기 상태가 된다)
-  return { changed: false, active: false };
 }
 
-export function getSourcePresence(userId: number): SourcePresence | null {
-  const presence = presences.get(userId);
-  if (!presence) return null;
-  if (Date.now() - presence.lastSeenAt > SOURCE_TIMEOUT_MS) return null;
-  return presence;
+/**
+ * 하트비트 수신. changed = 세션이 새로 붙었거나(끊겼다 복귀 포함) 이름·종류가 바뀌었거나 목록이 달라진 경우 —
+ * 매번 이벤트를 쏘면 구독자 전원이 5초마다 전체 상태를 다시 읽으므로 그때만 true
+ */
+export function touchSource(userId: number, presence: Omit<SourcePresence, 'lastSeenAt' | 'firstSeenAt'>, now = Date.now()): { changed: boolean } {
+  let sessions = rooms.get(userId);
+  if (!sessions) {
+    sessions = new Map();
+    rooms.set(userId, sessions);
+  }
+  const before = sessions.size;
+  const prev = sessions.get(presence.sessionId);
+  //  끊겨 있다 돌아온 세션은 새로 붙은 것처럼 맨 아래로(firstSeenAt 갱신) + 알림
+  const returned = !!prev && !isConnected(prev, now);
+  sessions.set(presence.sessionId, { ...presence, lastSeenAt: now, firstSeenAt: prev && !returned ? prev.firstSeenAt : now });
+  prune(sessions, now);
+  const changed = !prev || returned || prev.source !== presence.source || prev.label !== presence.label || before !== sessions.size;
+  return { changed };
 }
 
-/** 이 세션이 현재 활성 세션인지 — 중복 실행된 창은 재생하지 않는다 */
-export function isActiveSession(userId: number, sessionId: string): boolean {
-  return getSourcePresence(userId)?.sessionId === sessionId;
+/** 보존 중인 세션 전부(끊긴 것 포함) — 먼저 연결된 순(같으면 ID 순). 하트비트마다 순서가 바뀌면 사용자가 헷갈린다 (#322 후속) */
+export function listSourceSessions(userId: number, now = Date.now()): SourcePresence[] {
+  const sessions = rooms.get(userId);
+  if (!sessions) return [];
+  prune(sessions, now);
+  return [...sessions.values()].sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.sessionId.localeCompare(b.sessionId));
+}
+
+/** 특정 세션 — 보존 목록에 없으면 null. connectedOnly 면 지금 붙어 있는 것만 */
+export function getSourceSession(userId: number, sessionId: string, opts: { connectedOnly?: boolean } = {}, now = Date.now()): SourcePresence | null {
+  const sessions = rooms.get(userId);
+  if (!sessions) return null;
+  prune(sessions, now);
+  const found = sessions.get(sessionId) ?? null;
+  if (found && opts.connectedOnly && !isConnected(found, now)) return null;
+  return found;
 }
 
 export function clearSource(userId: number) {
-  presences.delete(userId);
+  rooms.delete(userId);
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, Eye, EyeOff, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -11,7 +11,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,14 +28,13 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 
 import { ShortcutInput } from './shortcut-input';
+import { SourceSection, type SourceSession, type SourceStatus } from './source-section';
 
 export interface SongSettings {
   /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
   active: boolean;
-  sourceType: 'NONE' | 'OBS' | 'ELECTRON';
-  /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
-  requestPolicy: { maxPerRequester: number | null; maxQueueLength: number };
-  sourceToken: string | null;
+  /** 신청 제한 (#237) — maxPerRequester null 은 무제한. maxDurationSeconds = 신청 가능한 최대 길이 (#326) */
+  requestPolicy: { maxPerRequester: number | null; maxQueueLength: number; maxDurationSeconds: number };
   overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   autoPlay: boolean;
   historyPublic: boolean;
@@ -53,11 +51,10 @@ const SHORTCUT_ACTIONS = [
 
 /** 노래 기능 설정 — 흩어져 있던 설정을 한 곳에 모은다 (#97) */
 export function SettingsDialog({
+  source,
   settings,
   onChangeActive,
-  onChangeSourceType,
   onChangeRequestPolicy,
-  onRegenerate,
   onChangeOverlay,
   onChangeAutoPlay,
   onChangeHistoryPublic,
@@ -67,11 +64,19 @@ export function SettingsDialog({
   youtube,
   isApp = false,
 }: {
+  /** 송출 소스 (#322) — 모달 우측. 링크·연결된 세션 목록(찾기·설정) */
+  source: {
+    status: SourceStatus;
+    receivedAt: number;
+    mySessionId: string | null;
+    onSelect: (session: SourceSession) => void;
+    onLocate: (session: SourceSession) => void;
+    onClearSelection: () => void;
+    onRegenerate: () => void;
+  };
   settings: SongSettings;
   onChangeActive: (active: boolean) => void;
-  onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
   onChangeRequestPolicy: (policy: SongSettings['requestPolicy']) => void;
-  onRegenerate: () => void;
   onChangeOverlay: (overlay: SongSettings['overlay']) => void;
   onChangeAutoPlay: (enabled: boolean) => void;
   onChangeHistoryPublic: (isPublic: boolean) => void;
@@ -93,15 +98,17 @@ export function SettingsDialog({
           <Settings />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>노래 설정</DialogTitle>
           <DialogDescription>
-            송출 소스와 자막, 자동 재생, 시청자 공개를 여기에서 관리합니다.
+            왼쪽은 노래 기능 설정, 오른쪽은 소리를 내는 송출 소스(앱·OBS 브라우저 소스)입니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-6">
+        {/* 가로 2분할 — 좁은 화면에서는 세로로 쌓인다 */}
+        <div className="grid gap-6 md:grid-cols-2 md:divide-x">
+        <div className="flex flex-col gap-6 md:pr-6">
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col">
               <Label htmlFor="setting-active">노래 신청 기능</Label>
@@ -115,12 +122,6 @@ export function SettingsDialog({
               onCheckedChange={onChangeActive}
             />
           </div>
-          <Separator />
-          <SourceSection
-            settings={settings}
-            onChangeSourceType={onChangeSourceType}
-            onRegenerate={onRegenerate}
-          />
           <Separator />
           <OverlaySection overlay={settings.overlay} onChange={onChangeOverlay} />
           <Separator />
@@ -267,6 +268,20 @@ export function SettingsDialog({
             </>
           )}
         </div>
+
+        <div className="flex flex-col gap-3">
+          <Label>송출 소스</Label>
+          <SourceSection
+            source={source.status}
+            receivedAt={source.receivedAt}
+            mySessionId={source.mySessionId}
+            onSelect={source.onSelect}
+            onLocate={source.onLocate}
+            onClearSelection={source.onClearSelection}
+            onRegenerate={source.onRegenerate}
+          />
+        </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -293,143 +308,6 @@ function ThemeSection() {
           <SelectItem value="dark">다크</SelectItem>
         </SelectContent>
       </Select>
-    </div>
-  );
-}
-
-function SourceSection({
-  settings,
-  onChangeSourceType,
-  onRegenerate,
-}: {
-  settings: SongSettings;
-  onChangeSourceType: (sourceType: SongSettings['sourceType']) => void;
-  onRegenerate: () => void;
-}) {
-  // 주소는 방송 화면에 그대로 찍힐 수 있으므로 기본은 가려둔다
-  const [revealed, setRevealed] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-
-  const [origin, setOrigin] = useState('');
-  useState(() => {
-    if (typeof window !== 'undefined') setOrigin(window.location.origin);
-  });
-
-  const playerUrl = settings.sourceToken ? `${origin}/obs/${settings.sourceToken}/player` : '';
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <Label>송출 소스</Label>
-        <Select
-          value={settings.sourceType}
-          onValueChange={(value) => onChangeSourceType(value as SongSettings['sourceType'])}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="OBS">OBS 브라우저 소스</SelectItem>
-            <SelectItem value="ELECTRON">위즈봇 플레이어 앱</SelectItem>
-            <SelectItem value="NONE">사용 안 함</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {settings.sourceType === 'ELECTRON' && (
-        <p className="text-xs text-muted-foreground">
-          위즈봇 플레이어 앱이 설치돼 있어야 소리가 납니다.{' '}
-          {/* 앱 안에서 눌러도 setWindowOpenHandler 가 외부 브라우저로 넘긴다 */}
-          <a
-            href="/download"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            앱 내려받기
-          </a>
-        </p>
-      )}
-
-      {settings.sourceType === 'OBS' && (
-        <div className="flex flex-col gap-2">
-          <Label>브라우저 소스 주소</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              readOnly
-              value={playerUrl}
-              type={revealed ? 'text' : 'password'}
-              className="font-mono text-xs"
-            />
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={revealed ? '주소 가리기' : '주소 보기'}
-              title={revealed ? '주소 가리기' : '주소 보기'}
-              onClick={() => setRevealed((prev) => !prev)}
-            >
-              {revealed ? <EyeOff /> : <Eye />}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="주소 복사"
-              title="주소 복사"
-              onClick={() => {
-                void navigator.clipboard.writeText(playerUrl);
-                toast.success('주소를 복사했습니다.');
-              }}
-            >
-              <Copy />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="주소 재발급"
-              title="주소 재발급"
-              onClick={() => setConfirming(true)}
-            >
-              <RefreshCw />
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            이 주소를 아는 사람은 재생 상태를 볼 수 있습니다. 방송 화면에 노출됐다면 재발급하세요.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            💡 유튜브 프리미엄 계정이 있다면, OBS 에서 브라우저 소스를 하나 더 만들어 주소를{' '}
-            <code className="font-mono">https://www.youtube.com</code> 으로 두고 [상호작용] 창에서
-            로그인해두면 광고 없이 재생됩니다.
-          </p>
-
-          <Dialog open={confirming} onOpenChange={setConfirming}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>주소를 새로 발급할까요?</DialogTitle>
-                <DialogDescription>
-                  새 주소가 발급되면 <strong>기존 주소는 즉시 사용할 수 없게 됩니다.</strong> 이미
-                  OBS 에 등록해 둔 브라우저 소스는 재생이 멈추므로, 새 주소를 다시 붙여넣어야
-                  합니다.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConfirming(false)}>
-                  취소
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setConfirming(false);
-                    setRevealed(false);
-                    onRegenerate();
-                  }}
-                >
-                  새로 발급
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      )}
     </div>
   );
 }
@@ -510,6 +388,7 @@ function RequestPolicySection({
     unlimited: value.maxPerRequester === null,
     perRequester: String(value.maxPerRequester ?? 1),
     maxQueue: String(value.maxQueueLength),
+    maxMinutes: String(Math.round(value.maxDurationSeconds / 60)),
   });
   const [form, setForm] = useState(toForm(policy));
   //  서버 값이 바뀌면 폼을 갈아끼운다 — 렌더 중 보정 (#200 패턴)
@@ -569,6 +448,17 @@ function RequestPolicySection({
             </div>
           </div>
         </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="setting-max-minutes" className="text-xs text-muted-foreground">
+            신청 가능한 최대 길이 (분, 1~60)
+          </Label>
+          <Input
+            id="setting-max-minutes"
+            inputMode="numeric"
+            value={form.maxMinutes}
+            onChange={(event) => setForm({ ...form, maxMinutes: event.target.value })}
+          />
+        </div>
       </div>
       <div className="flex justify-end">
         <Button
@@ -577,6 +467,7 @@ function RequestPolicySection({
             onSave({
               maxPerRequester: form.unlimited ? null : clamp(form.perRequester, 1, 99, 1),
               maxQueueLength: clamp(form.maxQueue, 1, 100, 30),
+              maxDurationSeconds: clamp(form.maxMinutes, 1, 60, 10) * 60,
             })
           }
         >

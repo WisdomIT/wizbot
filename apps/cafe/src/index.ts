@@ -52,11 +52,15 @@ async function runVerify(cookies: NaverCookies, action: PendingAction): Promise<
   return { ok: false, message: result.message, sessionInvalid: result.reason === 'SESSION_INVALID' };
 }
 
-/** 대문 HTML 읽어오기 (#9 PR3) — 스트리머가 삽입 자리를 고를 수 있게 */
+/**
+ * 대문 HTML 읽어오기 (#9 PR3) — 스트리머가 삽입 자리를 고를 수 있게. 자동 재불러오기(#318)도 같은 경로로 온다.
+ * 마지막으로 알고 있던 대문(gateHtml)과 비교해 잘린 읽기면 실패로 끝낸다 — 잘린 HTML 을 대문으로 믿고 자리를 초기화하지 않게
+ */
 async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
-  const result = await readGate(cookies, action.clubId!);
+  const result = await readGate(cookies, action.clubId!, action.gateHtml);
   if (!result.ok) {
-    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message: result.message });
+    const suspicious = result.reason === 'SUSPICIOUS';
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message: result.message, suspicious, htmlLength: suspicious ? result.html.length : undefined });
     return { ok: false, message: result.message, sessionInvalid: result.reason === 'SESSION_INVALID' };
   }
   //  렌더 실패는 치명적이지 않다 — 그림 없이도(빈 대문처럼) 맨 아래 추가는 가능하다
@@ -65,8 +69,13 @@ async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promi
     return null;
   });
   const done = await trpc.cafe.completeGateFetch.mutate({ id: action.id, html: result.html, render });
-  const notes = [done.reset && '대문이 바뀌어 고른 자리 초기화', done.reactivated && '블록이 들어 있어 동작 재개'].filter(Boolean).join(', ');
-  return { ok: true, log: `대문 읽음 (${result.html.length}자${render ? `, 렌더 ${render.width}×${render.height}, 요소 ${render.boxes.length}` : ''})${notes ? ` — ${notes}` : ''}` };
+  const notes = [
+    done.auto && '자동 재불러오기',
+    done.reset && '대문이 바뀌어 고른 자리 초기화',
+    done.reactivated && '블록이 들어 있어 동작 재개 (다음 확인에 바로 반영)',
+    done.gaveUp && `자동 복구 ${done.gaveUp.attempts}회 실패 — 포기, 운영자 알림`,
+  ].filter(Boolean).join(', ');
+  return { ok: true, log: `대문 읽음 (${result.html.length}자, ${result.attempts}회째 읽기${render ? `, 렌더 ${render.width}×${render.height}, 요소 ${render.boxes.length}` : ''})${notes ? ` — ${notes}` : ''}` };
 }
 
 /**
@@ -75,13 +84,16 @@ async function runFetchGate(cookies: NaverCookies, action: PendingAction): Promi
  * 저장 후 다시 읽어 블록이 남아 있어야 성공 — 네이버 편집기가 태그를 지울 수 있다.
  */
 async function runSaveGate(cookies: NaverCookies, action: PendingAction): Promise<ActionOutcome> {
-  const fail = async (message: string, opts: { sessionInvalid?: boolean; stale?: boolean } = {}): Promise<ActionOutcome> => {
-    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message, stale: opts.stale });
+  const fail = async (message: string, opts: { sessionInvalid?: boolean; stale?: boolean; suspicious?: boolean; htmlLength?: number } = {}): Promise<ActionOutcome> => {
+    await trpc.cafe.completeGateSave.mutate({ id: action.id, ok: false, message, stale: opts.stale, suspicious: opts.suspicious, htmlLength: opts.htmlLength });
     return { ok: false, message, sessionInvalid: opts.sessionInvalid };
   };
   if (!action.plan || action.gateHtml === null) return fail('반영할 내용이 없습니다. 대문을 다시 가져와주세요.');
-  const current = await readGate(cookies, action.clubId!);
+  const current = await readGate(cookies, action.clubId!, action.gateHtml);
+  //  잘린 읽기 의심 — stale 로 오판해 고른 자리를 버리지 않는다 (#318). 요청은 실패로 끝내고 사용자가 다시 시도한다
+  if (!current.ok && current.reason === 'SUSPICIOUS') return fail(current.message, { suspicious: true, htmlLength: current.html.length });
   if (!current.ok) return fail(current.message, { sessionInvalid: current.reason === 'SESSION_INVALID' });
+  console.log('📖', `[${action.user.channelName}] 대문 읽음 ${current.html.length}자 (반영 전)`);
   if (normalizeGateHtml(current.html) !== normalizeGateHtml(action.gateHtml)) {
     return fail('그사이 대문이 바뀌었습니다. 대문 HTML 을 다시 가져와 자리를 골라주세요.', { stale: true });
   }
@@ -158,20 +170,28 @@ async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void
     }
     const { save } = await trpc.cafe.evaluateLive.mutate({ id: row.id, snapshot });
     if (!save) continue;
-    const fail = (message: string, extra: { missing?: boolean; html?: string } = {}) =>
+    const fail = (message: string, extra: { missing?: boolean; suspicious?: boolean; html?: string; htmlLength?: number } = {}) =>
       trpc.cafe.reportSave.mutate({ id: row.id, ok: false, message, ...extra }).catch(() => null);
     try {
-      const current = await readGate(cookies, row.clubId);
+      //  마지막으로 알고 있던 대문과 비교해 잘린 읽기를 걸러낸다 (#318) — 걸리면 이번 주기는 건너뛴다(상태 그대로)
+      const current = await readGate(cookies, row.clubId, row.gateHtml);
+      if (!current.ok && current.reason === 'SUSPICIOUS') {
+        console.warn('⚠️', label, current.message);
+        await fail(current.message, { suspicious: true, htmlLength: current.html.length });
+        continue;
+      }
       if (!current.ok) {
         await fail(current.message);
         if (current.reason === 'SESSION_INVALID') return 'session-invalid';
         continue;
       }
+      console.log('📖', label, `대문 읽음 ${current.html.length}자${current.attempts > 1 ? ` (${current.attempts}회째 읽기)` : ''}`);
       const existing = findImageTags(current.html)[0];
       const size = existing ? imageSizeOf(existing) : null;
       if (!existing || !size) {
-        console.warn('⚠️', label, '대문에서 이미지 블록이 사라짐 — 동작 중지');
-        await fail('대문에서 방송 상태 이미지가 사라졌습니다. 연동 설정에서 위치를 다시 지정해주세요.', { missing: true, html: current.html });
+        //  3주기 연속일 때만 중지된다 (#318) — 그 전엔 API 가 진행 상황만 남긴다
+        const outcome = await fail('대문에서 방송 상태 이미지가 사라졌습니다. 연동 설정에서 위치를 다시 지정해주세요.', { missing: true, html: current.html });
+        console.warn('⚠️', label, outcome?.stopped ? '대문에서 이미지 블록이 사라짐 (연속 확정) — 동작 중지, 자동 재불러오기 예약' : `대문에서 이미지 블록을 찾지 못함 (${current.html.length}자) — 재확인 중`);
         continue;
       }
       const replaced = replaceImageTags(current.html, buildImageTag({ src: save.src, ...size }));
@@ -183,7 +203,8 @@ async function syncLive(cookies: NaverCookies): Promise<'session-invalid' | void
       }
       const written = findImageTags(saved.html).some((tag) => imageSrcOf(tag)?.endsWith(`?v=${save.serial}`));
       if (!written) {
-        await fail('저장했지만 대문에서 새 이미지 주소가 보이지 않습니다. 다음 주기에 다시 시도합니다.', { html: saved.html });
+        //  저장 후 재읽기도 잘릴 수 있다 — 그 HTML 로 gateHtml 을 덮어쓰지 않는다 (#318)
+        await fail('저장했지만 대문에서 새 이미지 주소가 보이지 않습니다. 다음 주기에 다시 시도합니다.', { htmlLength: saved.html.length });
         continue;
       }
       await trpc.cafe.reportSave.mutate({ id: row.id, ok: true, serial: save.serial, html: saved.html });

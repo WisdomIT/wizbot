@@ -465,7 +465,11 @@ model UserSetting {
   songHistoryPublic     Boolean @db.TinyInt @default(false) // 시청자에게 재생 기록 공개
   songMaxDurationSeconds Int    @db.Int @default(600)      // 신청 가능한 최대 길이(초)
   songMaxQueueLength    Int     @db.Int @default(30)        // 대기열 최대 곡 수
-  songSourceType        SongSourceType @default(OBS)        // 소리를 내보낼 경로
+  songSourceType        SongSourceType @default(NONE)       // 선택된 송출 세션의 종류 (#322 — 사용자가 직접 고르지 않는다, 세션 선택에 따라 정해진다)
+  /// 소리를 내는 송출 세션 (#322) — 앱·OBS 페이지가 스스로 만들어 컴퓨터를 껐다 켜도 유지하는 고유 ID. null 이면 아직 선택 전(첫 연결이 자동 선택된다)
+  songSourceSessionId   String? @db.VarChar(64)
+  /// 선택된 세션의 이름(앱은 컴퓨터 이름) — 꺼져 있을 때 「선택한 앱(이름)이 연결돼 있지 않습니다」에 쓴다
+  songSourceLabel       String? @db.VarChar(80)
   /// OBS 재생 페이지 토큰 (URL 에 노출되므로 재발급 가능해야 한다)
   songSourceToken       String? @db.VarChar(64)
   /// 읽기 전용 토큰 (현재 재생 페이지가 자막을 함께 표시하므로 미사용 — 별도 오버레이가 필요해지면 사용)
@@ -634,6 +638,8 @@ model SongHistory {
   status             SongHistoryStatus
   /// 삭제/스킵을 실행한 사람 (닉네임). 본인 취소면 신청자와 같다
   resolvedBy         String?           @db.VarChar(40)
+  /// FAILED 의 원인 (#319) — 유튜브 오류 코드를 사람이 읽는 문구로 + 어느 창(앱/OBS)에서 실패했는지
+  failReason         String?           @db.VarChar(60)
   /// 스트리머가 이 항목만 시청자에게 숨김
   hiddenFromViewers  Boolean           @default(false) @db.TinyInt
   requestedAt        DateTime          @default(now())
@@ -687,6 +693,13 @@ model SongPlayback {
   volume        Int        @default(70) @db.Int // 0~100
   /// 한 곡 반복 — 곡이 끝나면 다음 곡으로 넘기지 않고 처음부터 다시 재생한다
   repeatOne     Boolean    @default(false) @db.TinyInt
+  /// 연속 재생 실패 수 (#319) — 3회가 되면 다음 곡으로 넘기지 않고 멈춘다(차단기). 정상 종료·수동 재생/다음 곡에서 0
+  failStreak    Int        @default(0) @db.Int
+  /// 마지막 실패 원인 (사람이 읽는 문구) — 멈춤 배너에 보여준다
+  lastFailReason String?   @db.VarChar(60)
+  /// 재생(PLAYING)을 요청한 시각과 송출 세션이 실제로 재생 중이라고 응답한 시각 (#322) — 응답이 없으면 컨트롤러가 경고한다
+  playRequestedAt DateTime?
+  sourceAckAt    DateTime?
   /// 현재 곡이 큐에서 나온 시각 — 이력 기록·타임아웃 판단용
   startedAt     DateTime?
   updatedAt     DateTime   @updatedAt
@@ -737,6 +750,26 @@ enum CafeLinkStatus {
 }
 
 /// 워커에게 시키는 일. 처리하면 null 로 돌아온다
+/// 카페 연동 이벤트 종류 (#318)
+enum CafeEventKind {
+  /// 폴링 갱신에서 표식을 못 찾음 (streak 진행 중)
+  MISSING
+  /// 3주기 연속 사라짐 → 중지·위치 초기화
+  STOPPED
+  /// 읽은 대문이 의심스러움(표식 없음·길이 급감) → 이번 주기 건너뜀
+  SUSPICIOUS_READ
+  /// 반영 중 대문이 바뀌어 위치 초기화
+  STALE
+  /// 자동 재불러오기 시도
+  AUTO_REFETCH
+  /// 표식을 다시 찾아 동작 재개
+  RECOVERED
+  /// 자동 복구 10회 실패 → 포기
+  GAVE_UP
+  /// 대문 저장 실패
+  SAVE_FAILED
+}
+
 enum CafeAction {
   VERIFY
   /// 대문 HTML 읽어오기 — 스트리머가 삽입 위치를 고르기 위해
@@ -801,10 +834,32 @@ model CafeIntegration {
   gateHeight       Int?
   /// 스트리머가 고른 자리 — lib/cafeGate.ts 의 GatePicks. 설정이 미완이면 경로만 들고 있다가 완료되면 반영
   gatePicks        Json?
+  /// 폴링 갱신에서 표식(<img>)을 연속으로 못 찾은 주기 수 (#318) — 3주기 연속일 때만 중지한다. 찾으면 0
+  missingStreak    Int            @default(0)
+  /// 위치가 자동으로(사라짐·stale) 풀렸을 때의 자동 재불러오기 (#318) — 시도 횟수와 다음 시도 시각. 사용자가 직접 지정하면 0/null
+  autoRefetchCount Int            @default(0)
+  nextRefetchAt    DateTime?      @db.DateTime(6)
   updatedAt        DateTime       @updatedAt @db.DateTime(6)
 
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   assets           CafeAsset[]
+  events           CafeIntegrationEvent[]
+}
+
+/// 카페 연동의 판정 이벤트 (#318) — 워커 컨테이너가 재생성돼 로그가 사라져도 원인을 볼 수 있게.
+/// 사라짐·의심 읽기·stale·자동 재불러오기·복구·저장 실패. 연동당 최근 100건만 남긴다
+model CafeIntegrationEvent {
+  id            Int             @id @default(autoincrement())
+  integrationId Int
+  kind          CafeEventKind
+  message       String          @db.VarChar(500)
+  /// 그 시점에 읽은 대문 HTML 길이 — 잘린 읽기 판별용
+  htmlLength    Int?
+  createdAt     DateTime        @default(now()) @db.DateTime(6)
+
+  integration   CafeIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
 }
 
 /// 대문 이미지 배경 (#9 PR2). 파일이 아니라 DB — web(렌더)·api(업로드)가 공유 볼륨 없이 접근한다.

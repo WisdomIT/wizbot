@@ -1,8 +1,12 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 
+/**
+ * 히어로 (#277). 부제는 「공식 API」 대신 포지셔닝 — 경쟁 봇도 전부 치지직 계정 연동이라 차별점이 아니다.
+ * 「밴 걱정 없음」은 신뢰 신호로 작은 배지 한 줄만. 「올인원」「모든 기능」류는 쓰지 않는다(기능 개수 비교 프레임 회피)
+ */
 export default function Hero() {
   return (
     <section id="hero" className="container mx-auto">
@@ -18,23 +22,27 @@ export default function Hero() {
             </h1>
           </div>
           <p className="max-w-screen-sm mx-auto text-sm md:text-lg font-bold text-muted-foreground">
-            <span className="font-black underline underline-offset-2">{`치지직 공식 API`}</span>
-            {`로 구현된 밴 걱정 없는 위즈봇`}
+            {'명령어·뮤직 플레이어·네이버 카페 대문까지'}
             <br />
-            {`시청자 노래 신청과 카페 대문 연동까지`}
+            {'에이전트에게 말하면 위즈봇이 대신 설정합니다'}
           </p>
+          <div className="flex justify-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold text-muted-foreground">
+              <ShieldCheck className="size-3.5 text-blue-500" /> 치지직 공식 API 기반 · 밴 걱정 없음
+            </span>
+          </div>
           <div className="space-y-4 md:space-y-0 md:space-x-4">
             <Button asChild className="px-4 font-bold hover:gap-4">
               <Link href="/list">
-                명령어 보러가기
+                스트리머 목록
                 <ArrowRight className="size-5 group-hover/arrow:translate-x-1 transition-transform" />
               </Link>
             </Button>
             <Button asChild variant="secondary" className="px-4 font-bold">
-              <Link href="/login">스트리머 로그인</Link>
+              <Link href="/manual">이용 안내</Link>
             </Button>
             <Button asChild variant="outline" className="px-4 font-bold">
-              <Link href="/manual">이용 안내</Link>
+              <Link href="/login">스트리머 로그인</Link>
             </Button>
           </div>
         </div>

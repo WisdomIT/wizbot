@@ -3,8 +3,9 @@ name: Release
 # 릴리즈 = dev → main 머지 후 main 커밋에 vX.Y.Z 태그 푸시.
 # 1) 태그가 main에 포함된 커밋인지 검증
 # 2) 루트 Dockerfile 의 타깃(web/api/chatbot)별 이미지 빌드 → ghcr.io 푸시
-# 3) GitHub Release 생성
-# 4) PORTAINER_WEBHOOK_URL 시크릿이 있으면 Portainer 스택 재배포 webhook 호출
+# 3) GitHub Release 생성 → 플레이어 앱 패키징(dmg·exe 첨부)
+# 4) 앱까지 끝난 뒤 Portainer 스택의 IMAGE_TAG 를 이 버전으로 바꿔 재배포 (API, #261).
+#    API 시크릿이 없으면 예전처럼 웹훅 재배포만 하고 IMAGE_TAG 수동 변경을 안내한다
 # (dev 브랜치의 :dev 이미지는 ci.yml 의 docker-dev 잡이 담당)
 
 on:
@@ -209,21 +210,38 @@ jobs:
 
   deploy:
     name: portainer redeploy
-    needs: [build]
-    # 프리릴리즈는 운영에 배포하지 않는다 — 알파 시험이 운영을 갈아끼우면 안 된다 (#124)
-    if: needs.build.result == 'success' && !contains(github.ref_name, '-')
+    #  이미지뿐 아니라 GitHub Release·플레이어 패키징(win·mac)까지 끝난 뒤에만 운영을 바꾼다 (#261) —
+    #  build 직후 배포하면 웹·API 는 새 버전인데 releases/latest 의 앱 자산·latest.yml 은 아직 옛 버전인 구간이 생겼다(v1.4.4 실측).
+    #  앱 패키징이 실패하면 배포도 하지 않는다 — 버전 불일치보다 릴리즈 전체 실패가 낫고, workflow_dispatch(ref=태그)로 다시 돌리면 된다
+    needs: [build, release, app]
+    # 태그 릴리즈만, 프리릴리즈(v1.5.0-beta.1 등)는 운영에 배포하지 않는다 (#124)
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') && needs.build.result == 'success' && needs.release.result == 'success' && needs.app.result == 'success'
     #  ⚠ 반드시 self-hosted runner 에서 호출한다. GitHub 호스티드 러너(Azure ASN 8075)에서
     #  curl 로 호출하면 Cloudflare 의 Bot Fight Mode 가 managed_challenge 를 걸어 403 이 된다
     #  — curl 은 챌린지를 풀 수 없다. 서버 자신이 호출하면 걸리지 않는다. (#124)
     runs-on: [self-hosted, wisdomserver]
     environment: production
     steps:
-      - name: Trigger Portainer stack webhook
+      - uses: actions/checkout@v4
+      - name: Update IMAGE_TAG and redeploy via Portainer API
+        id: api
         env:
+          PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
+          PORTAINER_STACK_ID: ${{ secrets.PORTAINER_STACK_ID }}
+          PORTAINER_ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
+          PORTAINER_URL: ${{ vars.PORTAINER_URL || 'https://portainer.wisdomit.co.kr' }}
           WEBHOOK: ${{ secrets.PORTAINER_WEBHOOK_URL }}
         run: |
+          # 이미지 태그에는 v 가 없다 — git 태그 v1.2.0 → 이미지 1.2.0
+          export IMAGE_TAG="${GITHUB_REF_NAME#v}"
+          if [ -n "$PORTAINER_API_KEY" ] && [ -n "$PORTAINER_STACK_ID" ] && [ -n "$PORTAINER_ENDPOINT_ID" ]; then
+            bash .github/scripts/portainer-deploy.sh
+            exit 0
+          fi
+          #  ── 폴백: API 시크릿이 없으면 예전 웹훅 — IMAGE_TAG 는 바뀌지 않는다 ──
+          echo "::warning::PORTAINER_API_KEY / PORTAINER_STACK_ID / PORTAINER_ENDPOINT_ID 시크릿이 없어 웹훅으로만 재배포합니다. Portainer 에서 IMAGE_TAG 를 $IMAGE_TAG 로 직접 바꿔야 새 버전이 뜹니다. (#261)"
           if [ -z "$WEBHOOK" ]; then
-            echo "::notice::PORTAINER_WEBHOOK_URL 시크릿이 없어 재배포를 건너뜁니다. Portainer 스택 > Webhook 에서 URL을 발급해 등록하세요."
+            echo "::notice::PORTAINER_WEBHOOK_URL 시크릿도 없어 재배포를 건너뜁니다."
             exit 0
           fi
           #  실패했을 때 원인을 남긴다 — 403 이 Cloudflare 차단인지 Portainer 거절인지

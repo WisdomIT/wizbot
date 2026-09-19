@@ -202,9 +202,13 @@ export function HistoryView() {
                           {entry.requester}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={STATUS_VARIANT[entry.status as Status]}>
+                          <Badge variant={STATUS_VARIANT[entry.status as Status]} title={entry.failReason ?? undefined}>
                             {STATUS_LABEL[entry.status as Status]}
                           </Badge>
+                          {/* 실패 원인 (#319) — 유튜브 오류 코드를 풀어 쓴 문구 + 어느 창에서 */}
+                          {entry.failReason && (
+                            <div className="mt-1 text-xs text-muted-foreground">{entry.failReason}</div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           <Button

@@ -19,8 +19,9 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, GripVertical, Heart, Minimize2, PlayCircle, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Eraser, GripVertical, Heart, Minimize2, Play, PlayCircle, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
@@ -49,12 +50,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { playDing } from '@/lib/ding';
 import { useAppShell } from '@/src/hooks/use-app-shell';
 import { useDefaultFavorite } from '@/src/hooks/use-default-favorite';
 import { useSongEvents } from '@/src/hooks/use-song-events';
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { SettingsDialog } from './settings-dialog';
+import { SourceStatusLine } from './source-section';
 
 /**
  * 뮤직플레이어 = 컨트롤러 (#5 #97).
@@ -63,10 +66,10 @@ import { SettingsDialog } from './settings-dialog';
 export function PlayerView() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data, isPending, error } = useQuery({
+  const { data, isPending, error, dataUpdatedAt } = useQuery({
     ...trpc.song.getState.queryOptions(),
     // SSE 가 주된 경로다. 이건 프록시 계층에서 이벤트가 조용히 새는 경우를 대비한 백스톱
-    refetchInterval: 10_000,
+    refetchInterval: STATE_REFETCH_MS,
   });
 
   const invalidate = useCallback(
@@ -74,7 +77,21 @@ export function PlayerView() {
     [queryClient, trpc],
   );
 
+  const shell = useAppShell();
+  /** 앱 안 안내 (#322) — 「찾기」·「송출 소스로 설정됨」. 미니·큰 창 모두 창 전체를 덮는 오버레이(toast 는 눈에 안 띄었다) */
+  const [appNotice, setAppNotice] = useState<string | null>(null);
+  const notifyApp = useCallback((text: string) => setAppNotice(text), []);
+
   useSongEvents((event) => {
+    // 「찾기」 (#322) — 이 앱이면 작업 표시줄·독을 깜빡이고 띵동 3회 + 안내
+    if (event.type === 'locate') {
+      if (shell.sessionId && event.sessionId === shell.sessionId) {
+        shell.attention();
+        void playDing(3);
+        notifyApp('이 앱이 찾기에 의해 호출됨');
+      }
+      return;
+    }
     // SSE 가 끊겨 있던 동안의 이벤트는 재전송되지 않는다.
     // 재연결(connected)이 곧 유실 구간의 끝이므로 이때 전체를 다시 읽는다.
     if (
@@ -94,7 +111,9 @@ export function PlayerView() {
   const seek = useMutation(trpc.song.seek.mutationOptions());
   const setVolume = useMutation(trpc.song.setVolume.mutationOptions());
   const setRepeat = useMutation(trpc.song.setRepeat.mutationOptions());
-  const setSourceType = useMutation(trpc.song.setSourceType.mutationOptions());
+  const selectSource = useMutation(trpc.song.selectSource.mutationOptions());
+  const clearSourceSelection = useMutation(trpc.song.clearSourceSelection.mutationOptions());
+  const locateSource = useMutation(trpc.song.locateSource.mutationOptions());
   const regenerate = useMutation(trpc.song.regenerateToken.mutationOptions());
   const setOverlaySettings = useMutation(trpc.song.setOverlaySettings.mutationOptions());
   const setHistoryPublic = useMutation(trpc.song.setHistoryPublic.mutationOptions());
@@ -112,7 +131,29 @@ export function PlayerView() {
   const updateUserSetting = useMutation(trpc.user.updateUserSetting.mutationOptions());
   const setShortcuts = useMutation(trpc.song.setShortcuts.mutationOptions());
 
-  const shell = useAppShell();
+  //  이 앱이 송출 소스로 「새로」 선택되면 알린다 (#322) — 처음 로드된 값은 건너뛴다(켤 때마다 뜨면 시끄럽다)
+  const selectedSessionId = data?.source.selectedSessionId ?? null;
+  const prevSelectedRef = useRef<string | null | undefined>(undefined);
+  /* eslint-disable react-hooks/set-state-in-effect --
+     서버 상태(선택된 세션)의 변화에 반응하는 알림이다. 렌더 중 비교로는 toast·소리를 낼 수 없어 effect 에서 1회 처리한다 */
+  useEffect(() => {
+    if (!data) return;
+    const prev = prevSelectedRef.current;
+    prevSelectedRef.current = selectedSessionId;
+    if (prev === undefined || prev === selectedSessionId) return;
+    if (shell.sessionId && selectedSessionId === shell.sessionId) {
+      void playDing(1);
+      notifyApp('이 앱이 송출 소스로 설정됨');
+    }
+  }, [data, selectedSessionId, shell.sessionId, notifyApp]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  //  미니 오버레이는 잠깐만
+  useEffect(() => {
+    if (!appNotice) return;
+    const timer = setTimeout(() => setAppNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [appNotice]);
 
   // 미니 플레이어 하트 버튼의 대상 (#264) — 큰 창은 AddToFavoriteButton 이 따로 고른다
   const { defaultFavorite } = useDefaultFavorite();
@@ -194,6 +235,8 @@ export function PlayerView() {
   // 앱을 작게 띄웠을 때 — 컨트롤러만 남고 대기열은 버튼으로 여닫는다
   if (shell.isApp && shell.mode === 'mini') {
     return (
+      <>
+      {appNotice && <AppNoticeOverlay text={appNotice} />}
       <MiniPlayer
         playback={playback}
         controls={playerControls}
@@ -222,6 +265,7 @@ export function PlayerView() {
         update={shell.update}
         onApplyUpdate={shell.applyUpdate}
       />
+      </>
     );
   }
 
@@ -235,6 +279,7 @@ export function PlayerView() {
           : 'flex flex-col gap-4 py-4'
       }
     >
+      {appNotice && <AppNoticeOverlay text={appNotice} />}
       {shell.isApp && (
         <AppTitleBar
           platform={shell.platform}
@@ -262,13 +307,12 @@ export function PlayerView() {
         </div>
       )}
 
-      {shell.isApp ? (
-        <div className="px-4 pt-3">
-          <SourceStatus source={source} />
-        </div>
-      ) : (
-        <SourceStatus source={source} />
-      )}
+      <div className={shell.isApp ? 'flex flex-col gap-2 px-4 pt-3' : 'flex flex-col gap-2'}>
+        <SourceStatusLine source={source} playback={playback} receivedAt={dataUpdatedAt} />
+        {playback.status === 'STOPPED' && playback.failStreak >= FAIL_STREAK_LIMIT && (
+          <HaltedBanner reason={playback.lastFailReason} streak={playback.failStreak} onResume={playerControls.onPlay} />
+        )}
+      </div>
 
       {/* 큰 화면은 좌측 플레이어 · 우측 대기열, 작은 화면은 플레이어가 위 */}
       <div
@@ -299,11 +343,30 @@ export function PlayerView() {
               )}
               <SettingsDialog
                 isApp={shell.isApp}
+                source={{
+                  status: source,
+                  receivedAt: dataUpdatedAt,
+                  mySessionId: shell.sessionId,
+                  onSelect: (session) =>
+                    run(
+                      selectSource.mutateAsync({ sessionId: session.sessionId }),
+                      session.source === 'ELECTRON' ? `${session.label} 앱을 송출 소스로 설정했습니다.` : 'OBS 브라우저 소스를 송출 소스로 설정했습니다.',
+                    ),
+                  onLocate: (session) =>
+                    run(
+                      locateSource.mutateAsync({ sessionId: session.sessionId }),
+                      session.source === 'ELECTRON' ? `${session.label} 앱에 찾기 신호를 보냈습니다.` : 'OBS 브라우저 소스에 찾기 신호를 보냈습니다.',
+                    ),
+                  onClearSelection: () => run(clearSourceSelection.mutateAsync(), '송출 소스 선택을 해제했습니다. 소리가 나지 않습니다.'),
+                  onRegenerate: () =>
+                    run(
+                      regenerate.mutateAsync({ kind: 'source' }),
+                      '주소를 새로 발급했습니다. OBS 에 다시 붙여넣으세요.',
+                    ),
+                }}
                 settings={{
                   active: data.active,
-                  sourceType: source.sourceType,
                   requestPolicy: data.requestPolicy,
-                  sourceToken: source.sourceToken,
                   overlay: source.overlay,
                   autoPlay,
                   historyPublic,
@@ -316,17 +379,8 @@ export function PlayerView() {
                     active ? '노래 신청 기능을 켰습니다.' : '노래 신청 기능을 껐습니다.',
                   )
                 }
-                onChangeSourceType={(sourceType) =>
-                  run(setSourceType.mutateAsync({ sourceType }), '송출 소스를 변경했습니다.')
-                }
                 onChangeRequestPolicy={(policy) =>
                   run(setRequestPolicy.mutateAsync(policy), '신청 제한을 저장했습니다.')
-                }
-                onRegenerate={() =>
-                  run(
-                    regenerate.mutateAsync({ kind: 'source' }),
-                    '주소를 새로 발급했습니다. OBS 에 다시 붙여넣으세요.',
-                  )
                 }
                 onChangeOverlay={(overlay) =>
                   run(setOverlaySettings.mutateAsync(overlay), '자막 설정을 저장했습니다.')
@@ -402,54 +456,45 @@ export function PlayerView() {
   );
 }
 
+/** 서버 playbackService.FAIL_STREAK_LIMIT 과 같다 (#319) */
+const FAIL_STREAK_LIMIT = 3;
+/** 컨트롤러 상태 재조회 주기 — SSE 가 새는 경우의 백스톱 */
+const STATE_REFETCH_MS = 10_000;
+
 /**
- * 송출 소스 연결 상태.
- * 서버는 조회 시점에 online 을 계산해 주지만, 소스가 끊기면 하트비트도 멈춰서
- * 다시 조회할 계기가 사라진다. 마지막 하트비트 시각과 타임아웃으로 여기서 센다.
+ * 앱 창 전체를 덮는 안내 (#322) — 「찾기」·「송출 소스로 설정됨」.
+ * body 에 포털로 붙인다(레이아웃의 overflow-hidden·transform 에 잘리지 않게). 미니를 1920×120 처럼 아주 넓고 낮게 쓰는 경우가 많아
+ * 글자 크기는 창 높이·폭 양쪽에 맞추고(clamp) 테두리는 안쪽 그림자로 두꺼운 빨간 띠를 그린다 — 얇은 링은 잘려 보였다
  */
-const SOURCE_LABEL = {
-  NONE: '사용 안 함',
-  OBS: 'OBS 브라우저 소스',
-  ELECTRON: '위즈봇 플레이어 앱',
-} as const;
+function AppNoticeOverlay({ text }: { text: string }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div
+      className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-background/90 text-center font-bold"
+      style={{
+        boxShadow: 'inset 0 0 0 max(6px, min(1.2vh, 1.2vw)) #ef4444, inset 0 0 40px 8px rgba(239,68,68,0.55)',
+        fontSize: 'clamp(18px, min(45vh, 4.5vw), 64px)',
+        padding: 'min(4vh, 4vw)',
+        animation: 'wizbot-app-notice-pulse 0.8s ease-in-out infinite alternate',
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: '@keyframes wizbot-app-notice-pulse { from { opacity: 0.7; } to { opacity: 1; } }' }} />
+      <span className="leading-tight">{text}</span>
+    </div>,
+    document.body,
+  );
+}
 
-function SourceStatus({
-  source,
-}: {
-  source: {
-    sourceType: 'NONE' | 'OBS' | 'ELECTRON';
-    online: boolean;
-    lastSeenAt: string | Date | null;
-    timeoutMs: number;
-  };
-}) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (source.sourceType === 'NONE') {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="outline">송출 소스 사용 안 함</Badge>
-        설정에서 OBS 또는 앱을 선택하세요.
-      </div>
-    );
-  }
-
-  const online =
-    source.online &&
-    !!source.lastSeenAt &&
-    now - new Date(source.lastSeenAt).getTime() <= source.timeoutMs;
-
+/** 연속 실패 차단기 (#319) — 곡이 아니라 환경 문제일 때 자동 재생이 즐겨찾기를 끝없이 소비하지 않도록 서버가 멈춘 상태 */
+function HaltedBanner({ reason, streak, onResume }: { reason: string | null; streak: number; onResume: () => void }) {
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      {online ? <Badge>연결됨</Badge> : <Badge variant="destructive">연결 안 됨</Badge>}
-      {online
-        ? `${SOURCE_LABEL[source.sourceType]} 에서 재생 중입니다.`
-        : '송출 소스가 연결되어 있지 않습니다. 재생해도 소리가 나지 않습니다.'}
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+      <span>
+        곡이 {streak}번 연속 재생되지 않아 멈췄습니다{reason ? ` (마지막 원인: ${reason})` : ''}. 재생 창의 유튜브 로그인·네트워크를 확인하고 다시 시작하세요.
+      </span>
+      <Button size="sm" className="ml-auto" onClick={onResume}>
+        <Play /> 다시 시작
+      </Button>
     </div>
   );
 }

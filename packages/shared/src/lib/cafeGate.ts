@@ -102,6 +102,21 @@ export function normalizeGateHtml(html: string): string {
     .trim();
 }
 
+/** 의심스러운 읽기 판정 기준 — 마지막으로 알고 있던 대문 길이의 이 비율 미만이면 잘린 읽기로 본다 (#318) */
+export const SUSPICIOUS_READ_RATIO = 0.6;
+
+/**
+ * 읽어온 대문이 「잘린 읽기」로 의심되는가 (#318).
+ * 네이버 편집기의 HTML 모드 전환이 비동기라 textarea 값이 비어 있거나 잘린 채 읽힐 수 있다 — 그걸 「사라짐」·「바뀜」으로
+ * 믿으면 위치가 풀리고 잘린 HTML 이 gateHtml 에 남아 자동 복구까지 막힌다. 마지막으로 알고 있던 대문(expected)과 비교해
+ * 길이가 60% 미만이고, 표식이 있던 대문이면 표식까지 사라졌을 때 의심한다. 알고 있던 대문이 없으면 판정할 근거가 없다
+ */
+export function isSuspiciousGateRead(html: string, expected: string | null | undefined): boolean {
+  if (!expected || !expected.trim()) return false;
+  if (html.length >= expected.length * SUSPICIOUS_READ_RATIO) return false;
+  return findImageTags(expected).length === 0 || findImageTags(html).length === 0;
+}
+
 const YOUTUBE_TAG_RE = /<iframe\b[^>]*\bsrc=["']https:\/\/www\.youtube-nocookie\.com\/embed\/videoseries\?list=UU[^"']*["'][^>]*>/gi;
 
 export function findYoutubeTags(html: string): string[] {

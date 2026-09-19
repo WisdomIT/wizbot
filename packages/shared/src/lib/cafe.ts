@@ -34,6 +34,18 @@ export function uploadsPlaylistId(channelId: string): string {
   return 'UU' + channelId.slice(2);
 }
 
+/** 연동 판정 이벤트 라벨 (#318) — prisma CafeEventKind */
+export const CAFE_EVENT_KIND_LABEL = {
+  MISSING: '표식 없음',
+  STOPPED: '동작 중지',
+  SUSPICIOUS_READ: '읽기 의심',
+  STALE: '대문 바뀜',
+  AUTO_REFETCH: '자동 재불러오기',
+  RECOVERED: '동작 재개',
+  GAVE_UP: '자동 복구 포기',
+  SAVE_FAILED: '저장 실패',
+} as const;
+
 export const CAFE_LINK_STATUS_LABEL = {
   NONE: '연결 전',
   JOIN_REQUESTED: '운영자 가입 대기',

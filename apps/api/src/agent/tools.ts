@@ -1,8 +1,11 @@
 import type { ChatbotPermission, PrismaClient } from '@prisma/client';
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '@wizbot/shared/chatbot/definitions';
+import { CAFE_EVENT_KIND_LABEL, CAFE_LINK_STATUS_LABEL } from '@wizbot/shared/lib/cafe';
 import { getManualPage, listManualPages, searchManual } from '@wizbot/shared/lib/manual';
 import { notifyAdminsOfInquiry } from '@wizbot/shared/router';
 import {
+  accountService,
+  cafeService,
   chatBufferService,
   commandLogService,
   commandService,
@@ -14,6 +17,7 @@ import {
   ServiceError,
   shortcutService,
   songFavoriteService,
+  songHistoryService,
   songService,
   suggestionService,
   userSettingService,
@@ -85,7 +89,22 @@ export const CONFIRM_TOOLS = new Set([
   'delete_command', 'delete_repeat', 'delete_shortcut', 'clear_queue', 'create_inquiry',
   //  시청자에게 직접 작용하는 조치 (#248) — 카드에 근거 채팅을 보여주고 승인받는다
   'temp_restrict_viewer', 'blind_chat_message',
+  //  파괴적이거나 사용자가 바로 느끼는 큰 변화 (#326)
+  'delete_favorite', 'clear_favorite_items', 'set_history_public',
+  //  소리 나는 창이 바뀌거나 사라진다 (#326 2단계)
+  'select_source', 'clear_source_selection',
+  //  시청자 목록 노출 전환, 운영자에게 나가는 메시지 (#326 3단계)
+  'set_listed', 'reply_inquiry',
 ]);
+
+/** 입력에 따라 카드가 필요한 tool — 무언가를 **끄는** 것은 시청자가 바로 느끼는 변화라 확인을 거친다 (#326) */
+export function needsConfirmation(name: string, input: Record<string, unknown>): boolean {
+  if (CONFIRM_TOOLS.has(name)) return true;
+  if (name === 'set_song_request_policy') return input.enabled === false;
+  if (name === 'set_chatbot_active') return input.active === false;
+  if (name === 'set_cafe_enabled') return input.enabled === false;
+  return false;
+}
 
 export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
@@ -141,7 +160,27 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
   },
   { name: 'list_shortcuts', description: '시청자 페이지에 노출되는 링크(바로가기) 목록.', inputSchema: noInput },
-  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 노래 신청 설정 등.', inputSchema: noInput },
+  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 챗봇 기본 반복 시간 등. 노래 설정은 get_song_settings 를 쓴다.', inputSchema: noInput },
+  {
+    name: 'get_song_settings',
+    description:
+      'All music settings in one call: song-request on/off, per-viewer and queue limits, max song length (minutes), overlay caption (mode ALWAYS/TIMED + seconds), auto play from the default favorite, history public, the default favorite (id/name), repeat-one, and which player (app/OBS) is selected as the sound source. Use before changing any of them.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'list_song_history',
+    description: 'Play history (newest first): PLAYED/SKIPPED/CANCELED/FAILED with requester and time. Optional status filter and title/requester search.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED'] },
+        query: { type: 'string', description: '제목·신청자 검색어' },
+        limit: { type: 'number', description: '기본 20, 최대 50' },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'search_audit_log', description: '설정 변경 기록 검색 — 누가(본인/관리자/챗봇/에이전트) 언제 무엇을 바꿨는지.',
     inputSchema: {
@@ -313,7 +352,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'set_song_request_policy',
     description:
-      'Changes viewer song-request settings. enabled: turn the whole song-request feature on/off — when off, viewer requests are rejected and song chat commands reply that the feature is disabled. maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). Omitted fields keep their current value (see get_user_setting).',
+      'Changes viewer song-request settings. enabled: turn the whole song-request feature on/off — when off, viewer requests are rejected and song chat commands reply that the feature is disabled (turning it OFF shows a confirmation card — call directly). maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). maxDurationMinutes: longest video viewers may request (1-60). Omitted fields keep their current value (see get_song_settings).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -321,6 +360,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         maxPerRequester: { type: 'number' },
         unlimitedPerRequester: { type: 'boolean' },
         maxQueueLength: { type: 'number' },
+        maxDurationMinutes: { type: 'number' },
       },
       required: [],
       additionalProperties: false,
@@ -341,6 +381,177 @@ export const AGENT_TOOLS: ToolDef[] = [
       properties: { favoriteId: id, url: { type: 'string', description: '유튜브 재생목록 URL' } },
       required: ['favoriteId', 'url'], additionalProperties: false,
     },
+  },
+  /* ── 송출 소스 (#322 #326) ── */
+  {
+    name: 'get_source_status',
+    description:
+      'Sound source status: which player (app/OBS browser source) is selected and whether it is connected, plus every known player session (sessionId, kind app/OBS, label = computer name, connected, active, seconds since last signal). Use before select_source/locate_source; users refer to players by label.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'select_source',
+    description: 'Makes one player session the sound source (sessionId from get_source_status; disconnected ones may be pre-selected). A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'], additionalProperties: false },
+  },
+  {
+    name: 'locate_source',
+    description: 'Makes a connected player reveal itself: the OBS page flashes a red border with a chime, the app flashes its taskbar/dock icon. sessionId from get_source_status.',
+    inputSchema: { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'], additionalProperties: false },
+  },
+  {
+    name: 'clear_source_selection',
+    description: 'Deselects the sound source so no player makes sound. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'get_obs_source_url',
+    description:
+      'Shows the OBS browser-source URL to the user as a card in the console panel (masked, with reveal/copy/regenerate buttons). The URL is secret and is NEVER returned to you or written in chat — call this and tell the user to use the card.',
+    inputSchema: noInput,
+  },
+  /* ── 계정·챗봇 (#326 3단계) ── */
+  {
+    name: 'get_account_settings',
+    description: 'Account-level settings: channel name, whether the channel is listed on the viewer directory, whether the chatbot is active, default repeat-message interval (seconds). Theme is not readable here — point to 설정 › 테마.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'set_chatbot_active',
+    description: 'Turn the whole chatbot on or off for this channel. Turning it OFF shows a confirmation card — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { active: { type: 'boolean' } }, required: ['active'], additionalProperties: false },
+  },
+  {
+    name: 'set_listed',
+    description: 'Show or hide this channel on the public streamer directory. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { listed: { type: 'boolean' } }, required: ['listed'], additionalProperties: false },
+  },
+  {
+    name: 'set_chatbot_default_repeat',
+    description: 'Default interval (seconds, 10-86400) suggested when creating a repeat message.',
+    inputSchema: { type: 'object', properties: { seconds: { type: 'number' } }, required: ['seconds'], additionalProperties: false },
+  },
+  { name: 'refresh_channel_info', description: 'Re-fetch the channel name and profile image from Chzzk.', inputSchema: noInput },
+  /* ── 카페 연동 (#326 3단계) — 읽기 + 안전한 조작만. 가입 요청·권한 확인·자리 고르기는 메뉴에서 ── */
+  {
+    name: 'get_cafe_integration',
+    description:
+      'Naver Cafe gate integration: enabled, linked cafe, status (linked/joined/permission/active…), status message, whether the live-status image and YouTube block are placed, last gate update, last broadcast state written, auto-recovery progress, and the last few events. Joining, permission check and picking the gate position are done in the menu (노래 › 카페 연동) — point there.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'set_cafe_enabled',
+    description: 'Turn the cafe gate integration on or off. Turning it OFF shows a confirmation card — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'request_cafe_gate_refresh',
+    description: 'Re-evaluate the broadcast state and rewrite the cafe gate image within ~30s (same as the 「지금 반영」 button). Requires the image to be placed already.',
+    inputSchema: noInput,
+  },
+  /* ── 링크 순서 (#326 3단계) ── */
+  {
+    name: 'move_shortcut', description: 'Move a viewer-page link one step up or down (id from list_shortcuts).',
+    inputSchema: {
+      type: 'object',
+      properties: { id, direction: { type: 'string', enum: ['up', 'down'] } },
+      required: ['id', 'direction'], additionalProperties: false,
+    },
+  },
+  /* ── 문의 (#326 3단계) ── */
+  { name: 'list_inquiries', description: 'My inquiries to the operators: id, title, status, unread operator reply.', inputSchema: noInput },
+  {
+    name: 'get_inquiry', description: 'One inquiry with its full message thread (marks operator replies as read).',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'reply_inquiry',
+    description: 'Adds a follow-up message to one of my inquiries (sent to the operators). A confirmation card with the text is shown to the user — call directly with the drafted content, do not ask first.',
+    inputSchema: { type: 'object', properties: { id, body: { type: 'string' } }, required: ['id', 'body'], additionalProperties: false },
+  },
+  /* ── 노래 설정 (#326) ── */
+  {
+    name: 'set_overlay_settings',
+    description: 'Caption overlay on the player page: mode ALWAYS (always show the current title) or TIMED (show for durationSeconds when the song changes, 1-60s).',
+    inputSchema: {
+      type: 'object',
+      properties: { mode: { type: 'string', enum: ['ALWAYS', 'TIMED'] }, durationSeconds: { type: 'number' } },
+      required: ['mode'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_auto_play', description: 'Auto play: when the queue is empty, keep playing random songs from the default favorite.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'set_history_public',
+    description: 'Show or hide the play history on the viewer page. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { isPublic: { type: 'boolean' } }, required: ['isPublic'], additionalProperties: false },
+  },
+  {
+    name: 'set_repeat_one', description: 'Repeat the current song instead of advancing when it ends.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'seek', description: 'Jump to a position (seconds) in the current song.',
+    inputSchema: { type: 'object', properties: { positionSeconds: { type: 'number' } }, required: ['positionSeconds'], additionalProperties: false },
+  },
+  {
+    name: 'remove_from_queue', description: 'Remove one song from the queue (id from get_playback).',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'play_queue_song_now', description: 'Play a queued song right now (id from get_playback); the current song is recorded as skipped.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'move_in_queue', description: 'Move a queued song one step up or down.',
+    inputSchema: {
+      type: 'object',
+      properties: { id, direction: { type: 'string', enum: ['up', 'down'] } },
+      required: ['id', 'direction'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'requeue_from_history', description: 'Put a song from the play history back into the queue (id from list_song_history). Requester stays the original one.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'set_history_hidden', description: 'Hide or unhide one history entry from viewers (id from list_song_history).',
+    inputSchema: { type: 'object', properties: { id, hidden: { type: 'boolean' } }, required: ['id', 'hidden'], additionalProperties: false },
+  },
+  /* ── 즐겨찾기 관리 (#326) ── */
+  {
+    name: 'set_default_favorite', description: 'Make a favorite the default one (source of auto play). Find the id with list_favorites.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'create_favorite', description: 'Create a favorite list (max 20 lists, name up to 50 chars). The first list becomes the default.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'], additionalProperties: false },
+  },
+  {
+    name: 'rename_favorite', description: 'Rename a favorite list.',
+    inputSchema: { type: 'object', properties: { favoriteId: id, name: { type: 'string' } }, required: ['favoriteId', 'name'], additionalProperties: false },
+  },
+  {
+    name: 'delete_favorite', description: 'Deletes a favorite list and its songs. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'add_favorite_song', description: 'Add a song to a favorite list by YouTube search query or URL.',
+    inputSchema: { type: 'object', properties: { favoriteId: id, query: { type: 'string' } }, required: ['favoriteId', 'query'], additionalProperties: false },
+  },
+  {
+    name: 'remove_favorite_song', description: 'Remove one song from a favorite list (itemId from get_favorite).',
+    inputSchema: { type: 'object', properties: { favoriteId: id, itemId: id }, required: ['favoriteId', 'itemId'], additionalProperties: false },
+  },
+  {
+    name: 'clear_favorite_items', description: 'Removes every song from a favorite list. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'add_current_song_to_favorite', description: 'Add the song playing right now to a favorite list.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
   },
 
   /* ── 문의 ── */
@@ -517,6 +728,12 @@ const AUDITED_TOOLS = new Set([
   'import_playlist', 'clear_queue', 'set_song_request_policy',
   'temp_restrict_viewer', 'remove_temp_restrict', 'blind_chat_message',
   'update_live_setting', 'update_chat_settings',
+  //  노래 설정·즐겨찾기 관리 (#326). 재생 보조(반복·시크·대기열 편집)는 콘솔과 같이 제외
+  'set_overlay_settings', 'set_auto_play', 'set_history_public', 'set_history_hidden',
+  'set_default_favorite', 'create_favorite', 'rename_favorite', 'delete_favorite',
+  'add_favorite_song', 'remove_favorite_song', 'clear_favorite_items',
+  'select_source', 'clear_source_selection',
+  'set_chatbot_active', 'set_listed', 'set_chatbot_default_repeat', 'refresh_channel_info', 'set_cafe_enabled', 'move_shortcut',
 ]);
 
 export async function runTool(
@@ -529,7 +746,7 @@ export async function runTool(
 ): Promise<ToolRunResult> {
   //  확인 대상은 실행하지 않는다 — 카드를 만들어 돌려주고 턴이 멈춘다.
   //  카드 생성 실패(대상 없음 등)는 ServiceError 로 던져져 모델에게 오류 결과로 돌아간다 (pelican 과 동일)
-  if (CONFIRM_TOOLS.has(name)) {
+  if (needsConfirmation(name, input)) {
     return { card: await buildCard(prisma, userId, name, input) };
   }
   return executeConfirmed(prisma, userId, conversationId, name, input, requester);
@@ -580,6 +797,8 @@ async function resolveFunctionOption(
   }
   return option;
 }
+
+const SOURCE_KIND_LABEL: Record<string, string> = { OBS: 'OBS 브라우저 소스', ELECTRON: '플레이어 앱' };
 
 /** 카드 내용 — 무엇이 실행되는지 검증하며 구체적으로. 대상이 없으면 여기서 던진다 */
 async function buildCard(prisma: PrismaClient, userId: number, name: string, input: Record<string, unknown>): Promise<PendingCard> {
@@ -634,6 +853,75 @@ async function buildCard(prisma: PrismaClient, userId: number, name: string, inp
         title: '운영자에게 문의 발송',
         lines: [`제목: ${title}`, inquiryBody.length > 200 ? `${inquiryBody.slice(0, 200)}…` : inquiryBody],
       };
+    }
+    /* ── 노래 설정·즐겨찾기 (#326) ── */
+    case 'delete_favorite': {
+      const favorite = await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'));
+      return {
+        title: '즐겨찾기 삭제',
+        lines: [`"${favorite.name}" 즐겨찾기(${favorite.items.length}곡)를 삭제합니다.${favorite.isDefault ? ' 대표 즐겨찾기라 다른 목록이 대표가 됩니다.' : ''}`, '삭제하면 되돌릴 수 없습니다.'],
+      };
+    }
+    case 'clear_favorite_items': {
+      const favorite = await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'));
+      if (favorite.items.length === 0) throw new ServiceError('INVALID_INPUT', '이미 비어 있는 즐겨찾기입니다.');
+      return { title: '즐겨찾기 비우기', lines: [`"${favorite.name}" 의 ${favorite.items.length}곡을 모두 삭제합니다.`, '삭제하면 되돌릴 수 없습니다.'] };
+    }
+    case 'set_history_public': {
+      if (typeof input.isPublic !== 'boolean') throw new ServiceError('INVALID_INPUT', 'isPublic 은 boolean 이어야 합니다.');
+      return {
+        title: input.isPublic ? '재생 기록 공개' : '재생 기록 비공개',
+        lines: [input.isPublic ? '시청자 페이지에 재생 기록이 보이게 됩니다.' : '시청자 페이지에서 재생 기록이 사라집니다.'],
+      };
+    }
+    /* ── 송출 소스 (#326 2단계) ── */
+    case 'select_source': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      const target = status.sessions.find((x) => x.sessionId === String(input.sessionId));
+      if (!target) throw new ServiceError('NOT_FOUND', '그 플레이어가 목록에 없습니다. get_source_status 로 확인하세요.');
+      if (target.active) throw new ServiceError('INVALID_INPUT', '이미 송출 소스로 선택된 플레이어입니다.');
+      const current = status.sessions.find((x) => x.active);
+      return {
+        title: '송출 소스 변경',
+        lines: [
+          `${SOURCE_KIND_LABEL[target.source]} · ${target.label} 에서 소리가 나게 합니다.${target.connected ? '' : ' (지금은 연결돼 있지 않아 켜질 때부터 납니다)'}`,
+          current ? `지금 소리가 나는 ${SOURCE_KIND_LABEL[current.source]} · ${current.label} 은(는) 멈춥니다.` : '지금은 선택된 송출 소스가 없습니다.',
+        ],
+      };
+    }
+    case 'clear_source_selection': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      if (!status.selectedSessionId) throw new ServiceError('INVALID_INPUT', '이미 선택된 송출 소스가 없습니다.');
+      return { title: '송출 소스 선택 해제', lines: ['어느 플레이어에서도 소리가 나지 않게 됩니다.', '다시 소리를 내려면 목록에서 플레이어를 골라야 합니다.'] };
+    }
+    /* ── 계정·카페·문의 (#326 3단계) ── */
+    case 'set_chatbot_active':
+      return { title: '챗봇 끄기', lines: ['이 채널에서 챗봇이 멈춥니다 — 명령어 응답·반복 메시지·노래 신청 채팅이 모두 동작하지 않습니다.', '다시 켤 때까지 유지됩니다.'] };
+    case 'set_listed': {
+      if (typeof input.listed !== 'boolean') throw new ServiceError('INVALID_INPUT', 'listed 는 boolean 이어야 합니다.');
+      return {
+        title: input.listed ? '시청자 목록에 노출' : '시청자 목록에서 숨김',
+        lines: [input.listed ? '위즈봇 스트리머 목록에 이 채널이 보이게 됩니다.' : '위즈봇 스트리머 목록에서 이 채널이 사라집니다. 직접 주소로는 계속 들어올 수 있습니다.'],
+      };
+    }
+    case 'set_cafe_enabled': {
+      const integration = await cafeService.getIntegration(prisma, userId);
+      return {
+        title: '카페 연동 끄기',
+        lines: [`${integration.cafeName ?? '연결된 카페'} 대문의 방송 상태 갱신이 멈춥니다. 대문에 넣어둔 이미지는 마지막 상태로 남습니다.`],
+      };
+    }
+    case 'reply_inquiry': {
+      const inquiry = await inquiryService.getMine(prisma, userId, requireId(input.id, 'id'));
+      const replyBody = requireText(input.body, '내용', 64 * 1024);
+      return {
+        title: '문의에 추가 메시지 발송',
+        lines: [`문의: ${inquiry.title}`, replyBody.length > 200 ? `${replyBody.slice(0, 200)}…` : replyBody, '운영자에게 알림이 갑니다.'],
+      };
+    }
+    case 'set_song_request_policy': {
+      //  needsConfirmation 이 enabled:false 일 때만 여기로 보낸다
+      return { title: '노래 신청 기능 끄기', lines: ['시청자의 노래 신청이 막히고, 노래 관련 채팅 명령어는 "노래 신청 기능이 꺼져 있습니다"로 답합니다.', '스트리머가 직접 곡을 추가·재생하는 것은 그대로 됩니다.'] };
     }
     default:
       throw new ServiceError('INVALID_INPUT', `확인 대상이 아닌 tool: ${name}`);
@@ -713,8 +1001,45 @@ async function execute(
       return ok(toResult(await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
     case 'list_shortcuts':
       return ok(toResult(await shortcutService.listShortcuts(prisma, userId)));
-    case 'get_user_setting':
-      return ok(toResult(await userSettingService.getUserSetting(prisma, userId)));
+    case 'get_user_setting': {
+      //  송출 토큰은 재생 상태를 볼 수 있는 비밀값 — 모델·대화에 절대 넣지 않는다 (#326)
+      const { songSourceToken: _sourceToken, songOverlayToken: _overlayToken, ...safe } = await userSettingService.getUserSetting(prisma, userId);
+      return ok(toResult(safe));
+    }
+    case 'get_song_settings': {
+      const [setting, playback, favorites, source] = await Promise.all([
+        userSettingService.getUserSetting(prisma, userId),
+        playbackService.getPlayback(prisma, userId),
+        songFavoriteService.listFavorites(prisma, userId),
+        playbackService.getSourceStatus(prisma, userId),
+      ]);
+      const defaultFavorite = favorites.find((f) => f.isDefault) ?? null;
+      return ok(toResult({
+        songRequestEnabled: setting.songActive,
+        maxPerRequester: setting.songMaxPerRequester ?? '무제한',
+        maxQueueLength: setting.songMaxQueueLength,
+        maxDurationMinutes: Math.round(setting.songMaxDurationSeconds / 60),
+        overlay: { mode: setting.songOverlayMode, durationSeconds: setting.songOverlayDurationSeconds },
+        autoPlay: setting.songAutoPlayFromDefault,
+        historyPublic: setting.songHistoryPublic,
+        defaultFavorite: defaultFavorite ? { id: defaultFavorite.id, name: defaultFavorite.name, songs: defaultFavorite._count.items } : null,
+        repeatOne: playback.repeatOne,
+        //  토큰은 빼고 요약만 — 상세·선택은 2단계 도구(get_source_status 등)에서
+        source: source.selectedSessionId
+          ? { type: source.sourceType, label: source.sourceLabel, connected: source.online }
+          : { type: 'NONE', label: null, connected: false },
+      }));
+    }
+    case 'list_song_history': {
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
+      const status = typeof input.status === 'string' && ['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED'].includes(input.status) ? (input.status as 'PLAYED' | 'SKIPPED' | 'CANCELED' | 'FAILED') : undefined;
+      const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
+      const { items } = await songHistoryService.listHistory(prisma, userId, { status, query, limit });
+      return ok(toResult(items.map((h) => ({
+        id: h.id, title: h.title, videoUploader: h.videoUploader, requester: h.requester, status: h.status,
+        failReason: h.failReason, hiddenFromViewers: h.hiddenFromViewers, requestedAt: h.requestedAt, resolvedAt: h.resolvedAt,
+      }))));
+    }
     case 'search_audit_log': {
       const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
       const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : null;
@@ -857,12 +1182,187 @@ async function execute(
         input.maxQueueLength !== undefined
           ? requireIntInRange(input.maxQueueLength, 'maxQueueLength', 1, 100)
           : current.songMaxQueueLength;
+      const maxDurationSeconds =
+        input.maxDurationMinutes !== undefined
+          ? requireIntInRange(input.maxDurationMinutes, 'maxDurationMinutes', 1, 60) * 60
+          : current.songMaxDurationSeconds;
       await userSettingService.updateUserSetting(prisma, userId, {
         songActive: enabled,
         songMaxPerRequester: maxPerRequester,
         songMaxQueueLength: maxQueueLength,
+        songMaxDurationSeconds: maxDurationSeconds,
       });
-      return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength }));
+      return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength, maxDurationMinutes: maxDurationSeconds / 60 }));
+    }
+
+    /* ── 계정·챗봇 (#326 3단계) ── */
+    case 'get_account_settings': {
+      const [account, setting] = await Promise.all([accountService.getAccount(prisma, userId), userSettingService.getUserSetting(prisma, userId)]);
+      return ok(toResult({
+        channelName: account.channelName, listed: account.listed, chatbotActive: account.chatbotActive,
+        chatbotDefaultRepeatSeconds: setting.chatbotDefaultRepeat,
+        theme: '조회·변경은 설정 › 테마 메뉴에서 (/streamer/user/setting)',
+      }));
+    }
+    case 'set_chatbot_active': {
+      if (typeof input.active !== 'boolean') throw new ServiceError('INVALID_INPUT', 'active 는 boolean 이어야 합니다.');
+      await accountService.setChatbotActive(prisma, userId, input.active);
+      return ok(toResult({ chatbotActive: input.active }));
+    }
+    case 'set_listed': {
+      if (typeof input.listed !== 'boolean') throw new ServiceError('INVALID_INPUT', 'listed 는 boolean 이어야 합니다.');
+      await accountService.setListed(prisma, userId, input.listed);
+      return ok(toResult({ listed: input.listed }));
+    }
+    case 'set_chatbot_default_repeat': {
+      const seconds = requireIntInRange(input.seconds, 'seconds', 10, 86_400);
+      await userSettingService.updateUserSetting(prisma, userId, { chatbotDefaultRepeat: seconds });
+      return ok(toResult({ chatbotDefaultRepeatSeconds: seconds }));
+    }
+    case 'refresh_channel_info':
+      return ok(toResult(await accountService.refreshChannelInfo(prisma, userId)));
+
+    /* ── 카페 연동 (#326 3단계) ── */
+    case 'get_cafe_integration': {
+      const integration = await cafeService.getIntegration(prisma, userId);
+      if (!integration.clubId) {
+        return ok(toResult({ linked: false, enabled: integration.enabled, guide: '노래 › 카페 연동에서 카페 주소를 연결하세요 (/manual/cafe)' }));
+      }
+      const [gate, events] = await Promise.all([cafeService.getGate(prisma, userId), cafeService.listEvents(prisma, userId, 5)]);
+      const status = integration.status as keyof typeof CAFE_LINK_STATUS_LABEL;
+      return ok(toResult({
+        linked: true, enabled: integration.enabled, cafeName: integration.cafeName, cafeUrl: integration.cafeUrl,
+        status: CAFE_LINK_STATUS_LABEL[status] ?? integration.status, statusMessage: integration.statusMessage,
+        pendingAction: integration.pendingAction,
+        placed: gate?.present ?? null,
+        activity: gate ? { gateUpdatedAt: gate.activity.gateUpdatedAt, lastState: gate.activity.snapshot, autoRecovery: gate.activity.recovery } : null,
+        recentEvents: events.map((e) => ({ at: e.createdAt, kind: CAFE_EVENT_KIND_LABEL[e.kind as keyof typeof CAFE_EVENT_KIND_LABEL] ?? e.kind, message: e.message })),
+        guide: '가입 요청·권한 확인·대문 자리 지정은 노래 › 카페 연동 메뉴에서 (/manual/cafe)',
+      }));
+    }
+    case 'set_cafe_enabled': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      const row = await cafeService.setEnabled(prisma, userId, input.enabled);
+      return ok(toResult({ enabled: row.enabled }));
+    }
+    case 'request_cafe_gate_refresh':
+      await cafeService.requestGateRefresh(prisma, userId);
+      return ok('다음 확인(30초 안)에 방송 상태를 다시 판정해 대문에 반영합니다.');
+
+    /* ── 링크 순서 (#326 3단계) ── */
+    case 'move_shortcut': {
+      const direction = input.direction === 'up' || input.direction === 'down' ? input.direction : null;
+      if (!direction) throw new ServiceError('INVALID_INPUT', 'direction 은 up 또는 down 이어야 합니다.');
+      const moved = await shortcutService.moveShortcut(prisma, userId, requireId(input.id, 'id'), direction);
+      return moved.moved ? ok('옮겼습니다.') : pending('이미 끝에 있어 옮길 수 없습니다.');
+    }
+
+    /* ── 문의 (#326 3단계) ── */
+    case 'list_inquiries':
+      return ok(toResult(await inquiryService.listMine(prisma, userId)));
+    case 'get_inquiry': {
+      const inquiry = await inquiryService.getMine(prisma, userId, requireId(input.id, 'id'));
+      return ok(toResult(inquiry));
+    }
+    case 'reply_inquiry': {
+      const inquiry = await inquiryService.reply(prisma, userId, requireId(input.id, 'id'), requireText(input.body, '내용', 64 * 1024));
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelName: true, channelImageUrl: true } });
+      void notifyAdminsOfInquiry(prisma, inquiry, user, '추가 문의');
+      return ok(toResult({ id: inquiry.id, title: inquiry.title }));
+    }
+
+    /* ── 송출 소스 (#326 2단계) ── */
+    case 'get_source_status': {
+      const status = await playbackService.getSourceStatus(prisma, userId);
+      //  토큰은 절대 넣지 않는다 — 주소는 get_obs_source_url 카드가 화면에서 직접 읽는다
+      return ok(toResult({
+        selected: status.selectedSessionId
+          ? { sessionId: status.selectedSessionId, kind: status.sourceType, label: status.sourceLabel, connected: status.online }
+          : null,
+        sessions: status.sessions.map((x) => ({
+          sessionId: x.sessionId, kind: x.source, label: x.label, active: x.active, connected: x.connected, lastSeenSecondsAgo: Math.round(x.lastSeenAgoMs / 1000),
+        })),
+      }));
+    }
+    case 'select_source':
+      return ok(toResult(await playbackService.selectSource(prisma, userId, requireText(input.sessionId, 'sessionId', 64))));
+    case 'locate_source':
+      playbackService.locateSource(userId, requireText(input.sessionId, 'sessionId', 64));
+      return ok('찾기 신호를 보냈습니다 — 그 플레이어가 깜빡이고 띵동 소리가 납니다.');
+    case 'clear_source_selection':
+      return ok(toResult(await playbackService.clearSourceSelection(prisma, userId)));
+    case 'get_obs_source_url':
+      //  주소는 여기 없다. 웹 패널이 이 tool_use 를 보고 카드를 그려 tRPC 로 직접 읽는다 (#326)
+      return ok('OBS 브라우저 소스 주소 카드를 콘솔 에이전트 패널에 표시했습니다. 주소는 카드의 보기/복사 버튼으로만 확인할 수 있고, 채팅으로는 보내지 않습니다.');
+
+    /* ── 노래 설정 (#326) ── */
+    case 'set_overlay_settings': {
+      const mode = input.mode === 'ALWAYS' || input.mode === 'TIMED' ? input.mode : null;
+      if (!mode) throw new ServiceError('INVALID_INPUT', 'mode 는 ALWAYS 또는 TIMED 여야 합니다.');
+      const current = await userSettingService.getUserSetting(prisma, userId);
+      const durationSeconds = input.durationSeconds !== undefined ? requireIntInRange(input.durationSeconds, 'durationSeconds', 1, 60) : current.songOverlayDurationSeconds;
+      await playbackService.setOverlaySettings(prisma, userId, { mode, durationSeconds });
+      return ok(toResult({ mode, durationSeconds }));
+    }
+    case 'set_auto_play': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      await userSettingService.updateUserSetting(prisma, userId, { songAutoPlayFromDefault: input.enabled });
+      return ok(toResult({ autoPlay: input.enabled }));
+    }
+    case 'set_history_public': {
+      if (typeof input.isPublic !== 'boolean') throw new ServiceError('INVALID_INPUT', 'isPublic 은 boolean 이어야 합니다.');
+      await userSettingService.updateUserSetting(prisma, userId, { songHistoryPublic: input.isPublic });
+      return ok(toResult({ historyPublic: input.isPublic }));
+    }
+    case 'set_repeat_one': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      return ok(toResult(await playbackService.setRepeatOne(prisma, userId, input.enabled)));
+    }
+    case 'seek': {
+      const position = Number(input.positionSeconds);
+      if (!Number.isFinite(position) || position < 0) throw new ServiceError('INVALID_INPUT', 'positionSeconds 는 0 이상 숫자여야 합니다.');
+      return ok(toResult(await playbackService.seek(prisma, userId, position)));
+    }
+    case 'remove_from_queue':
+      return ok(toResult(await songService.removeSongById(prisma, userId, requireId(input.id, 'id'), AGENT_ACTOR)));
+    case 'play_queue_song_now':
+      return ok(toResult(await playbackService.playSongNow(prisma, userId, requireId(input.id, 'id'), AGENT_ACTOR)));
+    case 'move_in_queue': {
+      const direction = input.direction === 'up' || input.direction === 'down' ? input.direction : null;
+      if (!direction) throw new ServiceError('INVALID_INPUT', 'direction 은 up 또는 down 이어야 합니다.');
+      const moved = await songService.moveSong(prisma, userId, requireId(input.id, 'id'), direction);
+      return moved.moved ? ok('옮겼습니다.') : pending('이미 끝에 있어 옮길 수 없습니다.');
+    }
+    case 'requeue_from_history': {
+      const entry = await songHistoryService.getHistoryEntry(prisma, userId, requireId(input.id, 'id'));
+      return ok(toResult(await songService.requestSong(
+        prisma, userId, entry.youtubeId, { nickname: entry.requester, channelId: entry.requesterChannelId }, { bypassPolicy: true },
+      )));
+    }
+    case 'set_history_hidden': {
+      if (typeof input.hidden !== 'boolean') throw new ServiceError('INVALID_INPUT', 'hidden 은 boolean 이어야 합니다.');
+      return ok(toResult(await songHistoryService.setHistoryHidden(prisma, userId, requireId(input.id, 'id'), input.hidden)));
+    }
+
+    /* ── 즐겨찾기 관리 (#326) ── */
+    case 'set_default_favorite':
+      return ok(toResult(await songFavoriteService.setDefaultFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'create_favorite':
+      return ok(toResult(await songFavoriteService.createFavorite(prisma, userId, requireText(input.name, '이름', 50))));
+    case 'rename_favorite':
+      return ok(toResult(await songFavoriteService.renameFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireText(input.name, '이름', 50))));
+    case 'delete_favorite':
+      return ok(toResult(await songFavoriteService.deleteFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'add_favorite_song':
+      return ok(toResult(await songFavoriteService.addFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireText(input.query, '검색어 또는 URL', 500))));
+    case 'remove_favorite_song':
+      return ok(toResult(await songFavoriteService.removeFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireId(input.itemId, 'itemId'))));
+    case 'clear_favorite_items':
+      return ok(toResult(await songFavoriteService.clearFavoriteItems(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'add_current_song_to_favorite': {
+      const playback = await playbackService.getPlayback(prisma, userId);
+      if (!playback.youtubeId) return pending('지금 재생 중인 곡이 없습니다.');
+      return ok(toResult(await songFavoriteService.addFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), playback.youtubeId)));
     }
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(

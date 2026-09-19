@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useTRPC } from '@/src/utils/trpc-react';
 
 import { AGENT_OPEN_EVENT, type AgentOpenDetail } from './agent-bus';
+import { ObsSourceUrlCard } from './obs-source-url-card';
 
 /**
  * 위즈봇 에이전트 패널 (#35). 콘솔 우측 채팅창 — 스트리밍 응답, tool 표시,
@@ -71,6 +72,43 @@ const TOOL_LABEL: Record<string, string> = {
   enqueue_favorite: '즐겨찾기 재생',
   import_playlist: '재생목록 가져오기',
   create_inquiry: '문의 작성',
+  get_song_settings: '노래 설정 조회',
+  list_song_history: '재생 기록 조회',
+  set_overlay_settings: '자막 설정 변경',
+  set_auto_play: '자동 재생 변경',
+  set_history_public: '재생 기록 공개 변경',
+  set_history_hidden: '재생 기록 항목 숨김',
+  set_repeat_one: '한 곡 반복 변경',
+  seek: '재생 위치 이동',
+  remove_from_queue: '대기열 곡 삭제',
+  play_queue_song_now: '바로 재생',
+  move_in_queue: '대기열 순서 변경',
+  requeue_from_history: '기록에서 다시 신청',
+  set_default_favorite: '대표 즐겨찾기 변경',
+  create_favorite: '즐겨찾기 추가',
+  rename_favorite: '즐겨찾기 이름 변경',
+  delete_favorite: '즐겨찾기 삭제',
+  add_favorite_song: '즐겨찾기 곡 추가',
+  remove_favorite_song: '즐겨찾기 곡 삭제',
+  clear_favorite_items: '즐겨찾기 비우기',
+  add_current_song_to_favorite: '현재 곡 즐겨찾기 담기',
+  get_source_status: '송출 소스 조회',
+  select_source: '송출 소스 설정',
+  locate_source: '플레이어 찾기',
+  clear_source_selection: '송출 소스 선택 해제',
+  get_obs_source_url: 'OBS 주소 카드',
+  get_account_settings: '계정 설정 조회',
+  set_chatbot_active: '챗봇 켬/끔',
+  set_listed: '시청자 목록 노출 변경',
+  set_chatbot_default_repeat: '기본 반복 주기 변경',
+  refresh_channel_info: '채널 정보 새로고침',
+  get_cafe_integration: '카페 연동 조회',
+  set_cafe_enabled: '카페 연동 켬/끔',
+  request_cafe_gate_refresh: '카페 대문 지금 반영',
+  move_shortcut: '링크 순서 변경',
+  list_inquiries: '문의 목록 조회',
+  get_inquiry: '문의 읽기',
+  reply_inquiry: '문의 추가 메시지',
   get_recent_chat: '최근 채팅 조회',
   temp_restrict_viewer: '시청자 임시제한',
   remove_temp_restrict: '임시제한 해제',
@@ -122,7 +160,8 @@ function subscribeWidth(onChange: () => void) {
 }
 
 /** 에이전트가 설정을 바꾸면 그 화면의 쿼리를 무효화한다 (#35 조정 4) — 재생·큐는 song events SSE 로 이미 실시간 */
-const TOOL_INVALIDATE: Record<string, 'command' | 'shortcut' | 'songFavorite' | 'inquiry'> = {
+type InvalidateTarget = 'command' | 'shortcut' | 'songFavorite' | 'inquiry' | 'song' | 'user' | 'cafe';
+const TOOL_INVALIDATE: Record<string, InvalidateTarget> = {
   create_echo_command: 'command', update_echo_command: 'command',
   create_function_command: 'command', update_function_command: 'command',
   set_command_enabled: 'command', delete_command: 'command',
@@ -130,6 +169,15 @@ const TOOL_INVALIDATE: Record<string, 'command' | 'shortcut' | 'songFavorite' | 
   create_shortcut: 'shortcut', update_shortcut: 'shortcut', delete_shortcut: 'shortcut',
   import_playlist: 'songFavorite',
   create_inquiry: 'inquiry',
+  //  노래 설정·즐겨찾기 (#326) — 설정 모달·플레이어 화면이 보고 있는 getState 와 즐겨찾기 목록
+  set_song_request_policy: 'song', set_overlay_settings: 'song', set_auto_play: 'song', set_history_public: 'song',
+  set_history_hidden: 'song', requeue_from_history: 'song',
+  select_source: 'song', clear_source_selection: 'song',
+  set_chatbot_active: 'user', set_listed: 'user', set_chatbot_default_repeat: 'user', refresh_channel_info: 'user',
+  set_cafe_enabled: 'cafe', request_cafe_gate_refresh: 'cafe',
+  move_shortcut: 'shortcut', reply_inquiry: 'inquiry',
+  set_default_favorite: 'songFavorite', create_favorite: 'songFavorite', rename_favorite: 'songFavorite', delete_favorite: 'songFavorite',
+  add_favorite_song: 'songFavorite', remove_favorite_song: 'songFavorite', clear_favorite_items: 'songFavorite', add_current_song_to_favorite: 'songFavorite',
 };
 
 const STATUS_BADGE: Record<Exclude<ActionStatus, 'PENDING'>, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
@@ -268,7 +316,7 @@ function PanelBody({
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   //  이번 스트림에서 실행된 쓰기 tool 의 대상 라우터 — 종료 시 무효화 (#35 조정 4)
-  const touchedRef = useRef(new Set<'command' | 'shortcut' | 'songFavorite' | 'inquiry'>());
+  const touchedRef = useRef(new Set<InvalidateTarget>());
 
   //  dock: 열려 있는 동안 본문을 패널 폭만큼 밀어낸다 (pelican: html.cg-open body padding)
   const width = useSyncExternalStore(subscribeWidth, readWidth, () => DEFAULT_WIDTH);
@@ -385,6 +433,9 @@ function PanelBody({
       if (target === 'command') void queryClient.invalidateQueries(trpc.command.pathFilter());
       else if (target === 'shortcut') void queryClient.invalidateQueries(trpc.shortcut.pathFilter());
       else if (target === 'songFavorite') void queryClient.invalidateQueries(trpc.songFavorite.pathFilter());
+      else if (target === 'song') void queryClient.invalidateQueries(trpc.song.pathFilter());
+      else if (target === 'user') void queryClient.invalidateQueries(trpc.user.pathFilter());
+      else if (target === 'cafe') void queryClient.invalidateQueries(trpc.cafe.pathFilter());
       else void queryClient.invalidateQueries(trpc.inquiry.pathFilter());
     }
     touchedRef.current.clear();
@@ -502,6 +553,8 @@ function PanelBody({
           />
         );
       }
+      //  OBS 주소는 모델을 거치지 않고 카드가 직접 읽는다 (#326) — 실시간·기록 재열기 모두 tool_use 이름으로 그린다
+      if (item.name === 'get_obs_source_url') return <ObsSourceUrlCard key={item.toolUseId ?? index} />;
       return (
         <div key={index} className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Wrench className="size-3" /> {TOOL_LABEL[item.name] ?? item.name}

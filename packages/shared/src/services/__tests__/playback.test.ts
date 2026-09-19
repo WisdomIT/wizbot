@@ -3,22 +3,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   advanceToNext,
+  describeFailCode,
+  FAIL_STREAK_LIMIT,
+  formatFailReason,
   getSourceStatus,
-  isSessionActive,
+  locateSource,
+  play,
   playSongNow,
   reportEnded,
+  reportFailed,
+  reportPlaying,
   reportPosition,
   seek,
+  selectSource,
   setShortcuts,
   skipToNext,
   togglePlay,
   touchSourceSession,
 } from '../playback';
-import { clearSource, SOURCE_TIMEOUT_MS, subscribeSongEvents } from '../songEvents';
+import { clearSource, listSourceSessions, SESSION_RETENTION_MS, SOURCE_TIMEOUT_MS, subscribeSongEvents, touchSource } from '../songEvents';
+
+/** 프레즌스만 건드리는 하트비트 (DB 없이) */
+function touchSourceSessionSync(sessionId: string, now: number) {
+  touchSource(USER_ID, { sessionId, source: 'OBS', label: sessionId }, now);
+}
 
 const USER_ID = 1;
 
-function createPrisma(queue: unknown[] = [], playback: unknown = null) {
+function createPrisma(queue: unknown[] = [], playback: unknown = null, setting: Record<string, unknown> = {}) {
   const songPlayback = {
     findUnique: vi.fn().mockResolvedValue(playback),
     create: vi.fn().mockResolvedValue({ userId: USER_ID, status: 'STOPPED' }),
@@ -40,9 +52,12 @@ function createPrisma(queue: unknown[] = [], playback: unknown = null) {
       findUnique: vi.fn().mockResolvedValue({
         id: 1,
         userId: USER_ID,
-        songSourceType: 'OBS',
+        songSourceType: 'NONE',
+        songSourceSessionId: null,
+        songSourceLabel: null,
         songSourceToken: 'tok',
         songOverlayToken: 'otok',
+        ...setting,
       }),
       update: vi.fn().mockImplementation(async ({ data }: { data: object }) => ({ ...data })),
     },
@@ -85,8 +100,9 @@ describe('reportPosition (#122)', () => {
 
     await reportPosition(prisma, USER_ID, 12.7, 'newnewnewne');
 
+    //  진행률이 온다 = 송출 세션이 재생 중 → 응답 시각도 찍는다 (#322)
     expect(songPlayback.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { positionSeconds: 12 } }),
+      expect.objectContaining({ data: { positionSeconds: 12, sourceAckAt: expect.any(Date) } }),
     );
   });
 });
@@ -117,8 +133,9 @@ describe('togglePlay (#85)', () => {
 
     await togglePlay(prisma, USER_ID);
 
+    //  사람이 ▶ 를 누른 것 — 연속 실패 카운트도 함께 푼다 (#319)
     expect(songPlayback.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: 'PLAYING' } }),
+      expect.objectContaining({ data: { status: 'PLAYING', failStreak: 0, lastFailReason: null, playRequestedAt: expect.any(Date), sourceAckAt: null } }),
     );
   });
 });
@@ -335,58 +352,94 @@ describe('바로 재생·시크 (#5 2-b)', () => {
   });
 });
 
-describe('송출 소스 중재', () => {
+describe('송출 세션 (#322) — 목록·자동 선택·선택·찾기', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearSource(USER_ID);
   });
 
-  it('하트비트가 없으면 오프라인', async () => {
+  it('하트비트가 없으면 오프라인이고 목록도 비어 있다', async () => {
     const { prisma } = createPrisma();
     const status = await getSourceStatus(prisma, USER_ID);
     expect(status.online).toBe(false);
+    expect(status.sessions).toEqual([]);
   });
 
-  it('하트비트를 보내면 온라인이 된다', async () => {
+  it('아직 고른 세션이 없으면 처음 붙은 세션을 자동으로 고른다 (앱을 켜기만 하면 소리가 나야 한다)', async () => {
     const { prisma } = createPrisma();
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    const first = await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    expect(first).toEqual({ active: true, adopted: true });
+    expect(prisma.userSetting.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { songSourceSessionId: 'app-1', songSourceType: 'ELECTRON', songSourceLabel: '거실-PC' } }),
+    );
+  });
+
+  it('예전 사용자(타입만 골라둠)는 같은 타입의 첫 세션이 자동 선택되고 다른 타입은 대기', async () => {
+    const { prisma } = createPrisma([], null, { songSourceType: 'ELECTRON' });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'obs-1', source: 'OBS' })).toEqual({ active: false, adopted: false });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON' })).toEqual({ active: true, adopted: true });
+  });
+
+  it('고른 세션만 활성 — 다른 세션은 몇 번을 보내도 대기, 이름이 없으면 종류 이름', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 'obs-1', songSourceType: 'OBS', songSourceLabel: 'OBS 브라우저 소스' });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: 'PC' })).toMatchObject({ active: false, adopted: false });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'obs-1', source: 'OBS' })).toMatchObject({ active: true });
+    expect(await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: 'PC' })).toMatchObject({ active: false });
     const status = await getSourceStatus(prisma, USER_ID);
     expect(status.online).toBe(true);
+    expect(status.lastSeenAgoMs).toBeGreaterThanOrEqual(0);
+    expect(status.sessions.map((x) => [x.sessionId, x.label, x.active]).sort()).toEqual([['app-1', 'PC', false], ['obs-1', 'OBS 브라우저 소스', true]]);
   });
 
-  it('지정 소스와 다른 소스가 붙어 있으면 오프라인으로 본다', async () => {
-    const { prisma } = createPrisma();
-    touchSourceSession(USER_ID, 'ELECTRON', 'session-1'); // 설정은 OBS
-    const status = await getSourceStatus(prisma, USER_ID);
-    expect(status.online).toBe(false);
-  });
-
-  it('같은 세션의 반복 하트비트는 이벤트를 만들지 않는다 (구독자 재조회 폭주 방지)', () => {
+  it('같은 세션의 반복 하트비트는 이벤트를 만들지 않는다 (구독자 재조회 폭주 방지)', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
     const events: unknown[] = [];
     const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
 
-    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 새 연결 → 알림
-    touchSourceSession(USER_ID, 'OBS', 'session-1'); // 같은 세션 → 조용히
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' }); // 새 연결 → 알림
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' }); // 같은 세션 → 조용히
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's2', source: 'OBS' }); // 대기 세션 추가 → 알림
 
-    expect(events).toEqual([{ type: 'source' }]);
+    expect(events).toEqual([{ type: 'source' }, { type: 'source' }]);
     unsubscribe();
   });
 
-  it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', () => {
+  it('끊긴 세션은 골라둘 수 있지만(켜지면 바로 소리) 찾기 신호는 보낼 수 없다', async () => {
     vi.useFakeTimers();
     try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
+      await expect(selectSource(prisma, USER_ID, 'app-1')).resolves.toMatchObject({ sessionId: 'app-1' });
+      expect(() => locateSource(USER_ID, 'app-1')).toThrowError(/연결돼 있지 않아/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('타임아웃이 지나면 오프라인이고, 다시 붙으면 알림이 나간다', async () => {
+    vi.useFakeTimers();
+    try {
+      const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
 
       const events: unknown[] = [];
       const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
 
       vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
-      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+      const offline = await getSourceStatus(prisma, USER_ID);
+      expect(offline.online).toBe(false);
+      //  끊겨도 1시간은 목록에 남아 「신호 없음」으로 보인다 (#322 후속)
+      expect(offline.sessions.map((x) => [x.sessionId, x.connected])).toEqual([['s1', false]]);
+      vi.advanceTimersByTime(SESSION_RETENTION_MS);
+      expect(listSourceSessions(USER_ID)).toEqual([]);
 
       // 끊겼다가 같은 세션으로 돌아와도 새 연결이므로 알린다
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
+      await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
       expect(events).toEqual([{ type: 'source' }]);
+      expect((await getSourceStatus(prisma, USER_ID)).online).toBe(true);
 
       unsubscribe();
     } finally {
@@ -394,37 +447,129 @@ describe('송출 소스 중재', () => {
     }
   });
 
-  it('창을 여러 개 열면 먼저 잡은 세션이 유지된다 (이중 재생 방지)', () => {
-    // 마지막 하트비트가 이기게 두면, 두 기기가 동시에 켜져 있을 때 5초마다 주인이
-    // 뒤바뀌어 어느 쪽도 재생하지 못한다 (#85 실측)
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
-
-    // 계속 번갈아 보내도 주인은 그대로다
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    touchSourceSession(USER_ID, 'OBS', 'session-1');
-    touchSourceSession(USER_ID, 'OBS', 'session-2');
-    expect(isSessionActive(USER_ID, 'session-1')).toBe(true);
-    expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
+  it('selectSource — 붙어 있는 세션을 고르면 설정에 ID·종류·이름이 남고 source 이벤트가 나간다', async () => {
+    const { prisma } = createPrisma([], null, { songSourceSessionId: 's1', songSourceType: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    await touchSourceSession(prisma, USER_ID, { sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    await expect(selectSource(prisma, USER_ID, 'app-1')).resolves.toEqual({ sessionId: 'app-1', source: 'ELECTRON', label: '거실-PC' });
+    expect(prisma.userSetting.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: { songSourceSessionId: 'app-1', songSourceType: 'ELECTRON', songSourceLabel: '거실-PC' } }),
+    );
+    expect(events).toEqual([{ type: 'source' }]);
+    unsubscribe();
+    await expect(selectSource(prisma, USER_ID, 'ghost')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('주인이 하트비트를 멈추면 타임아웃 뒤에 다른 세션이 이어받는다', () => {
+  it('locateSource — 붙어 있는 세션에만 locate 이벤트', async () => {
+    const { prisma } = createPrisma();
+    await touchSourceSession(prisma, USER_ID, { sessionId: 's1', source: 'OBS' });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    expect(locateSource(USER_ID, 's1')).toEqual({ ok: true });
+    expect(events).toEqual([{ type: 'locate', sessionId: 's1' }]);
+    expect(() => locateSource(USER_ID, 'nope')).toThrowError(/연결돼 있지 않아/);
+    unsubscribe();
+  });
+
+  it('세션 목록 순서는 먼저 연결된 순으로 고정 — 하트비트가 와도 바뀌지 않는다', () => {
     vi.useFakeTimers();
     try {
-      touchSourceSession(USER_ID, 'OBS', 'session-1');
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-      expect(isSessionActive(USER_ID, 'session-2')).toBe(false);
-
-      // session-1 이 사라졌다 — session-2 만 계속 보낸다
-      vi.advanceTimersByTime(SOURCE_TIMEOUT_MS + 1);
-      touchSourceSession(USER_ID, 'OBS', 'session-2');
-
-      expect(isSessionActive(USER_ID, 'session-2')).toBe(true);
-      expect(isSessionActive(USER_ID, 'session-1')).toBe(false);
+      const t = Date.now();
+      touchSourceSessionSync('b', t);
+      touchSourceSessionSync('a', t + 1000);
+      touchSourceSessionSync('c', t + 2000);
+      touchSourceSessionSync('b', t + 3000); // 늦은 하트비트가 와도 b 는 여전히 맨 위
+      expect(listSourceSessions(USER_ID, t + 3000).map((s) => s.sessionId)).toEqual(['b', 'a', 'c']);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('reportPlaying — 현재 곡이면 응답 시각을 찍고 playback 이벤트, 지난 곡이면 무시', async () => {
+    const { prisma, songPlayback } = createPrisma([], { userId: USER_ID, youtubeId: 'newnewnewne', playRequestedAt: new Date(), sourceAckAt: null });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    await reportPlaying(prisma, USER_ID, 'oldoldoldol');
+    expect(songPlayback.update).not.toHaveBeenCalled();
+    await reportPlaying(prisma, USER_ID, 'newnewnewne');
+    expect(songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { sourceAckAt: expect.any(Date) } }));
+    expect(events).toEqual([{ type: 'playback' }]);
+    unsubscribe();
+  });
+});
+
+describe('재생 실패 차단기·원인 (#319)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const CURRENT = {
+    userId: USER_ID,
+    status: 'PLAYING',
+    youtubeId: 'bbbbbbbbbbb',
+    title: '현재 곡',
+    videoUploader: 'ch',
+    requester: '위즈',
+    durationSeconds: 100,
+    startedAt: new Date(),
+    failStreak: 0,
+    lastFailReason: null,
+  };
+
+  it('오류 코드를 사람이 읽는 원인으로 — 창 종류도 함께', () => {
+    expect(describeFailCode(150)).toBe('임베드 차단');
+    expect(describeFailCode(100)).toBe('삭제·비공개 영상');
+    expect(describeFailCode(null)).toBe('원인 미상');
+    expect(formatFailReason(101, 'ELECTRON')).toBe('임베드 차단 · 앱');
+    expect(formatFailReason(5, 'OBS')).toBe('플레이어 오류(HTML5) · OBS');
+  });
+
+  it('1·2회째 실패: FAILED(원인 포함)로 남기고 다음 곡으로, 카운트 +1', async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 1 });
+    const result = await reportFailed(prisma, USER_ID, { code: 150, source: 'ELECTRON', youtubeId: 'bbbbbbbbbbb' });
+    expect(result.halted).toBe(false);
+    expect(prisma.songHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', failReason: '임베드 차단 · 앱' }) }),
+    );
+    expect(songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 2, lastFailReason: '임베드 차단 · 앱' } }));
+    //  다음 곡으로 넘어갔다 (트랜잭션으로 큐에서 꺼냄)
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it(`${FAIL_STREAK_LIMIT}회 연속 실패: 다음 곡으로 넘기지 않고 STOPPED 로 멈춘다 (자동 재생도 돌지 않는다)`, async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: FAIL_STREAK_LIMIT - 1 });
+    const events: unknown[] = [];
+    const unsubscribe = subscribeSongEvents(USER_ID, (event) => events.push(event));
+    const result = await reportFailed(prisma, USER_ID, { code: 101, source: 'OBS' });
+    unsubscribe();
+    expect(result.halted).toBe(true);
+    expect(songPlayback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'STOPPED', youtubeId: null, failStreak: FAIL_STREAK_LIMIT, lastFailReason: '임베드 차단 · OBS' }) }),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: 'playback' }, { type: 'command', action: 'stop' }]);
+  });
+
+  it('이미 넘어간 곡의 늦은 실패 보고는 버린다', async () => {
+    const { prisma, songPlayback } = createPrisma([QUEUE_ITEM], CURRENT);
+    const result = await reportFailed(prisma, USER_ID, { code: 100, youtubeId: 'oldoldoldol' });
+    expect(result.halted).toBe(false);
+    expect(prisma.songHistory.create).not.toHaveBeenCalled();
+    expect(songPlayback.update).not.toHaveBeenCalled();
+  });
+
+  it('▶(재생)·다음 곡·정상 종료는 카운트를 푼다', async () => {
+    const halted = { ...CURRENT, status: 'STOPPED', youtubeId: null, title: null, failStreak: 3, lastFailReason: '임베드 차단 · 앱' };
+    const a = createPrisma([QUEUE_ITEM], halted);
+    await play(a.prisma, USER_ID);
+    expect(a.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
+
+    const b = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 2 });
+    await skipToNext(b.prisma, USER_ID);
+    expect(b.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
+
+    const c = createPrisma([QUEUE_ITEM], { ...CURRENT, failStreak: 2 });
+    await reportEnded(c.prisma, USER_ID);
+    expect(c.songPlayback.update).toHaveBeenCalledWith(expect.objectContaining({ data: { failStreak: 0, lastFailReason: null } }));
   });
 });

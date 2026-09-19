@@ -1,15 +1,9 @@
 import { randomBytes } from 'node:crypto';
 
-import type { PrismaClient, SongSourceType } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 import { ServiceError } from './errors';
-import {
-  getSourcePresence,
-  isActiveSession,
-  publishSongEvent,
-  SOURCE_TIMEOUT_MS,
-  touchSource,
-} from './songEvents';
+import { getSourceSession, isConnected, listSourceSessions, publishSongEvent, SOURCE_TIMEOUT_MS, touchSource } from './songEvents';
 import * as songFavoriteService from './songFavorite';
 
 /** 재생 제어·송출 소스 중재 (#5 2단계) */
@@ -46,6 +40,7 @@ async function pickAutoPlaySong(prisma: PrismaClient, userId: number) {
       durationSeconds: item.durationSeconds,
       positionSeconds: 0,
       startedAt: new Date(),
+      ...PLAY_REQUESTED,
     },
   });
 
@@ -90,6 +85,7 @@ export async function advanceToNext(prisma: PrismaClient, userId: number) {
         durationSeconds: next.durationSeconds,
         positionSeconds: 0,
         startedAt: new Date(),
+        ...PLAY_REQUESTED,
       },
     }),
     prisma.song.delete({ where: { id: next.id } }),
@@ -109,6 +105,7 @@ async function recordHistory(
   userId: number,
   status: 'PLAYED' | 'SKIPPED' | 'FAILED',
   resolvedBy?: string,
+  failReason?: string,
 ) {
   const playback = await prisma.songPlayback.findUnique({ where: { userId } });
   if (!playback?.youtubeId || !playback.title) return;
@@ -123,6 +120,7 @@ async function recordHistory(
       durationSeconds: playback.durationSeconds,
       status,
       resolvedBy,
+      failReason,
       requestedAt: playback.startedAt ?? new Date(),
       resolvedAt: new Date(),
     },
@@ -132,12 +130,15 @@ async function recordHistory(
 export async function play(prisma: PrismaClient, userId: number) {
   const playback = await getPlayback(prisma, userId);
 
-  // 올려둔 곡이 없으면 큐에서 하나 꺼낸다
-  if (!playback.youtubeId) return advanceToNext(prisma, userId);
+  // 올려둔 곡이 없으면 큐에서 하나 꺼낸다. 연속 실패로 멈췄던 상태(차단기)는 사람이 ▶ 를 누른 것으로 풀린다 (#319)
+  if (!playback.youtubeId) {
+    if (playback.failStreak > 0) await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
+    return advanceToNext(prisma, userId);
+  }
 
   const updated = await prisma.songPlayback.update({
     where: { userId },
-    data: { status: 'PLAYING' },
+    data: { status: 'PLAYING', ...RESET_FAILS, ...PLAY_REQUESTED },
   });
   publishSongEvent(userId, { type: 'playback' });
   publishSongEvent(userId, { type: 'command', action: 'play' });
@@ -183,6 +184,7 @@ export async function stop(prisma: PrismaClient, userId: number, resolvedBy?: st
       durationSeconds: 0,
       positionSeconds: 0,
       startedAt: null,
+      ...RESET_FAILS,
     },
   });
   publishSongEvent(userId, { type: 'playback' });
@@ -194,6 +196,8 @@ export async function stop(prisma: PrismaClient, userId: number, resolvedBy?: st
 export async function skipToNext(prisma: PrismaClient, userId: number, resolvedBy?: string) {
   await getPlayback(prisma, userId);
   await recordHistory(prisma, userId, 'SKIPPED', resolvedBy);
+  //  사람이 넘긴 것 — 연속 실패 카운트는 처음부터 (#319)
+  await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
   const playback = await advanceToNext(prisma, userId);
   publishSongEvent(userId, { type: 'command', action: 'next' });
   return playback;
@@ -268,7 +272,7 @@ export async function reportEnded(prisma: PrismaClient, userId: number) {
   if (playback.repeatOne && playback.youtubeId) {
     const looped = await prisma.songPlayback.update({
       where: { userId },
-      data: { status: 'PLAYING', positionSeconds: 0, startedAt: new Date() },
+      data: { status: 'PLAYING', positionSeconds: 0, startedAt: new Date(), ...PLAY_REQUESTED },
     });
     publishSongEvent(userId, { type: 'playback' });
     publishSongEvent(userId, { type: 'command', action: 'play' });
@@ -276,13 +280,85 @@ export async function reportEnded(prisma: PrismaClient, userId: number) {
   }
 
   await recordHistory(prisma, userId, 'PLAYED');
+  //  끝까지 재생됐다 — 환경 문제가 아니었으니 연속 실패 카운트를 푼다 (#319)
+  if (playback.failStreak > 0) await prisma.songPlayback.update({ where: { userId }, data: RESET_FAILS });
   return advanceToNext(prisma, userId);
 }
 
-/** 재생 실패 — 임베드 차단 등. 이력에 FAILED 로 남기고 다음 곡으로 */
-export async function reportFailed(prisma: PrismaClient, userId: number) {
-  await recordHistory(prisma, userId, 'FAILED');
-  return advanceToNext(prisma, userId);
+/* ── 재생 실패 (#319) ── */
+
+/** 연속 실패가 이만큼이면 다음 곡으로 넘기지 않고 멈춘다 — 곡이 아니라 환경(임베드 차단·네트워크·로그인) 문제일 가능성이 크다 */
+export const FAIL_STREAK_LIMIT = 3;
+const RESET_FAILS = { failStreak: 0, lastFailReason: null };
+/** PLAYING 이 될 때마다 — 송출 세션의 응답(sourceAckAt)을 새로 기다린다 (#322). 함수라야 시각이 그때그때 찍힌다 */
+const PLAY_REQUESTED = {
+  get playRequestedAt() { return new Date(); },
+  sourceAckAt: null,
+};
+
+/**
+ * YouTube IFrame API onError 코드 → 사람이 읽는 원인.
+ * https://developers.google.com/youtube/iframe_api_reference#onError
+ */
+export function describeFailCode(code: number | null | undefined): string {
+  switch (code) {
+    case 2: return '잘못된 영상 ID';
+    case 5: return '플레이어 오류(HTML5)';
+    case 100: return '삭제·비공개 영상';
+    case 101:
+    case 150: return '임베드 차단';
+    default: return code == null ? '원인 미상' : `알 수 없는 오류(${code})`;
+  }
+}
+
+const FAIL_SOURCE_LABEL: Record<string, string> = { OBS: 'OBS', ELECTRON: '앱' };
+
+/** 이력·배너에 남기는 문구: 「임베드 차단 · 앱」 */
+export function formatFailReason(code: number | null | undefined, source: string | null | undefined): string {
+  const where = source ? FAIL_SOURCE_LABEL[source] ?? source : null;
+  return where ? `${describeFailCode(code)} · ${where}` : describeFailCode(code);
+}
+
+/**
+ * 재생 실패 — 임베드 차단 등. 이력에 FAILED(원인 포함)로 남기고 다음 곡으로.
+ * 연속 FAIL_STREAK_LIMIT 회면 넘기지 않고 STOPPED 로 멈춘다(차단기) — 자동 재생이 켜져 있으면 실패→다음 곡→실패가 끝없이 이어져
+ * 정지조차 못 하던 문제. 사람이 ▶·다음 곡을 누르면 카운트가 풀린다. 이미 넘어간 곡의 늦은 보고(youtubeId 불일치)는 버린다
+ */
+export async function reportFailed(
+  prisma: PrismaClient,
+  userId: number,
+  detail: { code?: number | null; source?: string | null; youtubeId?: string | null } = {},
+) {
+  const playback = await getPlayback(prisma, userId);
+  if (detail.youtubeId && playback.youtubeId && playback.youtubeId !== detail.youtubeId) return { playback, halted: false };
+
+  const reason = formatFailReason(detail.code, detail.source);
+  await recordHistory(prisma, userId, 'FAILED', undefined, reason);
+  const streak = playback.failStreak + 1;
+
+  if (streak >= FAIL_STREAK_LIMIT) {
+    const halted = await prisma.songPlayback.update({
+      where: { userId },
+      data: {
+        status: 'STOPPED',
+        youtubeId: null,
+        title: null,
+        videoUploader: null,
+        requester: null,
+        durationSeconds: 0,
+        positionSeconds: 0,
+        startedAt: null,
+        failStreak: streak,
+        lastFailReason: reason,
+      },
+    });
+    publishSongEvent(userId, { type: 'playback' });
+    publishSongEvent(userId, { type: 'command', action: 'stop' });
+    return { playback: halted, halted: true };
+  }
+
+  await prisma.songPlayback.update({ where: { userId }, data: { failStreak: streak, lastFailReason: reason } });
+  return { playback: await advanceToNext(prisma, userId), halted: false };
 }
 
 /** 대기열의 특정 곡을 지금 재생한다 — 현재 곡은 SKIPPED 로 기록 (#5 2-b) */
@@ -310,6 +386,8 @@ export async function playSongNow(
         durationSeconds: target.durationSeconds,
         positionSeconds: 0,
         startedAt: new Date(),
+        ...RESET_FAILS,
+        ...PLAY_REQUESTED,
       },
     }),
     prisma.song.delete({ where: { id: target.id } }),
@@ -349,11 +427,25 @@ export async function reportPosition(
   // 이미 다음 곡으로 넘어갔다면 지난 곡의 보고다 — 버린다
   if (!playback || playback.youtubeId !== youtubeId) return playback;
 
-  // 진행률은 자주 오므로 이벤트를 쏘지 않는다 (컨트롤러는 자체 타이머로 보간)
+  // 진행률은 자주 오므로 이벤트를 쏘지 않는다 (컨트롤러는 자체 타이머로 보간). 진행률이 온다 = 송출 세션이 재생 중이다 → 응답으로 친다 (#322)
   return prisma.songPlayback.update({
     where: { userId },
-    data: { positionSeconds: Math.max(0, Math.floor(positionSeconds)) },
+    data: { positionSeconds: Math.max(0, Math.floor(positionSeconds)), sourceAckAt: new Date() },
   });
+}
+
+/**
+ * 송출 세션이 「이 곡을 실제로 재생 시작했다」(YouTube onStateChange PLAYING) (#322).
+ * 컨트롤러는 playRequestedAt 뒤 이 응답이 없으면 「송출 소스가 재생에 응답하지 않습니다」를 띄운다. 지난 곡의 보고는 버린다
+ */
+export async function reportPlaying(prisma: PrismaClient, userId: number, youtubeId: string) {
+  const playback = await prisma.songPlayback.findUnique({ where: { userId } });
+  if (!playback || playback.youtubeId !== youtubeId) return playback;
+  if (playback.sourceAckAt && playback.playRequestedAt && playback.sourceAckAt >= playback.playRequestedAt) return playback;
+  const updated = await prisma.songPlayback.update({ where: { userId }, data: { sourceAckAt: new Date() } });
+  //  경고를 바로 지울 수 있게 — 곡마다 1회뿐이라 부담이 없다
+  publishSongEvent(userId, { type: 'playback' });
+  return updated;
 }
 
 export async function setVolume(prisma: PrismaClient, userId: number, volume: number) {
@@ -367,17 +459,69 @@ export async function setVolume(prisma: PrismaClient, userId: number, volume: nu
   return updated;
 }
 
-/* ── 송출 소스 ── */
+/* ── 송출 세션 (#322) ── */
 
-/** 하트비트 갱신 — 창을 여러 개 열면 마지막 것이 활성 세션이 된다 */
-export function touchSourceSession(userId: number, source: string, sessionId: string) {
-  const { changed } = touchSource(userId, source, sessionId);
-  // 연결이 새로 붙었을 때만 알린다 — 끊기는 쪽은 구독자가 lastSeenAt 으로 직접 판정한다
-  if (changed) publishSongEvent(userId, { type: 'source' });
+export type SourceSessionInput = { sessionId: string; source: 'OBS' | 'ELECTRON'; label?: string | null };
+
+const DEFAULT_LABEL: Record<string, string> = { OBS: 'OBS 브라우저 소스', ELECTRON: '위즈봇 플레이어 앱' };
+
+/**
+ * 하트비트 — 세션을 목록에 올리고, 이 세션이 소리를 낼 차례인지 돌려준다.
+ * 소리를 내는 세션은 스트리머가 고른 것(songSourceSessionId) 하나. 아직 아무것도 고르지 않았으면 **처음 붙은 세션을 자동으로 고른다** —
+ * 앱을 설치하고 켜기만 하면 소리가 나야 하고, 예전 사용자(타입만 골라둔 상태)도 같은 타입의 창이 붙으면 그대로 이어진다.
+ */
+export async function touchSourceSession(prisma: PrismaClient, userId: number, input: SourceSessionInput) {
+  const label = (input.label?.trim() || DEFAULT_LABEL[input.source] || input.source).slice(0, 80);
+  const { changed } = touchSource(userId, { sessionId: input.sessionId, source: input.source, label });
+
+  const setting = await prisma.userSetting.findUnique({
+    where: { userId },
+    select: { id: true, songSourceSessionId: true, songSourceType: true },
+  });
+  let adopted = false;
+  if (setting && !setting.songSourceSessionId && (setting.songSourceType === 'NONE' || setting.songSourceType === input.source)) {
+    await prisma.userSetting.update({
+      where: { id: setting.id },
+      data: { songSourceSessionId: input.sessionId, songSourceType: input.source, songSourceLabel: label },
+    });
+    adopted = true;
+  }
+  if (changed || adopted) publishSongEvent(userId, { type: 'source' });
+
+  const activeId = adopted ? input.sessionId : setting?.songSourceSessionId ?? null;
+  return { active: activeId === input.sessionId, adopted };
 }
 
-export function isSessionActive(userId: number, sessionId: string) {
-  return isActiveSession(userId, sessionId);
+/** 스트리머가 이 세션을 송출 소스로 고른다 — 목록에 있는(끊긴 지 1시간 안) 세션이면 된다. 꺼진 앱을 미리 골라두면 켜질 때 바로 소리가 난다 */
+export async function selectSource(prisma: PrismaClient, userId: number, sessionId: string) {
+  const session = getSourceSession(userId, sessionId);
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 목록에 없습니다. 켜서 다시 연결해주세요.');
+  const setting = await prisma.userSetting.findUnique({ where: { userId }, select: { id: true } });
+  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
+  await prisma.userSetting.update({
+    where: { id: setting.id },
+    data: { songSourceSessionId: sessionId, songSourceType: session.source as 'OBS' | 'ELECTRON', songSourceLabel: session.label },
+  });
+  //  이전 주인은 멈추고 새 주인은 재생을 시작해야 한다 — 소스들은 이 이벤트로 다시 맞춘다
+  publishSongEvent(userId, { type: 'source' });
+  return { sessionId, source: session.source, label: session.label };
+}
+
+/** 선택 해제 — 어느 창도 소리를 내지 않는다 (예전 「사용 안 함」) */
+export async function clearSourceSelection(prisma: PrismaClient, userId: number) {
+  const setting = await prisma.userSetting.findUnique({ where: { userId }, select: { id: true } });
+  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
+  await prisma.userSetting.update({ where: { id: setting.id }, data: { songSourceSessionId: null, songSourceType: 'NONE', songSourceLabel: null } });
+  publishSongEvent(userId, { type: 'source' });
+  return { ok: true as const };
+}
+
+/** 「찾기」 — 그 창이 스스로를 드러낸다(빨간 테두리·띵동·작업 표시줄 깜빡임) */
+export function locateSource(userId: number, sessionId: string) {
+  const session = getSourceSession(userId, sessionId, { connectedOnly: true });
+  if (!session) throw new ServiceError('NOT_FOUND', '그 플레이어가 지금 연결돼 있지 않아 신호를 받을 수 없습니다.');
+  publishSongEvent(userId, { type: 'locate', sessionId });
+  return { ok: true as const };
 }
 
 function newToken() {
@@ -413,32 +557,33 @@ export async function regenerateSourceToken(
   });
 }
 
-export async function setSourceType(
-  prisma: PrismaClient,
-  userId: number,
-  sourceType: SongSourceType,
-) {
-  const setting = await prisma.userSetting.findUnique({ where: { userId } });
-  if (!setting) throw new ServiceError('NOT_FOUND', '사용자 설정이 존재하지 않습니다.');
-
-  const updated = await prisma.userSetting.update({
-    where: { id: setting.id },
-    data: { songSourceType: sourceType },
-  });
-  publishSongEvent(userId, { type: 'source' });
-  return updated;
-}
-
-/** 컨트롤러에 보여줄 소스 상태 — 지정된 소스가 오프라인이면 경고할 수 있게 */
-export async function getSourceStatus(prisma: PrismaClient, userId: number) {
+/** 컨트롤러에 보여줄 송출 상태 — 선택된 세션·연결 여부·붙어 있는 세션 전부 (#322) */
+export async function getSourceStatus(prisma: PrismaClient, userId: number, now = Date.now()) {
   const setting = await ensureSourceTokens(prisma, userId);
-  const presence = getSourcePresence(userId);
+  const sessions = listSourceSessions(userId, now);
+  const selected = setting.songSourceSessionId ? sessions.find((s) => s.sessionId === setting.songSourceSessionId) ?? null : null;
 
   return {
+    /** 스트리머가 고른 세션 — null 이면 아직 선택 전 */
+    selectedSessionId: setting.songSourceSessionId,
     sourceType: setting.songSourceType,
-    online: presence !== null && presence.source === setting.songSourceType,
-    connectedSource: presence?.source ?? null,
-    lastSeenAt: presence ? new Date(presence.lastSeenAt) : null,
+    sourceLabel: setting.songSourceLabel,
+    /** 고른 세션이 지금 붙어 있는가 (목록엔 1시간 남아 있어도 15초 안에 신호가 없으면 끊김) */
+    online: selected !== null && isConnected(selected, now),
+    /**
+     * 「몇 ms 전에 봤는지」 (#319) — 컨트롤러가 자기 시계로 lastSeenAt 을 빼면 PC 시계 오차만큼 틀려서
+     * 「연결됨 ↔ 연결 안 됨」이 깜빡였다. 응답을 받은 시각에 이 값을 더해 세면 시계가 달라도 맞다
+     */
+    lastSeenAgoMs: selected ? now - selected.lastSeenAt : null,
+    /** 보존 중인 세션 전부(끊긴 것도 1시간) — 컨트롤러가 목록으로 보여주고 하나를 고른다 (#322) */
+    sessions: sessions.map((s) => ({
+      sessionId: s.sessionId,
+      source: s.source as 'OBS' | 'ELECTRON',
+      label: s.label,
+      active: s.sessionId === setting.songSourceSessionId,
+      connected: isConnected(s, now),
+      lastSeenAgoMs: now - s.lastSeenAt,
+    })),
     timeoutMs: SOURCE_TIMEOUT_MS,
     sourceToken: setting.songSourceToken,
     overlayToken: setting.songOverlayToken,
