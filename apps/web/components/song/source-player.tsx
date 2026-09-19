@@ -413,10 +413,13 @@ export function SongOverlay({
   now,
   setting,
   fontFamily,
+  fontSize = 'min(120px, 62vh)',
 }: {
   now: NowPlaying | null;
   setting: OverlaySetting;
   fontFamily?: string;
+  /** 기본은 브라우저 소스 높이를 따라간다(vh). 랜딩 데모처럼 작은 프레임 안에서는 따로 준다 */
+  fontSize?: string;
 }) {
   const [visible, setVisible] = useState(true);
 
@@ -449,7 +452,7 @@ export function SongOverlay({
         padding: '0 0.3em',
         color: '#ffffff',
         // 높이에 맞춰 커지되 120px 을 넘지 않는다
-        fontSize: 'min(120px, 62vh)',
+        fontSize,
         lineHeight: 1.2,
         fontWeight: 700,
         whiteSpace: 'nowrap',

@@ -2,13 +2,12 @@
 
 import type { UsageToken } from '@wizbot/shared/chatbot/definitions';
 import { THEME_FONTS, type ThemeFontKey, type ThemeInput } from '@wizbot/shared/lib/theme';
-import { ArrowUpDown, BookOpen, ChevronLeft, ChevronRight, FileAudio2, Headphones, Info, Megaphone, SquareChevronRight } from 'lucide-react';
+import { ArrowUpDown, BookOpen, ChevronLeft, ChevronRight, FileAudio2, Headphones, Info, LogIn, Megaphone, SquareChevronRight } from 'lucide-react';
 import { type JSX, useState } from 'react';
 
 import BodyBreadcrumb from '@/components/body-breadcrumb';
 import { UsageTokens } from '@/components/custom/usage-tokens';
 import { SearchInput } from '@/components/data-table/search-input';
-import { NavLogin } from '@/components/nav-login';
 import { NavTitle } from '@/components/nav-title';
 import { PlayerBar } from '@/components/song/player-bar';
 import { formatTime, type PlaybackView, SongPlayer, usePlayerPosition } from '@/components/song/song-player';
@@ -49,7 +48,7 @@ const BACKGROUNDS: { label: string; value: string | null; scheme: ThemeInput['co
 const FONT_KEYS: ThemeFontKey[] = ['suit', 'jua', 'nanum-pen-script', 'black-han-sans'];
 
 type Tab = 'command' | 'playlist' | 'history';
-const CHANNEL = { title: '위즈 WisdomIT', description: '위즈봇', avatar: '/wisdomit.png' };
+const CHANNEL = { title: '위즈 WisdomIT', description: '위즈봇', avatar: '/images/wisdomit.png' };
 const MENU: { group: string; items: { key: Tab; name: string; icon: JSX.Element }[] }[] = [
   { group: '봇', items: [{ key: 'command', name: '명령어', icon: <SquareChevronRight /> }] },
   { group: '노래', items: [{ key: 'playlist', name: '플레이리스트', icon: <Headphones /> }, { key: 'history', name: '재생 기록', icon: <FileAudio2 /> }] },
@@ -89,8 +88,7 @@ const HISTORY: { at: string; title: string; videoUploader: string; requester: st
 export function DemoViewerPage() {
   const [theme, setTheme] = useState<ThemeInput>({ primaryColor: '#3b82f6', backgroundColor: null, sidebarColor: null, colorScheme: 'SYSTEM', fontKey: 'suit' });
   const [tab, setTab] = useState<Tab>('command');
-  const [playing, setPlaying] = useState(true);
-  const playback: PlaybackView = { ...NOW, status: playing ? 'PLAYING' : 'PAUSED' };
+  const playback = NOW;
   const current = MENU.flatMap((g) => g.items.map((i) => ({ ...i, group: g.group }))).find((i) => i.key === tab)!;
 
   return (
@@ -127,10 +125,8 @@ export function DemoViewerPage() {
               {tab === 'playlist' && <Playlist playback={playback} />}
               {tab === 'history' && <HistoryTable />}
             </BodyBreadcrumb>
-            {/* 실제 시청자 하단 재생 바 — 플레이리스트 페이지에서는 자체 플레이어가 있어 숨는다 */}
-            {tab !== 'playlist' && (
-              <PlayerBar playback={playback} href="#showcase-panel-viewer-page" controls={{ onPlay: () => setPlaying(true), onPause: () => setPlaying(false), onNext: () => undefined }} />
-            )}
+            {/* 실제 시청자 하단 재생 바 — 시청자는 조작할 수 없어 읽기 전용(실제와 같음). 플레이리스트 페이지에서는 자체 플레이어가 있어 숨는다 */}
+            {tab !== 'playlist' && <PlayerBar playback={playback} href="#showcase-panel-viewer-page" />}
           </SidebarInset>
         </SidebarProvider>
       </StreamerThemeScope>
@@ -184,7 +180,21 @@ function DemoSidebar({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) {
             </SidebarGroup>
           </SidebarContent>
           <SidebarFooter>
-            <NavLogin />
+            {/* NavLogin 과 같은 마크업 — 데모에서는 이동하지 않는다 */}
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton size="lg" asChild>
+                  <button type="button" tabIndex={-1} className="pointer-events-none">
+                    <div className="border border-gray-100 bg-background text-sidebar-primary flex aspect-square size-8 items-center justify-center rounded-lg">
+                      <LogIn className="size-4" />
+                    </div>
+                    <div className="grid flex-1 text-left text-sm leading-tight">
+                      <span className="truncate font-medium">로그인</span>
+                    </div>
+                  </button>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarFooter>
         </div>
       </div>
