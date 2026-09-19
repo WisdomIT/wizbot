@@ -8,11 +8,11 @@ export const dynamic = 'force-dynamic';
 
 export default function Home() {
   return (
-    <main className="py-20">
+    <main className="pt-20">
       <Hero />
       <Showcase />
-      <Notices />
       <Streamers />
+      <Notices />
       <Join />
     </main>
   );

@@ -34,7 +34,6 @@ export default function Join() {
           </Card>
         </div>
       </div>
-      <hr />
     </section>
   );
 }
