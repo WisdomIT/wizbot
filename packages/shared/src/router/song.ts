@@ -50,6 +50,7 @@ export const songRouter = t.router({
           songAutoPlayFromDefault: true,
           songMaxPerRequester: true,
           songMaxQueueLength: true,
+          songMaxDurationSeconds: true,
           songKeyboardShortcut: true,
           songShortcutPlayPause: true,
           songShortcutStop: true,
@@ -86,6 +87,8 @@ export const songRouter = t.router({
       requestPolicy: {
         maxPerRequester: setting === null ? 1 : setting.songMaxPerRequester,
         maxQueueLength: setting?.songMaxQueueLength ?? 30,
+        /** 신청 가능한 최대 길이(초) (#326) — 예전엔 UI 가 없어 모든 채널이 기본 600초였다 */
+        maxDurationSeconds: setting?.songMaxDurationSeconds ?? 600,
       },
       /** 앱의 전역 단축키 사용 여부 (#85) */
       keyboardShortcut: setting?.songKeyboardShortcut ?? true,
@@ -266,18 +269,20 @@ export const songRouter = t.router({
       userSettingService.updateUserSetting(ctx.prisma, ctx.user.id, { songActive: input.active }),
     ),
 
-  /** 신청 제한 (#237) — 1인당 곡 수(null=무제한)·대기열 상한(최대 100) */
+  /** 신청 제한 (#237) — 1인당 곡 수(null=무제한)·대기열 상한(최대 100)·최대 길이(1~60분, #326) */
   setRequestPolicy: streamerProcedure
     .input(
       z.object({
         maxPerRequester: z.number().int().min(1).max(99).nullable(),
         maxQueueLength: z.number().int().min(1).max(100),
+        maxDurationSeconds: z.number().int().min(60).max(3600).optional(),
       }),
     )
     .mutation(({ ctx, input }) =>
       userSettingService.updateUserSetting(ctx.prisma, ctx.user.id, {
         songMaxPerRequester: input.maxPerRequester,
         songMaxQueueLength: input.maxQueueLength,
+        ...(input.maxDurationSeconds !== undefined ? { songMaxDurationSeconds: input.maxDurationSeconds } : {}),
       }),
     ),
 

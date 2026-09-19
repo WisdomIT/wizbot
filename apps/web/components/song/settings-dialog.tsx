@@ -33,8 +33,8 @@ import { SourceSection, type SourceSession, type SourceStatus } from './source-s
 export interface SongSettings {
   /** 노래 신청 기능 사용 여부 (#237) — 끄면 신청·관련 채팅 명령어가 모두 꺼졌다고 응답한다 */
   active: boolean;
-  /** 신청 제한 (#237) — maxPerRequester null 은 무제한 */
-  requestPolicy: { maxPerRequester: number | null; maxQueueLength: number };
+  /** 신청 제한 (#237) — maxPerRequester null 은 무제한. maxDurationSeconds = 신청 가능한 최대 길이 (#326) */
+  requestPolicy: { maxPerRequester: number | null; maxQueueLength: number; maxDurationSeconds: number };
   overlay: { mode: 'ALWAYS' | 'TIMED'; durationSeconds: number };
   autoPlay: boolean;
   historyPublic: boolean;
@@ -388,6 +388,7 @@ function RequestPolicySection({
     unlimited: value.maxPerRequester === null,
     perRequester: String(value.maxPerRequester ?? 1),
     maxQueue: String(value.maxQueueLength),
+    maxMinutes: String(Math.round(value.maxDurationSeconds / 60)),
   });
   const [form, setForm] = useState(toForm(policy));
   //  서버 값이 바뀌면 폼을 갈아끼운다 — 렌더 중 보정 (#200 패턴)
@@ -447,6 +448,17 @@ function RequestPolicySection({
             </div>
           </div>
         </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="setting-max-minutes" className="text-xs text-muted-foreground">
+            신청 가능한 최대 길이 (분, 1~60)
+          </Label>
+          <Input
+            id="setting-max-minutes"
+            inputMode="numeric"
+            value={form.maxMinutes}
+            onChange={(event) => setForm({ ...form, maxMinutes: event.target.value })}
+          />
+        </div>
       </div>
       <div className="flex justify-end">
         <Button
@@ -455,6 +467,7 @@ function RequestPolicySection({
             onSave({
               maxPerRequester: form.unlimited ? null : clamp(form.perRequester, 1, 99, 1),
               maxQueueLength: clamp(form.maxQueue, 1, 100, 30),
+              maxDurationSeconds: clamp(form.maxMinutes, 1, 60, 10) * 60,
             })
           }
         >

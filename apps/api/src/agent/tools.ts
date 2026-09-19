@@ -14,6 +14,7 @@ import {
   ServiceError,
   shortcutService,
   songFavoriteService,
+  songHistoryService,
   songService,
   suggestionService,
   userSettingService,
@@ -85,7 +86,15 @@ export const CONFIRM_TOOLS = new Set([
   'delete_command', 'delete_repeat', 'delete_shortcut', 'clear_queue', 'create_inquiry',
   //  시청자에게 직접 작용하는 조치 (#248) — 카드에 근거 채팅을 보여주고 승인받는다
   'temp_restrict_viewer', 'blind_chat_message',
+  //  파괴적이거나 사용자가 바로 느끼는 큰 변화 (#326)
+  'delete_favorite', 'clear_favorite_items', 'set_history_public',
 ]);
+
+/** 입력에 따라 카드가 필요한 tool — 노래 신청 기능을 **끄는** 것은 시청자가 바로 느끼는 변화라 확인을 거친다 (#326) */
+export function needsConfirmation(name: string, input: Record<string, unknown>): boolean {
+  if (CONFIRM_TOOLS.has(name)) return true;
+  return name === 'set_song_request_policy' && input.enabled === false;
+}
 
 export const AGENT_TOOLS: ToolDef[] = [
   /* ── 읽기 ── */
@@ -141,7 +150,27 @@ export const AGENT_TOOLS: ToolDef[] = [
     inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
   },
   { name: 'list_shortcuts', description: '시청자 페이지에 노출되는 링크(바로가기) 목록.', inputSchema: noInput },
-  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 노래 신청 설정 등.', inputSchema: noInput },
+  { name: 'get_user_setting', description: '채널 기본 설정 — 챗봇 사용 여부, 챗봇 기본 반복 시간 등. 노래 설정은 get_song_settings 를 쓴다.', inputSchema: noInput },
+  {
+    name: 'get_song_settings',
+    description:
+      'All music settings in one call: song-request on/off, per-viewer and queue limits, max song length (minutes), overlay caption (mode ALWAYS/TIMED + seconds), auto play from the default favorite, history public, the default favorite (id/name), repeat-one, and which player (app/OBS) is selected as the sound source. Use before changing any of them.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'list_song_history',
+    description: 'Play history (newest first): PLAYED/SKIPPED/CANCELED/FAILED with requester and time. Optional status filter and title/requester search.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED'] },
+        query: { type: 'string', description: '제목·신청자 검색어' },
+        limit: { type: 'number', description: '기본 20, 최대 50' },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'search_audit_log', description: '설정 변경 기록 검색 — 누가(본인/관리자/챗봇/에이전트) 언제 무엇을 바꿨는지.',
     inputSchema: {
@@ -313,7 +342,7 @@ export const AGENT_TOOLS: ToolDef[] = [
   {
     name: 'set_song_request_policy',
     description:
-      'Changes viewer song-request settings. enabled: turn the whole song-request feature on/off — when off, viewer requests are rejected and song chat commands reply that the feature is disabled. maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). Omitted fields keep their current value (see get_user_setting).',
+      'Changes viewer song-request settings. enabled: turn the whole song-request feature on/off — when off, viewer requests are rejected and song chat commands reply that the feature is disabled (turning it OFF shows a confirmation card — call directly). maxPerRequester: songs one viewer can have queued (1-99); set unlimitedPerRequester true to remove the limit. maxQueueLength: queue cap (1-100). maxDurationMinutes: longest video viewers may request (1-60). Omitted fields keep their current value (see get_song_settings).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -321,6 +350,7 @@ export const AGENT_TOOLS: ToolDef[] = [
         maxPerRequester: { type: 'number' },
         unlimitedPerRequester: { type: 'boolean' },
         maxQueueLength: { type: 'number' },
+        maxDurationMinutes: { type: 'number' },
       },
       required: [],
       additionalProperties: false,
@@ -341,6 +371,90 @@ export const AGENT_TOOLS: ToolDef[] = [
       properties: { favoriteId: id, url: { type: 'string', description: '유튜브 재생목록 URL' } },
       required: ['favoriteId', 'url'], additionalProperties: false,
     },
+  },
+  /* ── 노래 설정 (#326) ── */
+  {
+    name: 'set_overlay_settings',
+    description: 'Caption overlay on the player page: mode ALWAYS (always show the current title) or TIMED (show for durationSeconds when the song changes, 1-60s).',
+    inputSchema: {
+      type: 'object',
+      properties: { mode: { type: 'string', enum: ['ALWAYS', 'TIMED'] }, durationSeconds: { type: 'number' } },
+      required: ['mode'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_auto_play', description: 'Auto play: when the queue is empty, keep playing random songs from the default favorite.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'set_history_public',
+    description: 'Show or hide the play history on the viewer page. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { isPublic: { type: 'boolean' } }, required: ['isPublic'], additionalProperties: false },
+  },
+  {
+    name: 'set_repeat_one', description: 'Repeat the current song instead of advancing when it ends.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'seek', description: 'Jump to a position (seconds) in the current song.',
+    inputSchema: { type: 'object', properties: { positionSeconds: { type: 'number' } }, required: ['positionSeconds'], additionalProperties: false },
+  },
+  {
+    name: 'remove_from_queue', description: 'Remove one song from the queue (id from get_playback).',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'play_queue_song_now', description: 'Play a queued song right now (id from get_playback); the current song is recorded as skipped.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'move_in_queue', description: 'Move a queued song one step up or down.',
+    inputSchema: {
+      type: 'object',
+      properties: { id, direction: { type: 'string', enum: ['up', 'down'] } },
+      required: ['id', 'direction'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'requeue_from_history', description: 'Put a song from the play history back into the queue (id from list_song_history). Requester stays the original one.',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'set_history_hidden', description: 'Hide or unhide one history entry from viewers (id from list_song_history).',
+    inputSchema: { type: 'object', properties: { id, hidden: { type: 'boolean' } }, required: ['id', 'hidden'], additionalProperties: false },
+  },
+  /* ── 즐겨찾기 관리 (#326) ── */
+  {
+    name: 'set_default_favorite', description: 'Make a favorite the default one (source of auto play). Find the id with list_favorites.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'create_favorite', description: 'Create a favorite list (max 20 lists, name up to 50 chars). The first list becomes the default.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'], additionalProperties: false },
+  },
+  {
+    name: 'rename_favorite', description: 'Rename a favorite list.',
+    inputSchema: { type: 'object', properties: { favoriteId: id, name: { type: 'string' } }, required: ['favoriteId', 'name'], additionalProperties: false },
+  },
+  {
+    name: 'delete_favorite', description: 'Deletes a favorite list and its songs. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'add_favorite_song', description: 'Add a song to a favorite list by YouTube search query or URL.',
+    inputSchema: { type: 'object', properties: { favoriteId: id, query: { type: 'string' } }, required: ['favoriteId', 'query'], additionalProperties: false },
+  },
+  {
+    name: 'remove_favorite_song', description: 'Remove one song from a favorite list (itemId from get_favorite).',
+    inputSchema: { type: 'object', properties: { favoriteId: id, itemId: id }, required: ['favoriteId', 'itemId'], additionalProperties: false },
+  },
+  {
+    name: 'clear_favorite_items', description: 'Removes every song from a favorite list. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
+  },
+  {
+    name: 'add_current_song_to_favorite', description: 'Add the song playing right now to a favorite list.',
+    inputSchema: { type: 'object', properties: { favoriteId: id }, required: ['favoriteId'], additionalProperties: false },
   },
 
   /* ── 문의 ── */
@@ -517,6 +631,10 @@ const AUDITED_TOOLS = new Set([
   'import_playlist', 'clear_queue', 'set_song_request_policy',
   'temp_restrict_viewer', 'remove_temp_restrict', 'blind_chat_message',
   'update_live_setting', 'update_chat_settings',
+  //  노래 설정·즐겨찾기 관리 (#326). 재생 보조(반복·시크·대기열 편집)는 콘솔과 같이 제외
+  'set_overlay_settings', 'set_auto_play', 'set_history_public', 'set_history_hidden',
+  'set_default_favorite', 'create_favorite', 'rename_favorite', 'delete_favorite',
+  'add_favorite_song', 'remove_favorite_song', 'clear_favorite_items',
 ]);
 
 export async function runTool(
@@ -529,7 +647,7 @@ export async function runTool(
 ): Promise<ToolRunResult> {
   //  확인 대상은 실행하지 않는다 — 카드를 만들어 돌려주고 턴이 멈춘다.
   //  카드 생성 실패(대상 없음 등)는 ServiceError 로 던져져 모델에게 오류 결과로 돌아간다 (pelican 과 동일)
-  if (CONFIRM_TOOLS.has(name)) {
+  if (needsConfirmation(name, input)) {
     return { card: await buildCard(prisma, userId, name, input) };
   }
   return executeConfirmed(prisma, userId, conversationId, name, input, requester);
@@ -635,6 +753,30 @@ async function buildCard(prisma: PrismaClient, userId: number, name: string, inp
         lines: [`제목: ${title}`, inquiryBody.length > 200 ? `${inquiryBody.slice(0, 200)}…` : inquiryBody],
       };
     }
+    /* ── 노래 설정·즐겨찾기 (#326) ── */
+    case 'delete_favorite': {
+      const favorite = await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'));
+      return {
+        title: '즐겨찾기 삭제',
+        lines: [`"${favorite.name}" 즐겨찾기(${favorite.items.length}곡)를 삭제합니다.${favorite.isDefault ? ' 대표 즐겨찾기라 다른 목록이 대표가 됩니다.' : ''}`, '삭제하면 되돌릴 수 없습니다.'],
+      };
+    }
+    case 'clear_favorite_items': {
+      const favorite = await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'));
+      if (favorite.items.length === 0) throw new ServiceError('INVALID_INPUT', '이미 비어 있는 즐겨찾기입니다.');
+      return { title: '즐겨찾기 비우기', lines: [`"${favorite.name}" 의 ${favorite.items.length}곡을 모두 삭제합니다.`, '삭제하면 되돌릴 수 없습니다.'] };
+    }
+    case 'set_history_public': {
+      if (typeof input.isPublic !== 'boolean') throw new ServiceError('INVALID_INPUT', 'isPublic 은 boolean 이어야 합니다.');
+      return {
+        title: input.isPublic ? '재생 기록 공개' : '재생 기록 비공개',
+        lines: [input.isPublic ? '시청자 페이지에 재생 기록이 보이게 됩니다.' : '시청자 페이지에서 재생 기록이 사라집니다.'],
+      };
+    }
+    case 'set_song_request_policy': {
+      //  needsConfirmation 이 enabled:false 일 때만 여기로 보낸다
+      return { title: '노래 신청 기능 끄기', lines: ['시청자의 노래 신청이 막히고, 노래 관련 채팅 명령어는 "노래 신청 기능이 꺼져 있습니다"로 답합니다.', '스트리머가 직접 곡을 추가·재생하는 것은 그대로 됩니다.'] };
+    }
     default:
       throw new ServiceError('INVALID_INPUT', `확인 대상이 아닌 tool: ${name}`);
   }
@@ -713,8 +855,45 @@ async function execute(
       return ok(toResult(await songFavoriteService.getFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
     case 'list_shortcuts':
       return ok(toResult(await shortcutService.listShortcuts(prisma, userId)));
-    case 'get_user_setting':
-      return ok(toResult(await userSettingService.getUserSetting(prisma, userId)));
+    case 'get_user_setting': {
+      //  송출 토큰은 재생 상태를 볼 수 있는 비밀값 — 모델·대화에 절대 넣지 않는다 (#326)
+      const { songSourceToken: _sourceToken, songOverlayToken: _overlayToken, ...safe } = await userSettingService.getUserSetting(prisma, userId);
+      return ok(toResult(safe));
+    }
+    case 'get_song_settings': {
+      const [setting, playback, favorites, source] = await Promise.all([
+        userSettingService.getUserSetting(prisma, userId),
+        playbackService.getPlayback(prisma, userId),
+        songFavoriteService.listFavorites(prisma, userId),
+        playbackService.getSourceStatus(prisma, userId),
+      ]);
+      const defaultFavorite = favorites.find((f) => f.isDefault) ?? null;
+      return ok(toResult({
+        songRequestEnabled: setting.songActive,
+        maxPerRequester: setting.songMaxPerRequester ?? '무제한',
+        maxQueueLength: setting.songMaxQueueLength,
+        maxDurationMinutes: Math.round(setting.songMaxDurationSeconds / 60),
+        overlay: { mode: setting.songOverlayMode, durationSeconds: setting.songOverlayDurationSeconds },
+        autoPlay: setting.songAutoPlayFromDefault,
+        historyPublic: setting.songHistoryPublic,
+        defaultFavorite: defaultFavorite ? { id: defaultFavorite.id, name: defaultFavorite.name, songs: defaultFavorite._count.items } : null,
+        repeatOne: playback.repeatOne,
+        //  토큰은 빼고 요약만 — 상세·선택은 2단계 도구(get_source_status 등)에서
+        source: source.selectedSessionId
+          ? { type: source.sourceType, label: source.sourceLabel, connected: source.online }
+          : { type: 'NONE', label: null, connected: false },
+      }));
+    }
+    case 'list_song_history': {
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
+      const status = typeof input.status === 'string' && ['PLAYED', 'SKIPPED', 'CANCELED', 'FAILED'].includes(input.status) ? (input.status as 'PLAYED' | 'SKIPPED' | 'CANCELED' | 'FAILED') : undefined;
+      const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
+      const { items } = await songHistoryService.listHistory(prisma, userId, { status, query, limit });
+      return ok(toResult(items.map((h) => ({
+        id: h.id, title: h.title, videoUploader: h.videoUploader, requester: h.requester, status: h.status,
+        failReason: h.failReason, hiddenFromViewers: h.hiddenFromViewers, requestedAt: h.requestedAt, resolvedAt: h.resolvedAt,
+      }))));
+    }
     case 'search_audit_log': {
       const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50);
       const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : null;
@@ -857,12 +1036,87 @@ async function execute(
         input.maxQueueLength !== undefined
           ? requireIntInRange(input.maxQueueLength, 'maxQueueLength', 1, 100)
           : current.songMaxQueueLength;
+      const maxDurationSeconds =
+        input.maxDurationMinutes !== undefined
+          ? requireIntInRange(input.maxDurationMinutes, 'maxDurationMinutes', 1, 60) * 60
+          : current.songMaxDurationSeconds;
       await userSettingService.updateUserSetting(prisma, userId, {
         songActive: enabled,
         songMaxPerRequester: maxPerRequester,
         songMaxQueueLength: maxQueueLength,
+        songMaxDurationSeconds: maxDurationSeconds,
       });
-      return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength }));
+      return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength, maxDurationMinutes: maxDurationSeconds / 60 }));
+    }
+
+    /* ── 노래 설정 (#326) ── */
+    case 'set_overlay_settings': {
+      const mode = input.mode === 'ALWAYS' || input.mode === 'TIMED' ? input.mode : null;
+      if (!mode) throw new ServiceError('INVALID_INPUT', 'mode 는 ALWAYS 또는 TIMED 여야 합니다.');
+      const current = await userSettingService.getUserSetting(prisma, userId);
+      const durationSeconds = input.durationSeconds !== undefined ? requireIntInRange(input.durationSeconds, 'durationSeconds', 1, 60) : current.songOverlayDurationSeconds;
+      await playbackService.setOverlaySettings(prisma, userId, { mode, durationSeconds });
+      return ok(toResult({ mode, durationSeconds }));
+    }
+    case 'set_auto_play': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      await userSettingService.updateUserSetting(prisma, userId, { songAutoPlayFromDefault: input.enabled });
+      return ok(toResult({ autoPlay: input.enabled }));
+    }
+    case 'set_history_public': {
+      if (typeof input.isPublic !== 'boolean') throw new ServiceError('INVALID_INPUT', 'isPublic 은 boolean 이어야 합니다.');
+      await userSettingService.updateUserSetting(prisma, userId, { songHistoryPublic: input.isPublic });
+      return ok(toResult({ historyPublic: input.isPublic }));
+    }
+    case 'set_repeat_one': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      return ok(toResult(await playbackService.setRepeatOne(prisma, userId, input.enabled)));
+    }
+    case 'seek': {
+      const position = Number(input.positionSeconds);
+      if (!Number.isFinite(position) || position < 0) throw new ServiceError('INVALID_INPUT', 'positionSeconds 는 0 이상 숫자여야 합니다.');
+      return ok(toResult(await playbackService.seek(prisma, userId, position)));
+    }
+    case 'remove_from_queue':
+      return ok(toResult(await songService.removeSongById(prisma, userId, requireId(input.id, 'id'), AGENT_ACTOR)));
+    case 'play_queue_song_now':
+      return ok(toResult(await playbackService.playSongNow(prisma, userId, requireId(input.id, 'id'), AGENT_ACTOR)));
+    case 'move_in_queue': {
+      const direction = input.direction === 'up' || input.direction === 'down' ? input.direction : null;
+      if (!direction) throw new ServiceError('INVALID_INPUT', 'direction 은 up 또는 down 이어야 합니다.');
+      const moved = await songService.moveSong(prisma, userId, requireId(input.id, 'id'), direction);
+      return moved.moved ? ok('옮겼습니다.') : pending('이미 끝에 있어 옮길 수 없습니다.');
+    }
+    case 'requeue_from_history': {
+      const entry = await songHistoryService.getHistoryEntry(prisma, userId, requireId(input.id, 'id'));
+      return ok(toResult(await songService.requestSong(
+        prisma, userId, entry.youtubeId, { nickname: entry.requester, channelId: entry.requesterChannelId }, { bypassPolicy: true },
+      )));
+    }
+    case 'set_history_hidden': {
+      if (typeof input.hidden !== 'boolean') throw new ServiceError('INVALID_INPUT', 'hidden 은 boolean 이어야 합니다.');
+      return ok(toResult(await songHistoryService.setHistoryHidden(prisma, userId, requireId(input.id, 'id'), input.hidden)));
+    }
+
+    /* ── 즐겨찾기 관리 (#326) ── */
+    case 'set_default_favorite':
+      return ok(toResult(await songFavoriteService.setDefaultFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'create_favorite':
+      return ok(toResult(await songFavoriteService.createFavorite(prisma, userId, requireText(input.name, '이름', 50))));
+    case 'rename_favorite':
+      return ok(toResult(await songFavoriteService.renameFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireText(input.name, '이름', 50))));
+    case 'delete_favorite':
+      return ok(toResult(await songFavoriteService.deleteFavorite(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'add_favorite_song':
+      return ok(toResult(await songFavoriteService.addFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireText(input.query, '검색어 또는 URL', 500))));
+    case 'remove_favorite_song':
+      return ok(toResult(await songFavoriteService.removeFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), requireId(input.itemId, 'itemId'))));
+    case 'clear_favorite_items':
+      return ok(toResult(await songFavoriteService.clearFavoriteItems(prisma, userId, requireId(input.favoriteId, 'favoriteId'))));
+    case 'add_current_song_to_favorite': {
+      const playback = await playbackService.getPlayback(prisma, userId);
+      if (!playback.youtubeId) return pending('지금 재생 중인 곡이 없습니다.');
+      return ok(toResult(await songFavoriteService.addFavoriteItem(prisma, userId, requireId(input.favoriteId, 'favoriteId'), playback.youtubeId)));
     }
     case 'enqueue_favorite':
       return ok(toResult(await songFavoriteService.enqueueFavorite(
