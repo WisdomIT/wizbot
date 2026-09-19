@@ -97,6 +97,18 @@ const TOOL_LABEL: Record<string, string> = {
   locate_source: '플레이어 찾기',
   clear_source_selection: '송출 소스 선택 해제',
   get_obs_source_url: 'OBS 주소 카드',
+  get_account_settings: '계정 설정 조회',
+  set_chatbot_active: '챗봇 켬/끔',
+  set_listed: '시청자 목록 노출 변경',
+  set_chatbot_default_repeat: '기본 반복 주기 변경',
+  refresh_channel_info: '채널 정보 새로고침',
+  get_cafe_integration: '카페 연동 조회',
+  set_cafe_enabled: '카페 연동 켬/끔',
+  request_cafe_gate_refresh: '카페 대문 지금 반영',
+  move_shortcut: '링크 순서 변경',
+  list_inquiries: '문의 목록 조회',
+  get_inquiry: '문의 읽기',
+  reply_inquiry: '문의 추가 메시지',
   get_recent_chat: '최근 채팅 조회',
   temp_restrict_viewer: '시청자 임시제한',
   remove_temp_restrict: '임시제한 해제',
@@ -148,7 +160,7 @@ function subscribeWidth(onChange: () => void) {
 }
 
 /** 에이전트가 설정을 바꾸면 그 화면의 쿼리를 무효화한다 (#35 조정 4) — 재생·큐는 song events SSE 로 이미 실시간 */
-type InvalidateTarget = 'command' | 'shortcut' | 'songFavorite' | 'inquiry' | 'song';
+type InvalidateTarget = 'command' | 'shortcut' | 'songFavorite' | 'inquiry' | 'song' | 'user' | 'cafe';
 const TOOL_INVALIDATE: Record<string, InvalidateTarget> = {
   create_echo_command: 'command', update_echo_command: 'command',
   create_function_command: 'command', update_function_command: 'command',
@@ -161,6 +173,9 @@ const TOOL_INVALIDATE: Record<string, InvalidateTarget> = {
   set_song_request_policy: 'song', set_overlay_settings: 'song', set_auto_play: 'song', set_history_public: 'song',
   set_history_hidden: 'song', requeue_from_history: 'song',
   select_source: 'song', clear_source_selection: 'song',
+  set_chatbot_active: 'user', set_listed: 'user', set_chatbot_default_repeat: 'user', refresh_channel_info: 'user',
+  set_cafe_enabled: 'cafe', request_cafe_gate_refresh: 'cafe',
+  move_shortcut: 'shortcut', reply_inquiry: 'inquiry',
   set_default_favorite: 'songFavorite', create_favorite: 'songFavorite', rename_favorite: 'songFavorite', delete_favorite: 'songFavorite',
   add_favorite_song: 'songFavorite', remove_favorite_song: 'songFavorite', clear_favorite_items: 'songFavorite', add_current_song_to_favorite: 'songFavorite',
 };
@@ -419,6 +434,8 @@ function PanelBody({
       else if (target === 'shortcut') void queryClient.invalidateQueries(trpc.shortcut.pathFilter());
       else if (target === 'songFavorite') void queryClient.invalidateQueries(trpc.songFavorite.pathFilter());
       else if (target === 'song') void queryClient.invalidateQueries(trpc.song.pathFilter());
+      else if (target === 'user') void queryClient.invalidateQueries(trpc.user.pathFilter());
+      else if (target === 'cafe') void queryClient.invalidateQueries(trpc.cafe.pathFilter());
       else void queryClient.invalidateQueries(trpc.inquiry.pathFilter());
     }
     touchedRef.current.clear();

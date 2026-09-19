@@ -1,8 +1,11 @@
 import type { ChatbotPermission, PrismaClient } from '@prisma/client';
 import { chatbotFunctionDefinitionMap, isChatbotFunctionKey } from '@wizbot/shared/chatbot/definitions';
+import { CAFE_EVENT_KIND_LABEL, CAFE_LINK_STATUS_LABEL } from '@wizbot/shared/lib/cafe';
 import { getManualPage, listManualPages, searchManual } from '@wizbot/shared/lib/manual';
 import { notifyAdminsOfInquiry } from '@wizbot/shared/router';
 import {
+  accountService,
+  cafeService,
   chatBufferService,
   commandLogService,
   commandService,
@@ -90,12 +93,17 @@ export const CONFIRM_TOOLS = new Set([
   'delete_favorite', 'clear_favorite_items', 'set_history_public',
   //  소리 나는 창이 바뀌거나 사라진다 (#326 2단계)
   'select_source', 'clear_source_selection',
+  //  시청자 목록 노출 전환, 운영자에게 나가는 메시지 (#326 3단계)
+  'set_listed', 'reply_inquiry',
 ]);
 
-/** 입력에 따라 카드가 필요한 tool — 노래 신청 기능을 **끄는** 것은 시청자가 바로 느끼는 변화라 확인을 거친다 (#326) */
+/** 입력에 따라 카드가 필요한 tool — 무언가를 **끄는** 것은 시청자가 바로 느끼는 변화라 확인을 거친다 (#326) */
 export function needsConfirmation(name: string, input: Record<string, unknown>): boolean {
   if (CONFIRM_TOOLS.has(name)) return true;
-  return name === 'set_song_request_policy' && input.enabled === false;
+  if (name === 'set_song_request_policy') return input.enabled === false;
+  if (name === 'set_chatbot_active') return input.active === false;
+  if (name === 'set_cafe_enabled') return input.enabled === false;
+  return false;
 }
 
 export const AGENT_TOOLS: ToolDef[] = [
@@ -402,6 +410,65 @@ export const AGENT_TOOLS: ToolDef[] = [
       'Shows the OBS browser-source URL to the user as a card in the console panel (masked, with reveal/copy/regenerate buttons). The URL is secret and is NEVER returned to you or written in chat — call this and tell the user to use the card.',
     inputSchema: noInput,
   },
+  /* ── 계정·챗봇 (#326 3단계) ── */
+  {
+    name: 'get_account_settings',
+    description: 'Account-level settings: channel name, whether the channel is listed on the viewer directory, whether the chatbot is active, default repeat-message interval (seconds). Theme is not readable here — point to 설정 › 테마.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'set_chatbot_active',
+    description: 'Turn the whole chatbot on or off for this channel. Turning it OFF shows a confirmation card — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { active: { type: 'boolean' } }, required: ['active'], additionalProperties: false },
+  },
+  {
+    name: 'set_listed',
+    description: 'Show or hide this channel on the public streamer directory. A confirmation card is shown to the user — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { listed: { type: 'boolean' } }, required: ['listed'], additionalProperties: false },
+  },
+  {
+    name: 'set_chatbot_default_repeat',
+    description: 'Default interval (seconds, 10-86400) suggested when creating a repeat message.',
+    inputSchema: { type: 'object', properties: { seconds: { type: 'number' } }, required: ['seconds'], additionalProperties: false },
+  },
+  { name: 'refresh_channel_info', description: 'Re-fetch the channel name and profile image from Chzzk.', inputSchema: noInput },
+  /* ── 카페 연동 (#326 3단계) — 읽기 + 안전한 조작만. 가입 요청·권한 확인·자리 고르기는 메뉴에서 ── */
+  {
+    name: 'get_cafe_integration',
+    description:
+      'Naver Cafe gate integration: enabled, linked cafe, status (linked/joined/permission/active…), status message, whether the live-status image and YouTube block are placed, last gate update, last broadcast state written, auto-recovery progress, and the last few events. Joining, permission check and picking the gate position are done in the menu (노래 › 카페 연동) — point there.',
+    inputSchema: noInput,
+  },
+  {
+    name: 'set_cafe_enabled',
+    description: 'Turn the cafe gate integration on or off. Turning it OFF shows a confirmation card — call directly, do not ask first.',
+    inputSchema: { type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false },
+  },
+  {
+    name: 'request_cafe_gate_refresh',
+    description: 'Re-evaluate the broadcast state and rewrite the cafe gate image within ~30s (same as the 「지금 반영」 button). Requires the image to be placed already.',
+    inputSchema: noInput,
+  },
+  /* ── 링크 순서 (#326 3단계) ── */
+  {
+    name: 'move_shortcut', description: 'Move a viewer-page link one step up or down (id from list_shortcuts).',
+    inputSchema: {
+      type: 'object',
+      properties: { id, direction: { type: 'string', enum: ['up', 'down'] } },
+      required: ['id', 'direction'], additionalProperties: false,
+    },
+  },
+  /* ── 문의 (#326 3단계) ── */
+  { name: 'list_inquiries', description: 'My inquiries to the operators: id, title, status, unread operator reply.', inputSchema: noInput },
+  {
+    name: 'get_inquiry', description: 'One inquiry with its full message thread (marks operator replies as read).',
+    inputSchema: { type: 'object', properties: { id }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'reply_inquiry',
+    description: 'Adds a follow-up message to one of my inquiries (sent to the operators). A confirmation card with the text is shown to the user — call directly with the drafted content, do not ask first.',
+    inputSchema: { type: 'object', properties: { id, body: { type: 'string' } }, required: ['id', 'body'], additionalProperties: false },
+  },
   /* ── 노래 설정 (#326) ── */
   {
     name: 'set_overlay_settings',
@@ -666,6 +733,7 @@ const AUDITED_TOOLS = new Set([
   'set_default_favorite', 'create_favorite', 'rename_favorite', 'delete_favorite',
   'add_favorite_song', 'remove_favorite_song', 'clear_favorite_items',
   'select_source', 'clear_source_selection',
+  'set_chatbot_active', 'set_listed', 'set_chatbot_default_repeat', 'refresh_channel_info', 'set_cafe_enabled', 'move_shortcut',
 ]);
 
 export async function runTool(
@@ -825,6 +893,31 @@ async function buildCard(prisma: PrismaClient, userId: number, name: string, inp
       const status = await playbackService.getSourceStatus(prisma, userId);
       if (!status.selectedSessionId) throw new ServiceError('INVALID_INPUT', '이미 선택된 송출 소스가 없습니다.');
       return { title: '송출 소스 선택 해제', lines: ['어느 플레이어에서도 소리가 나지 않게 됩니다.', '다시 소리를 내려면 목록에서 플레이어를 골라야 합니다.'] };
+    }
+    /* ── 계정·카페·문의 (#326 3단계) ── */
+    case 'set_chatbot_active':
+      return { title: '챗봇 끄기', lines: ['이 채널에서 챗봇이 멈춥니다 — 명령어 응답·반복 메시지·노래 신청 채팅이 모두 동작하지 않습니다.', '다시 켤 때까지 유지됩니다.'] };
+    case 'set_listed': {
+      if (typeof input.listed !== 'boolean') throw new ServiceError('INVALID_INPUT', 'listed 는 boolean 이어야 합니다.');
+      return {
+        title: input.listed ? '시청자 목록에 노출' : '시청자 목록에서 숨김',
+        lines: [input.listed ? '위즈봇 스트리머 목록에 이 채널이 보이게 됩니다.' : '위즈봇 스트리머 목록에서 이 채널이 사라집니다. 직접 주소로는 계속 들어올 수 있습니다.'],
+      };
+    }
+    case 'set_cafe_enabled': {
+      const integration = await cafeService.getIntegration(prisma, userId);
+      return {
+        title: '카페 연동 끄기',
+        lines: [`${integration.cafeName ?? '연결된 카페'} 대문의 방송 상태 갱신이 멈춥니다. 대문에 넣어둔 이미지는 마지막 상태로 남습니다.`],
+      };
+    }
+    case 'reply_inquiry': {
+      const inquiry = await inquiryService.getMine(prisma, userId, requireId(input.id, 'id'));
+      const replyBody = requireText(input.body, '내용', 64 * 1024);
+      return {
+        title: '문의에 추가 메시지 발송',
+        lines: [`문의: ${inquiry.title}`, replyBody.length > 200 ? `${replyBody.slice(0, 200)}…` : replyBody, '운영자에게 알림이 갑니다.'],
+      };
     }
     case 'set_song_request_policy': {
       //  needsConfirmation 이 enabled:false 일 때만 여기로 보낸다
@@ -1100,6 +1193,82 @@ async function execute(
         songMaxDurationSeconds: maxDurationSeconds,
       });
       return ok(toResult({ enabled, maxPerRequester: maxPerRequester ?? '무제한', maxQueueLength, maxDurationMinutes: maxDurationSeconds / 60 }));
+    }
+
+    /* ── 계정·챗봇 (#326 3단계) ── */
+    case 'get_account_settings': {
+      const [account, setting] = await Promise.all([accountService.getAccount(prisma, userId), userSettingService.getUserSetting(prisma, userId)]);
+      return ok(toResult({
+        channelName: account.channelName, listed: account.listed, chatbotActive: account.chatbotActive,
+        chatbotDefaultRepeatSeconds: setting.chatbotDefaultRepeat,
+        theme: '조회·변경은 설정 › 테마 메뉴에서 (/streamer/user/setting)',
+      }));
+    }
+    case 'set_chatbot_active': {
+      if (typeof input.active !== 'boolean') throw new ServiceError('INVALID_INPUT', 'active 는 boolean 이어야 합니다.');
+      await accountService.setChatbotActive(prisma, userId, input.active);
+      return ok(toResult({ chatbotActive: input.active }));
+    }
+    case 'set_listed': {
+      if (typeof input.listed !== 'boolean') throw new ServiceError('INVALID_INPUT', 'listed 는 boolean 이어야 합니다.');
+      await accountService.setListed(prisma, userId, input.listed);
+      return ok(toResult({ listed: input.listed }));
+    }
+    case 'set_chatbot_default_repeat': {
+      const seconds = requireIntInRange(input.seconds, 'seconds', 10, 86_400);
+      await userSettingService.updateUserSetting(prisma, userId, { chatbotDefaultRepeat: seconds });
+      return ok(toResult({ chatbotDefaultRepeatSeconds: seconds }));
+    }
+    case 'refresh_channel_info':
+      return ok(toResult(await accountService.refreshChannelInfo(prisma, userId)));
+
+    /* ── 카페 연동 (#326 3단계) ── */
+    case 'get_cafe_integration': {
+      const integration = await cafeService.getIntegration(prisma, userId);
+      if (!integration.clubId) {
+        return ok(toResult({ linked: false, enabled: integration.enabled, guide: '노래 › 카페 연동에서 카페 주소를 연결하세요 (/manual/cafe)' }));
+      }
+      const [gate, events] = await Promise.all([cafeService.getGate(prisma, userId), cafeService.listEvents(prisma, userId, 5)]);
+      const status = integration.status as keyof typeof CAFE_LINK_STATUS_LABEL;
+      return ok(toResult({
+        linked: true, enabled: integration.enabled, cafeName: integration.cafeName, cafeUrl: integration.cafeUrl,
+        status: CAFE_LINK_STATUS_LABEL[status] ?? integration.status, statusMessage: integration.statusMessage,
+        pendingAction: integration.pendingAction,
+        placed: gate?.present ?? null,
+        activity: gate ? { gateUpdatedAt: gate.activity.gateUpdatedAt, lastState: gate.activity.snapshot, autoRecovery: gate.activity.recovery } : null,
+        recentEvents: events.map((e) => ({ at: e.createdAt, kind: CAFE_EVENT_KIND_LABEL[e.kind as keyof typeof CAFE_EVENT_KIND_LABEL] ?? e.kind, message: e.message })),
+        guide: '가입 요청·권한 확인·대문 자리 지정은 노래 › 카페 연동 메뉴에서 (/manual/cafe)',
+      }));
+    }
+    case 'set_cafe_enabled': {
+      if (typeof input.enabled !== 'boolean') throw new ServiceError('INVALID_INPUT', 'enabled 는 boolean 이어야 합니다.');
+      const row = await cafeService.setEnabled(prisma, userId, input.enabled);
+      return ok(toResult({ enabled: row.enabled }));
+    }
+    case 'request_cafe_gate_refresh':
+      await cafeService.requestGateRefresh(prisma, userId);
+      return ok('다음 확인(30초 안)에 방송 상태를 다시 판정해 대문에 반영합니다.');
+
+    /* ── 링크 순서 (#326 3단계) ── */
+    case 'move_shortcut': {
+      const direction = input.direction === 'up' || input.direction === 'down' ? input.direction : null;
+      if (!direction) throw new ServiceError('INVALID_INPUT', 'direction 은 up 또는 down 이어야 합니다.');
+      const moved = await shortcutService.moveShortcut(prisma, userId, requireId(input.id, 'id'), direction);
+      return moved.moved ? ok('옮겼습니다.') : pending('이미 끝에 있어 옮길 수 없습니다.');
+    }
+
+    /* ── 문의 (#326 3단계) ── */
+    case 'list_inquiries':
+      return ok(toResult(await inquiryService.listMine(prisma, userId)));
+    case 'get_inquiry': {
+      const inquiry = await inquiryService.getMine(prisma, userId, requireId(input.id, 'id'));
+      return ok(toResult(inquiry));
+    }
+    case 'reply_inquiry': {
+      const inquiry = await inquiryService.reply(prisma, userId, requireId(input.id, 'id'), requireText(input.body, '내용', 64 * 1024));
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { channelName: true, channelImageUrl: true } });
+      void notifyAdminsOfInquiry(prisma, inquiry, user, '추가 문의');
+      return ok(toResult({ id: inquiry.id, title: inquiry.title }));
     }
 
     /* ── 송출 소스 (#326 2단계) ── */
