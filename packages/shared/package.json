@@ -28,7 +28,7 @@
   "packageManager": "pnpm@10.5.2",
   "devDependencies": {
     "@prisma/client": "^6.19.3",
-    "@trpc/server": "^11.18.0",
+    "@trpc/server": "^11.19.0",
     "@types/node": "^26",
     "@types/nodemailer": "^6.4.17",
     "@wizbot/eslint-config": "workspace:^",
@@ -39,7 +39,7 @@
   "dependencies": {
     "chzzk": "^1.10.4",
     "chzzk-open-sdk": "^1.0.0",
-    "nodemailer": "^10.0.3",
+    "nodemailer": "^10.0.10",
     "youtubei.js": "^18.0.0"
   }
 }
