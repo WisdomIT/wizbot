@@ -15,7 +15,7 @@
   "dependencies": {
     "@trpc/client": "^11.18.0",
     "@wizbot/shared": "workspace:^",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.0",
     "puppeteer": "^25.10.0"
   },
   "devDependencies": {
