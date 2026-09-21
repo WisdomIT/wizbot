@@ -13,10 +13,10 @@
   "license": "ISC",
   "packageManager": "pnpm@10.5.2",
   "dependencies": {
-    "@trpc/client": "^11.18.0",
+    "@trpc/client": "^11.19.0",
     "@wizbot/shared": "workspace:^",
     "dotenv": "^17.4.2",
-    "puppeteer": "^25.10.0"
+    "puppeteer": "^25.11.0"
   },
   "devDependencies": {
     "@types/node": "^26",
