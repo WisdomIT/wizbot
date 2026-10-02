@@ -18,7 +18,7 @@ jobs:
     runs-on: [self-hosted, wisdomserver]
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Read stack and plan
         env:
           PORTAINER_API_KEY: ${{ secrets.PORTAINER_API_KEY }}
