@@ -22,7 +22,7 @@
     "@trpc/server": "^11.18.0",
     "@wizbot/shared": "workspace:^",
     "chzzk-open-sdk": "^1.0.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.0",
     "express": "^5.2.1",
     "jose": "^6.2.12",
     "openai": "^7.15.0",
